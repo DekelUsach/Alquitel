@@ -1,32 +1,45 @@
-## Alquitel - Sistema Administrativo Local
+# Alquitel - Sistema de Gestión Administrativa local
 
-Este repositorio contiene el código fuente del sistema de gestión para Alquitel. La aplicación automatiza la generación de presupuestos, órdenes de trabajo y órdenes de facturación.
+Este software automatiza el flujo de trabajo de Alquitel, desde la recepción de pedidos hasta la generación de órdenes de producción y facturación, operando directamente sobre el sistema de archivos local sincronizado con OneDrive.
 
-### Arquitectura y Limitaciones
+## Flujo de Trabajo Soportado
 
-El sistema opera exclusivamente mediante el sistema de archivos local. Modifica documentos alojados en directorios sincronizados por OneDrive. Esta decisión técnica impone restricciones de concurrencia. El software aplica rutinas de reintento para mitigar bloqueos de archivos causados por el cliente de sincronización externo.
+1.  [cite_start]**Presupuestación**: Carga de datos de clientes (Nombre, CUIT, Fecha) y productos mediante formularios[cite: 2, 75, 99].
+2.  **Validación**: Intervención del jefe de área para corrección de precios antes del cierre del documento.
+3.  [cite_start]**Generación de Documentos**: Creación automática de Presupuestos (PDF), Órdenes de Facturación (OF) y Órdenes de Trabajo (OT)[cite: 71, 95].
+4.  **Sincronización**: Movimiento de archivos entre las carpetas locales `PRESUPUESTO`, `OF` y `OT`.
 
-### Tecnologías Implementadas
+## Stack Tecnológico
 
-* .NET 8 con WPF para la interfaz de usuario nativa en Windows 10.
-* C# para la lógica de negocio y manipulación de rutas locales.
-* SQLite para el almacenamiento persistente de clientes y listas de precios.
-* DocumentFormat.OpenXml para la inserción de datos en plantillas de Word.
-* Microsoft.Office.Interop.Word para la exportación de documentos a formato PDF.
+* **Framework**: .NET 8 con WPF (Windows Presentation Foundation) para una interfaz nativa y robusta en Windows 10.
+* **Lenguaje**: C# 12.
+* **Base de Datos**: SQLite (Local). Almacena datos recurrentes como:
+    * [cite_start]Clientes y Contactos (ej: B + T, Eugenia, Sheila Gomez)[cite: 2, 75, 70].
+    * [cite_start]Listado de Equipamiento (Pantallas LED P2.9, TV 43", Notebooks, etc.)[cite: 6, 85, 39].
+    * [cite_start]Logística y Técnicos (Traslados, Operadores)[cite: 45, 48].
+* **Manipulación de Documentos**:
+    * [cite_start]**Microsoft Office Interop Word**: Necesario para mantener la fidelidad de las plantillas que contienen tablas complejas, imágenes y formatos específicos de Alquitel[cite: 6, 18, 29].
+    * [cite_start]**DocumentFormat.OpenXml**: Para la inserción rápida de texto en campos de datos simples (Nro de Presupuesto, Fechas, CUIT)[cite: 2, 74, 100].
+* **Gestión de Archivos**: `System.IO` con lógica de reintentos (Retry Logic) para manejar bloqueos de archivos durante la sincronización activa de OneDrive.
 
-### Flujo de Trabajo Automatizado
+## Estructura de Automatización de Datos
 
-1. El usuario ingresa la información del cliente y los productos en la interfaz.
-2. El sistema lee las plantillas base en las carpetas locales.
-3. El motor de OpenXml interpola los datos en los documentos Word.
-4. El responsable aprueba los montos.
-5. El sistema convierte el presupuesto a PDF.
-6. El programa genera las órdenes de trabajo y facturación correspondientes.
-7. El software deposita cada archivo en su directorio local específico.
+El sistema elimina la carga manual duplicada extrayendo información del presupuesto aprobado para poblar las órdenes:
 
-### Requisitos de Ejecución
+| Dato Automatizado | Origen (Presupuesto) | Destino (OF / OT) |
+| :--- | :--- | :--- |
+| [cite_start]Cliente / Empresa | [cite: 75] [cite_start]| [cite: 99] |
+| [cite_start]Número de Presupuesto | [cite: 74] [cite_start]| [cite: 98] |
+| [cite_start]Detalle de Equipamiento | [cite: 5, 85] [cite_start]| [cite: 108, 109] |
+| [cite_start]Lugar y Fecha del Evento | [cite: 78, 81] [cite_start]| [cite: 103, 106] |
 
-* Windows 10.
-* Cliente de sincronización de Microsoft OneDrive activo.
-* Microsoft Word instalado localmente.
-* Permisos de lectura y escritura en los directorios objetivo.
+## Requisitos de Instalación
+
+1.  **SO**: Windows 10 o superior.
+2.  **Software**: Microsoft Office (Word) instalado localmente.
+3.  **Configuración**: Cliente de OneDrive iniciado y carpetas `PRESUPUESTO`, `OT`, `OF` mapeadas correctamente en el explorador de archivos.
+4.  **Runtime**: .NET Desktop Runtime 8.0.
+
+## Notas de Implementación Local
+
+Debido a la naturaleza del manejo de archivos local en carpetas de nube, el sistema implementa un `FileSystemWatcher` para detectar cuándo un presupuesto ha sido modificado y sincronizado, permitiendo la transición de estados en el flujo administrativo sin intervención manual del usuario.
