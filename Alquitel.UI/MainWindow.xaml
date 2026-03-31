@@ -1,0 +1,154 @@
+<Window x:Class="Alquitel.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Alquitel.UI.ViewModels"
+        Title="Grupo Alquitel - Sistema Administrativo" Height="800" Width="1400"
+        Background="{StaticResource BackgroundBrush}"
+        Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="380"/> <!-- Sidebar/Products -->
+            <ColumnDefinition Width="*"/>   <!-- Editor -->
+        </Grid.ColumnDefinitions>
+        
+        <!-- BARRA LATERAL: CATÁLOGO DE PRODUCTOS -->
+        <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" Padding="25" BorderThickness="0,0,1,0" BorderBrush="{StaticResource BorderBrush}">
+            <StackPanel>
+                <!-- Título y Campo de Búsqueda -->
+                <TextBlock Text="Catálogo de Equipos" FontSize="22" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="Seleccione el equipamiento a presupuestar" FontSize="14" Foreground="#64748B" Margin="0,0,0,20"/>
+                
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,20" 
+                         VerticalAlignment="Center"/>
+                
+                <!-- Lista de Productos -->
+                <ListBox ItemsSource="{Binding AvailableProducts}" Background="Transparent" BorderThickness="0" Height="550" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#F8FAFC" CornerRadius="8" Padding="15" Margin="0,0,0,12" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" Width="310">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Description}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Category}" FontSize="12" Foreground="#94A3B8" Margin="0,4,0,8"/>
+                                    <TextBlock Text="{Binding BasePrice, StringFormat='Precio Base: {0:C}'}" FontSize="14" Foreground="{StaticResource SecondaryColorBrush}" FontWeight="Medium"/>
+                                    
+                                    <Button Content="+ Agregar al Pedido" 
+                                            Command="{Binding DataContext.AddProductCommand, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                            CommandParameter="{Binding}" 
+                                            Margin="0,15,0,0" Height="38"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </Border>
+        
+        <!-- ÁREA DE TRABAJO DEL DOCUMENTO -->
+        <Border Grid.Column="1" Padding="40" Background="{StaticResource BackgroundBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- ENCABEZADO: INFORMACIÓN DEL CLIENTE -->
+                <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" CornerRadius="10" Padding="25" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" Margin="0,0,0,30">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Width="320">
+                            <TextBlock Text="Empresa / Cliente" Foreground="#64748B" FontWeight="Medium" Margin="0,0,0,8"/>
+                            <TextBox Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                        
+                        <StackPanel Width="220" Margin="30,0,0,0">
+                            <TextBlock Text="CUIT" Foreground="#64748B" FontWeight="Medium" Margin="0,0,0,8"/>
+                            <TextBox Text="{Binding CurrentOrder.Client.Cuit, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                        
+                        <StackPanel Width="200" Margin="30,0,0,0">
+                            <TextBlock Text="Nº de Presupuesto" Foreground="#64748B" FontWeight="Medium" Margin="0,0,0,8"/>
+                            <TextBox Text="{Binding CurrentOrder.BudgetNumber, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- PESTAÑAS (PRESUPUESTO / ORDEN DE TRABAJO) -->
+                <TabControl Grid.Row="2" Background="Transparent" BorderThickness="0">
+                    <TabControl.Resources>
+                        <Style TargetType="TabItem">
+                            <Setter Property="Header" Value="{Binding}"/>
+                            <Setter Property="FontSize" Value="15"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Foreground" Value="#64748B"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="TabItem">
+                                        <Border x:Name="Border" BorderThickness="0,0,0,3" Margin="0,0,30,10" Padding="0,5,0,10" Background="Transparent" Cursor="Hand">
+                                            <ContentPresenter x:Name="ContentSite" VerticalAlignment="Center" HorizontalAlignment="Center" ContentSource="Header"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </TabControl.Resources>
+                    
+                    <!-- VISTA: PRESUPUESTO -->
+                    <TabItem Header="PRESUPUESTO COMERCIAL">
+                        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="10" Padding="15" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                            <DataGrid ItemsSource="{Binding SelectedItems}" AutoGenerateColumns="False" 
+                                      Background="Transparent" BorderThickness="0"
+                                      CanUserAddRows="False" CanUserDeleteRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description}" Width="3*" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="CANTIDAD" Binding="{Binding Quantity}" Width="110"/>
+                                    <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="150"/>
+                                    <DataGridTextColumn Header="SUBTOTAL" Binding="{Binding Product.BasePrice}" Width="150" IsReadOnly="True"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </TabItem>
+                    
+                    <!-- VISTA: ORDEN DE TRABAJO -->
+                    <TabItem Header="ORDEN DE TRABAJO (TÉCNICA)">
+                        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="10" Padding="15" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                            <DataGrid ItemsSource="{Binding SelectedItems}" AutoGenerateColumns="False" 
+                                      Background="Transparent" BorderThickness="0"
+                                      CanUserAddRows="False" CanUserDeleteRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description}" Width="2*" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="CANT." Binding="{Binding Quantity}" Width="80"/>
+                                    <DataGridTextColumn Header="NOTAS TÉCNICAS (Producción)" Binding="{Binding TechnicalNotes}" Width="3*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </TabItem>
+                </TabControl>
+
+                <!-- BOTONERA INFERIOR (Generación Documental) -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,30,0,0">
+                    <Button Content="GENERAR PRESUPUESTO" Width="210" Background="{StaticResource PrimaryBrush}" Command="{Binding GenerateBudgetCommand}"/>
+                    <Button Content="GENERAR O. FACTURACIÓN" Width="210" Background="{StaticResource SecondaryColorBrush}" Margin="15,0" Command="{Binding GenerateOFCommand}"/>
+                    <Button Content="GENERAR O. TRABAJO" Width="210" Background="{StaticResource PrimaryBrush}" Command="{Binding GenerateOTCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- PANEL DE DEBUG / REGISTROS -->
+        <Expander Grid.Column="0" Grid.ColumnSpan="2" Header="Ver Consola de Seguimiento (Debug)" 
+                  ExpandDirection="Up" VerticalAlignment="Bottom" Background="#1E293B" Foreground="White" Margin="10">
+            <Border Background="#0B1120" Height="120" Padding="15">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <TextBlock Text="{Binding DebugLog}" FontFamily="Consolas" FontSize="12" Foreground="#38BDF8" TextWrapping="Wrap"/>
+                </ScrollViewer>
+            </Border>
+        </Expander>
+    </Grid>
+</Window>
