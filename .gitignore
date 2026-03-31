@@ -1,0 +1,47 @@
+## Visual Studio Professional / Enterprise / Community
+.vs/
+.vscode/
+
+## Build results
+[Bb]in/
+[Obj]/
+[Oo]bj/
+*.exe
+*.dll
+*.pdb
+*.msi
+*.nupkg
+
+## User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Shell & OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## NuGet Packages
+*.nupkg
+packages/
+
+## SQLite & Temporary Data
+*.db
+*.db-shm
+*.db-wal
+ReadTemplate/
+tmp_template*/
+tz/
+t.zip
+bs.txt
+bookmarks_encontrados.txt
+
+## Alquitel Generated Docs (Excluded from Git)
+1_PRESUPUESTOS/
+2_OF/
+3_OT/
+
+AGENTS.md
