@@ -186,9 +186,10 @@
                     <!-- Fila 2 -->
                     <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="1.5*"/>
-                            <ColumnDefinition Width="1.5*"/>
+                            <ColumnDefinition Width="1.2*"/>
+                            <ColumnDefinition Width="0.8*"/>
+                            <ColumnDefinition Width="1.4*"/>
+                            <ColumnDefinition Width="1.4*"/>
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" Margin="0,0,20,0">
@@ -199,11 +200,16 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Margin="0,0,20,0">
+                            <TextBlock Text="Días" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
+                            <TextBox Height="45" Text="{Binding EventDays, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Margin="0,0,20,0">
                             <TextBlock Text="Lugar del Evento" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
                             <TextBox Height="45" Text="{Binding CurrentOrder.Location.Name, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="2" Margin="0,0,0,0">
+                        <StackPanel Grid.Column="3" Margin="0,0,0,0">
                             <TextBlock Text="Administrador (Autor)" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
                             <TextBox Height="45" Text="{Binding CurrentOrder.AdminName, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>

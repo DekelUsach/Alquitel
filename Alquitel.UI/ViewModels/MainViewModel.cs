@@ -40,6 +40,9 @@ namespace Alquitel.UI.ViewModels
         private string _cuitInput = string.Empty;
 
         [ObservableProperty]
+        private int _eventDays = 1;
+
+        [ObservableProperty]
         private Order _currentOrder = new Order { Client = new Client(), Location = new Location() };
 
         [ObservableProperty]
@@ -104,6 +107,20 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        partial void OnEventDaysChanged(int value)
+        {
+            if (value < 1)
+            {
+                EventDays = 1;
+                return;
+            }
+
+            foreach (var item in SelectedItems)
+            {
+                item.Dias = value;
+            }
+        }
+
         public int GetSelectedQuantity(Guid productId)
         {
             return SelectedItems.Where(i => i.ProductId == productId).Sum(i => i.Quantity);
@@ -147,6 +164,7 @@ namespace Alquitel.UI.ViewModels
             if (existingItem != null)
             {
                 existingItem.Quantity += 1;
+                existingItem.Dias = EventDays;
                 Log($"Cantidad actualizada: {product.Description} x{existingItem.Quantity}");
                 return;
             }
@@ -156,7 +174,7 @@ namespace Alquitel.UI.ViewModels
                 ProductId = product.Id,
                 Product = product,
                 Quantity = 1,
-                Dias = 1,
+                Dias = EventDays,
                 UnitPrice = product.BasePrice,
                 // Valores default para LED según imagen
                 Uso = "IN",
@@ -249,7 +267,7 @@ namespace Alquitel.UI.ViewModels
                     ProductId = result.Product.Id,
                     Product = result.Product,
                     Quantity = result.Quantity,
-                    Dias = 1,
+                    Dias = EventDays,
                     UnitPrice = result.Product.BasePrice,
                     Uso = "IN",
                     Forma = "PLANA",
@@ -287,6 +305,13 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
+                if (!ValidateOrderForGeneration(out string validationMessage))
+                {
+                    MessageBox.Show(validationMessage, "Datos incompletos", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Log("Generación bloqueada por validaciones incompletas.");
+                    return;
+                }
+
                 Log($"Iniciando generación de {folderName}...");
                 
                 string baseDir = @"C:\Alquitel";
@@ -362,6 +387,45 @@ namespace Alquitel.UI.ViewModels
             var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 1) return name.Substring(0, Math.Min(2, name.Length)).ToUpper();
             return string.Join("", parts.Select(p => p[0])).ToUpper();
+        }
+
+        private bool ValidateOrderForGeneration(out string message)
+        {
+            var errors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName))
+            {
+                errors.Add("Cliente: completá Empresa / Cliente.");
+            }
+
+            if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber))
+            {
+                errors.Add("N° Presupuesto: ingresá un número de presupuesto.");
+            }
+
+            if (!CurrentOrder.EventDate.HasValue)
+            {
+                errors.Add("Fecha del evento: seleccioná una fecha.");
+            }
+
+            if (EventDays < 1)
+            {
+                errors.Add("Días: debe ser mayor o igual a 1.");
+            }
+
+            if (!SelectedItems.Any())
+            {
+                errors.Add("Productos: agregá al menos un producto al pedido.");
+            }
+
+            if (!errors.Any())
+            {
+                message = string.Empty;
+                return true;
+            }
+
+            message = "No se puede generar el documento. Revisá estos campos:\n\n- " + string.Join("\n- ", errors);
+            return false;
         }
 
         private void Log(string message)
