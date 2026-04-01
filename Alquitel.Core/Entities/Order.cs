@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace Alquitel.Core.Entities
 {
@@ -31,16 +33,53 @@ namespace Alquitel.Core.Entities
         public List<OrderItem> Items { get; set; } = new();
     }
 
-    public class OrderItem
+    public class OrderItem : INotifyPropertyChanged
     {
+        private int _quantity = 1;
+        private decimal _unitPrice;
+        private int _dias = 1;
+
         [Key]
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid OrderId { get; set; }
         public Guid ProductId { get; set; }
         public Product? Product { get; set; }
-        public int Quantity { get; set; } = 1;
-        public decimal UnitPrice { get; set; }
-        public int Dias { get; set; } = 1; // Días de aquiler
+        public int Quantity
+        {
+            get => _quantity;
+            set
+            {
+                if (_quantity == value) return;
+                _quantity = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Total));
+            }
+        }
+
+        public decimal UnitPrice
+        {
+            get => _unitPrice;
+            set
+            {
+                if (_unitPrice == value) return;
+                _unitPrice = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Total));
+            }
+        }
+
+        public int Dias
+        {
+            get => _dias;
+            set
+            {
+                if (_dias == value) return;
+                _dias = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Total));
+            }
+        }
+
         public decimal Total => Quantity * Dias * UnitPrice;
 
         public string? TechnicalNotes { get; set; }
@@ -64,5 +103,12 @@ namespace Alquitel.Core.Entities
         public string? Dimension2Type { get; set; }
         
         public string? CantRackEnergia { get; set; }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }
