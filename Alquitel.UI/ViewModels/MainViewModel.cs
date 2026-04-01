@@ -27,7 +27,7 @@ namespace Alquitel.UI.ViewModels
         private string _cuitInput = string.Empty;
 
         [ObservableProperty]
-        private Order _currentOrder = new();
+        private Order _currentOrder = new Order { Client = new Client(), Location = new Location() };
 
         [ObservableProperty]
         private Client? _selectedClient;
@@ -39,16 +39,13 @@ namespace Alquitel.UI.ViewModels
         {
             _dbContext = dbContext;
             _documentService = documentService;
-            
-            // Semilla de productos para demo
-            if (!_dbContext.Products.Any())
-            {
-               _dbContext.Products.Add(new Product { Description = "Pantalla LED 2.6mm", Category = "Visuales", BasePrice = 1500 });
-               _dbContext.Products.Add(new Product { Description = "Touch Screen 85 Pro", Category = "Interactivos", BasePrice = 800 });
-               _dbContext.SaveChanges();
-            }
 
-            foreach(var p in _dbContext.Products) AvailableProducts.Add(p);
+            // Cargar productos existentes
+            try {
+                foreach(var p in _dbContext.Products.ToList()) AvailableProducts.Add(p);
+            } catch (Exception ex) {
+                Log("Error cargando productos: " + ex.Message);
+            }
         }
 
         partial void OnCuitInputChanged(string value)
@@ -69,10 +66,17 @@ namespace Alquitel.UI.ViewModels
                 ProductId = product.Id,
                 Product = product,
                 Quantity = 1,
-                UnitPrice = product.BasePrice
+                Dias = 1,
+                UnitPrice = product.BasePrice,
+                // Valores default para LED según imagen
+                Uso = "IN",
+                Forma = "PLANA",
+                FactorForma = "MÓDULO"
             };
             SelectedItems.Add(item);
             CurrentOrder.Items.Add(item);
+            
+            Log($"Producto añadido: {product.Description}");
         }
 
         [RelayCommand]
@@ -85,7 +89,7 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task GenerateBudget()
         {
-            await GenerateDocument("1_PRESUPUESTOS", "31294(2) - 0326 - AV EVENTOS - MORENO - SG.docx", false);
+            await GenerateDocument("1_PRESUPUESTOS", @"1_PRESUPUESTOS\template.docx", false);
         }
 
         [RelayCommand]
@@ -113,16 +117,42 @@ namespace Alquitel.UI.ViewModels
                 Log($"Carpeta destino: {targetDir}");
                 Log($"Plantilla origen: {templatePath}");
 
+                // DEBUG: Extract literal placeholder text from actual zip structure for analysis
+                try {
+                    using var zip = System.IO.Compression.ZipFile.OpenRead(templatePath);
+                    var entry = zip.GetEntry("word/document.xml");
+                    using var stream = new StreamReader(entry.Open());
+                    string xml = stream.ReadToEnd();
+                    var matches = System.Text.RegularExpressions.Regex.Matches(xml, @"<w:t[^>]*>(.*?)</w:t>");
+                    var sb = new System.Text.StringBuilder();
+                    foreach (System.Text.RegularExpressions.Match m in matches) sb.Append(m.Groups[1].Value);
+                    File.WriteAllText(@"C:\Alquitel\dump.txt", sb.ToString());
+                    Log("Se exportó el texto de la plantilla a dump.txt para depuración.");
+                } catch (Exception zipEx) {
+                    Log("Error en debug_zip: " + zipEx.Message);
+                }
+
                 if (!Directory.Exists(targetDir))
                 {
                     Log("Creando carpeta destino...");
                     Directory.CreateDirectory(targetDir);
                 }
 
-                string fileName = $"{folderName}_{CurrentOrder.BudgetNumber}_{DateTime.Now:yyyyMMdd_HHmmss}.docx";
+                // Generar Nombre de Archivo según política corporativa:
+                // [nro]- [MMdd]- [empresa]- [lugar]- [iniciales].docx
+                string datePart = CurrentOrder.CreatedDate.ToString("MMdd");
+                string empresaPart = string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName) ? "CLIENTE" : CurrentOrder.Client.CompanyName;
+                string lugarPart = string.IsNullOrWhiteSpace(CurrentOrder.Location?.Name) ? "LUGAR" : CurrentOrder.Location.Name;
+                string inicialesPart = GetInitials(CurrentOrder.AdminName);
+
+                string fileName = $"{CurrentOrder.BudgetNumber}- {datePart}- {empresaPart}- {lugarPart}- {inicialesPart}.docx";
+                
+                // Limpiar caracteres no válidos para nombres de archivo de Windows
+                foreach (char c in Path.GetInvalidFileNameChars()) { fileName = fileName.Replace(c, '_'); }
+                
                 string outputPath = Path.Combine(targetDir, fileName);
 
-                Log($"Archivo de salida: {outputPath}");
+                Log($"Archivo de salida (Poliza Corporativa): {outputPath}");
 
                 if (!File.Exists(templatePath))
                 {
@@ -145,6 +175,14 @@ namespace Alquitel.UI.ViewModels
                 Log(ex.StackTrace ?? "");
                 MessageBox.Show(errorMsg, "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private string GetInitials(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "NA";
+            var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 1) return name.Substring(0, Math.Min(2, name.Length)).ToUpper();
+            return string.Join("", parts.Select(p => p[0])).ToUpper();
         }
 
         private void Log(string message)

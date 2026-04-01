@@ -2,28 +2,33 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
-        <!-- Tema Corporativo Minimalista Alquitel -->
-        <Color x:Key="PrimaryColor">#0033A0</Color> <!-- Azul del Logo -->
-        <Color x:Key="SecondaryColor">#0050C8</Color> <!-- Azul más claro para enfoque -->
-        <Color x:Key="BackgroundColor">#F4F6F8</Color> <!-- Fondo Limpio Claro -->
+        <!-- Tema Corporativo Alquitel - Rediseño -->
+        <Color x:Key="PrimaryColor">#1B2E58</Color> <!-- Azul oscuro para botones de acción -->
+        <Color x:Key="SecondaryColor">#0D84E7</Color> <!-- Azul brillante para tab activo -->
+        <Color x:Key="BackgroundColor">#F3F6F9</Color> <!-- Fondo General -->
         <Color x:Key="SurfaceColor">#FFFFFF</Color> <!-- Paneles Blancos -->
-        <Color x:Key="TextColor">#1E293B</Color> <!-- Texto Oscuro Elegante -->
-        <Color x:Key="BorderColor">#E2E8F0</Color> <!-- Bordes sutiles -->
+        <Color x:Key="TextColor">#111827</Color> 
+        <Color x:Key="MutedTextColor">#6B7280</Color> 
+        <Color x:Key="BorderColor">#E5E7EB</Color> 
         
         <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource PrimaryColor}"/>
         <SolidColorBrush x:Key="SecondaryColorBrush" Color="{StaticResource SecondaryColor}"/>
         <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
         <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
         <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}"/>
+        <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}"/>
         <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
         
-        <!-- Estilo Global de Botones: Redondeados y Modernos -->
-        <Style TargetType="Button">
+        <!-- DropShadowEffect estándar -->
+        <DropShadowEffect x:Key="StandardShadow" Color="#000000" Direction="270" ShadowDepth="2" BlurRadius="10" Opacity="0.05"/>
+
+        <!-- Estilo Global de Botones: Pill-shape oscuro -->
+        <Style x:Key="DarkPillButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Padding" Value="15,10"/>
             <Setter Property="Margin" Value="5"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -31,7 +36,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="8" 
+                                CornerRadius="20" 
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -40,11 +45,11 @@
             </Setter>
         </Style>
 
-        <!-- Estilo Global de TextBox: Minimalista -->
+        <!-- Estilo Global de TextBox: Pill-shape blanco -->
         <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Padding" Value="15,10"/>
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Background" Value="#F8FAFC"/>
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
@@ -54,33 +59,44 @@
                         <Border Background="{TemplateBinding Background}" 
                                 BorderBrush="{TemplateBinding BorderBrush}" 
                                 BorderThickness="{TemplateBinding BorderThickness}" 
-                                CornerRadius="6">
-                            <ScrollViewer x:Name="PART_ContentHost"/>
+                                CornerRadius="18"
+                                Effect="{StaticResource StandardShadow}">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="0" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Estilo Base DataGrid (Para solucionar el header oscuro confuso) -->
-        <Style TargetType="DataGrid">
+        <Style TargetType="DatePicker">
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Height" Value="42"/>
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="RowBackground" Value="White"/>
-            <Setter Property="AlternatingRowBackground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        </Style>
+
+        <!-- Estilo Base DataGrid -->
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="RowBackground" Value="Transparent"/>
+            <Setter Property="AlternatingRowBackground" Value="Transparent"/>
             <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="#E2E8F0"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
             <Setter Property="HeadersVisibility" Value="Column"/>
-            <Setter Property="RowHeight" Value="40"/>
+            <Setter Property="RowHeight" Value="50"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         </Style>
 
         <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="{StaticResource BackgroundBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="10,12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="10,15"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         </Style>
