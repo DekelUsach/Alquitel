@@ -231,10 +231,10 @@
                                             BorderThickness="1"
                                             CornerRadius="14"
                                             Padding="14"
-                                            Width="320"
+                                            Width="370"
                                             Effect="{StaticResource StandardShadow}">
                                         <StackPanel>
-                                            <TextBlock Text="Seleccionar fecha" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource TextBrush}" Margin="0,0,0,8"/>
+                                            <TextBlock Text="Seleccionar fecha" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextBrush}" Margin="0,0,0,10"/>
 
                                             <Calendar SelectedDate="{Binding CurrentOrder.EventDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                       DisplayDateStart="{x:Static sys:DateTime.MinValue}"
