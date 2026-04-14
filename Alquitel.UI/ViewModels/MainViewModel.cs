@@ -1,125 +1,87 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Alquitel.Core.Entities;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.IO;
-using System.Threading.Tasks;
 using System;
-using System.Windows;
-using System.ComponentModel;
-using System.Windows.Data;
-using System.Text.RegularExpressions;
-using System.Globalization;
-using System.Text;
-using System.Collections.Specialized;
+using System.IO;
 using System.Text.Json;
+using System.Collections.Generic;
+using System.Windows;
 
 namespace Alquitel.UI.ViewModels
 {
+    /// <summary>
+    /// Shell ViewModel — owns navigation state, theme toggle, and spawns child ViewModels.
+    /// </summary>
     public partial class MainViewModel : ObservableObject
     {
         private readonly AlquitelDbContext _dbContext;
         private readonly IDocumentService _documentService;
-        private readonly ICollectionView _productsView;
+        private readonly SettingsViewModel _settingsVm;
 
         private static readonly string SettingsFilePath = Path.Combine(@"C:\Alquitel", "settings.json");
 
         [ObservableProperty]
-        private string _debugLog = "Iniciando sistema Alquitel...";
-
-        [ObservableProperty]
-        private string _searchText = string.Empty;
-
-        [ObservableProperty]
-        private bool _isSmartSearchVisible;
-
-        [ObservableProperty]
-        private string _smartSearchText = string.Empty;
-
-        [ObservableProperty]
-        private string _cuitInput = string.Empty;
-
-        [ObservableProperty]
-        private int _eventDays = 1;
-
-        [ObservableProperty]
-        private bool _isEventCalendarOpen;
-
-        [ObservableProperty]
-        private Order _currentOrder = new Order { Client = new Client(), Location = new Location() };
-
-        [ObservableProperty]
-        private Client? _selectedClient;
-
-        [ObservableProperty]
-        private int _selectionVersion;
-
-        [ObservableProperty]
-        private bool _isSettingsVisible;
+        private ObservableObject? _currentViewModel;
 
         [ObservableProperty]
         private bool _isDarkMode;
 
         [ObservableProperty]
-        private bool _isTechnicalView;
-
-        [ObservableProperty]
-        private string _presupuestosFolder = @"C:\Alquitel\1_PRESUPUESTOS";
-
-        [ObservableProperty]
-        private string _presupuestosTemplate = @"C:\Alquitel\1_PRESUPUESTOS\template.docx";
-
-        [ObservableProperty]
-        private string _ofFolder = @"C:\Alquitel\2_OF";
-
-        [ObservableProperty]
-        private string _ofTemplate = @"C:\Alquitel\OF  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
-
-        [ObservableProperty]
-        private string _otFolder = @"C:\Alquitel\3_OT";
-
-        [ObservableProperty]
-        private string _otTemplate = @"C:\Alquitel\OT  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
-
-        public ObservableCollection<Product> AvailableProducts { get; } = new();
-        public ObservableCollection<OrderItem> SelectedItems { get; } = new();
-        public decimal FinalBudget => SelectedItems.Sum(i => i.Total);
-        public Visibility CommercialColumnsVisibility =>
-            IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
+        private string _activeSection = "Dashboard";
 
         public MainViewModel(AlquitelDbContext dbContext, IDocumentService documentService)
         {
             _dbContext = dbContext;
             _documentService = documentService;
+            _settingsVm = new SettingsViewModel();
 
-            LoadSettings();
-
-            // Cargar productos existentes
-            try {
-                foreach(var p in _dbContext.Products.ToList()) AvailableProducts.Add(p);
-            } catch (Exception ex) {
-                Log("Error cargando productos: " + ex.Message);
-            }
-
-            _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
-            _productsView.Filter = FilterProduct;
-
-            SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+            // Load theme preference from settings
+            LoadThemePreference();
             ApplyTheme(IsDarkMode);
+
+            // Start on Dashboard
+            NavigateToDashboard();
+        }
+
+        // ── Navigation Commands ──────────────────────────────────────
+
+        [RelayCommand]
+        private void NavigateToDashboard()
+        {
+            ActiveSection = "Dashboard";
+            CurrentViewModel = new DashboardViewModel(_dbContext, () => NavigateToBuilder());
         }
 
         [RelayCommand]
-        private void ToggleSettings() => IsSettingsVisible = !IsSettingsVisible;
+        private void NavigateToBuilder()
+        {
+            ActiveSection = "Presupuesto";
+            CurrentViewModel = new BudgetBuilderViewModel(_dbContext, _documentService, _settingsVm);
+        }
+
+        [RelayCommand]
+        private void NavigateToSettings()
+        {
+            ActiveSection = "Configuración";
+            CurrentViewModel = _settingsVm;
+        }
+
+        [RelayCommand]
+        private void NavigateToProducts()
+        {
+            ActiveSection = "Productos";
+            CurrentViewModel = new ProductEditorViewModel(_dbContext);
+        }
+
+        // ── Theme ────────────────────────────────────────────────────
 
         [RelayCommand]
         private void ToggleTheme()
         {
             IsDarkMode = !IsDarkMode;
             ApplyTheme(IsDarkMode);
-            SaveSettings();
+            SaveThemePreferenceSilent();
         }
 
         private void ApplyTheme(bool isDark)
@@ -128,694 +90,54 @@ namespace Alquitel.UI.ViewModels
             var uri = new Uri($"pack://application:,,,/Themes/{themeFile}");
             var mergedDicts = Application.Current.Resources.MergedDictionaries;
 
-            var toRemove = mergedDicts
-                .Where(d => d.Source?.OriginalString.Contains("Theme.xaml") == true)
-                .ToList();
+            var toRemove = new List<ResourceDictionary>();
+            foreach (var d in mergedDicts)
+            {
+                if (d.Source?.OriginalString.Contains("Theme.xaml") == true)
+                    toRemove.Add(d);
+            }
             foreach (var d in toRemove) mergedDicts.Remove(d);
 
             mergedDicts.Add(new ResourceDictionary { Source = uri });
         }
 
-        [RelayCommand]
-        private void SetCommercialView()
-        {
-            IsTechnicalView = false;
-        }
-
-        [RelayCommand]
-        private void SetTechnicalView()
-        {
-            IsTechnicalView = true;
-        }
-
-        [RelayCommand]
-        private void BrowsePresupuestosFolder() => BrowseFolder(path => PresupuestosFolder = path);
-
-        [RelayCommand]
-        private void BrowsePresupuestosTemplate() => BrowseFile(path => PresupuestosTemplate = path);
-
-        [RelayCommand]
-        private void BrowseOfFolder() => BrowseFolder(path => OfFolder = path);
-
-        [RelayCommand]
-        private void BrowseOfTemplate() => BrowseFile(path => OfTemplate = path);
-
-        [RelayCommand]
-        private void BrowseOtFolder() => BrowseFolder(path => OtFolder = path);
-
-        [RelayCommand]
-        private void BrowseOtTemplate() => BrowseFile(path => OtTemplate = path);
-
-        [RelayCommand]
-        private void SaveSettings()
-        {
-            try
-            {
-                var settings = new Dictionary<string, string>
-                {
-                    ["PresupuestosFolder"] = PresupuestosFolder,
-                    ["PresupuestosTemplate"] = PresupuestosTemplate,
-                    ["OfFolder"] = OfFolder,
-                    ["OfTemplate"] = OfTemplate,
-                    ["OtFolder"] = OtFolder,
-                    ["OtTemplate"] = OtTemplate,
-                    ["IsDarkMode"] = IsDarkMode.ToString(),
-                };
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, json);
-                Log("Configuración de rutas guardada correctamente.");
-                MessageBox.Show("Rutas guardadas correctamente.", "Configuración", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                Log("Error guardando configuración: " + ex.Message);
-                MessageBox.Show("Error al guardar: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void LoadSettings()
+        private void LoadThemePreference()
         {
             try
             {
                 if (!File.Exists(SettingsFilePath)) return;
                 var json = File.ReadAllText(SettingsFilePath);
                 var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                if (settings == null) return;
-
-                if (settings.TryGetValue("PresupuestosFolder", out var pf)) PresupuestosFolder = pf;
-                if (settings.TryGetValue("PresupuestosTemplate", out var pt)) PresupuestosTemplate = pt;
-                if (settings.TryGetValue("OfFolder", out var of)) OfFolder = of;
-                if (settings.TryGetValue("OfTemplate", out var ot2)) OfTemplate = ot2;
-                if (settings.TryGetValue("OtFolder", out var otf)) OtFolder = otf;
-                if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
-
-                if (settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
+                if (settings != null && settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
                     IsDarkMode = isDark;
-
-                Log("Configuración de rutas cargada desde settings.json.");
             }
-            catch (Exception ex)
-            {
-                Log("Error cargando configuración: " + ex.Message);
-            }
+            catch { /* Gracefully ignore corrupt settings */ }
         }
 
-        private void BrowseFolder(Action<string> setter)
-        {
-            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Seleccionar carpeta" };
-            if (dialog.ShowDialog() == true)
-                setter(dialog.FolderName);
-        }
-
-        private void BrowseFile(Action<string> setter)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "Seleccionar plantilla",
-                Filter = "Documentos Word (*.docx)|*.docx|Todos los archivos (*.*)|*.*"
-            };
-            if (dialog.ShowDialog() == true)
-                setter(dialog.FileName);
-        }
-
-        private void OnSelectedItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        {
-            if (e.OldItems != null)
-            {
-                foreach (OrderItem item in e.OldItems)
-                {
-                    item.PropertyChanged -= OnSelectedItemPropertyChanged;
-                }
-            }
-
-            if (e.NewItems != null)
-            {
-                foreach (OrderItem item in e.NewItems)
-                {
-                    item.PropertyChanged += OnSelectedItemPropertyChanged;
-                }
-            }
-
-            SelectionVersion++;
-            OnPropertyChanged(nameof(FinalBudget));
-        }
-
-        private void OnSelectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(OrderItem.Quantity)
-                || e.PropertyName == nameof(OrderItem.Dias)
-                || e.PropertyName == nameof(OrderItem.UnitPrice)
-                || e.PropertyName == nameof(OrderItem.Total))
-            {
-                SelectionVersion++;
-                OnPropertyChanged(nameof(FinalBudget));
-            }
-        }
-
-        partial void OnEventDaysChanged(int value)
-        {
-            if (value < 1)
-            {
-                EventDays = 1;
-                return;
-            }
-
-            foreach (var item in SelectedItems)
-            {
-                item.Dias = value;
-            }
-        }
-
-        public int GetSelectedQuantity(Guid productId)
-        {
-            return SelectedItems.Where(i => i.ProductId == productId).Sum(i => i.Quantity);
-        }
-
-        partial void OnSearchTextChanged(string value)
-        {
-            _productsView.Refresh();
-        }
-
-        private bool FilterProduct(object item)
-        {
-            if (item is not Product product)
-            {
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(SearchText))
-            {
-                return true;
-            }
-
-            return product.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
-                || product.Category.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
-        }
-
-        partial void OnCuitInputChanged(string value)
-        {
-            var client = _dbContext.Clients.FirstOrDefault(c => c.Cuit == value);
-            if (client != null)
-            {
-                CurrentOrder.Client = client;
-                OnPropertyChanged(nameof(CurrentOrder));
-            }
-        }
-
-        [RelayCommand]
-        private void AddProduct(Product product)
-        {
-            var existingItem = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
-            if (existingItem != null)
-            {
-                existingItem.Quantity += 1;
-                existingItem.Dias = EventDays;
-                Log($"Cantidad actualizada: {product.Description} x{existingItem.Quantity}");
-                return;
-            }
-
-            var item = new OrderItem
-            {
-                ProductId = product.Id,
-                Product = product,
-                Quantity = 1,
-                Dias = EventDays,
-                UnitPrice = product.BasePrice,
-                // Valores default para LED según imagen
-                Uso = "IN",
-                Forma = "PLANA",
-                FactorForma = "MÓDULO"
-            };
-            SelectedItems.Add(item);
-            CurrentOrder.Items.Add(item);
-            
-            Log($"Producto añadido: {product.Description}");
-        }
-
-        [RelayCommand]
-        private void RemoveItem(OrderItem item)
-        {
-            SelectedItems.Remove(item);
-            CurrentOrder.Items.Remove(item);
-            Log($"Producto eliminado: {item.Product?.Description ?? "Item"}");
-        }
-
-        [RelayCommand]
-        private void RemoveProduct(Product product)
-        {
-            var existingItem = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
-            if (existingItem == null)
-            {
-                return;
-            }
-
-            if (existingItem.Quantity > 1)
-            {
-                existingItem.Quantity -= 1;
-                Log($"Cantidad reducida: {product.Description} x{existingItem.Quantity}");
-                return;
-            }
-
-            SelectedItems.Remove(existingItem);
-            CurrentOrder.Items.Remove(existingItem);
-            Log($"Producto eliminado del pedido: {product.Description}");
-        }
-
-        [RelayCommand]
-        private void SetTodayEventDate()
-        {
-            CurrentOrder.EventDate = DateTime.Today;
-            IsEventCalendarOpen = false;
-            OnPropertyChanged(nameof(CurrentOrder));
-        }
-
-        [RelayCommand]
-        private void CloseEventCalendar()
-        {
-            IsEventCalendarOpen = false;
-        }
-
-        [RelayCommand]
-        private void ToggleSmartSearchInput()
-        {
-            IsSmartSearchVisible = !IsSmartSearchVisible;
-        }
-
-        [RelayCommand]
-        private void ParseSmartSearch()
-        {
-            if (string.IsNullOrWhiteSpace(SmartSearchText))
-            {
-                MessageBox.Show("Pegá un texto para analizar primero.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var matches = FindProductsFromParagraph(SmartSearchText).ToList();
-            if (!matches.Any())
-            {
-                Log("No se detectaron productos en el texto.");
-                MessageBox.Show("No detecté productos del catálogo en ese texto.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            if (SelectedItems.Any())
-            {
-                var replace = MessageBox.Show(
-                    "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?",
-                    "Confirmar reemplazo",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (replace == MessageBoxResult.Yes)
-                {
-                    SelectedItems.Clear();
-                    CurrentOrder.Items.Clear();
-                }
-            }
-
-            int addedCount = 0;
-            foreach (var result in matches.OrderByDescending(m => m.Score))
-            {
-                if (SelectedItems.Any(i => i.ProductId == result.Product.Id))
-                {
-                    continue;
-                }
-
-                var item = new OrderItem
-                {
-                    ProductId = result.Product.Id,
-                    Product = result.Product,
-                    Quantity = result.Quantity,
-                    Dias = EventDays,
-                    UnitPrice = result.Product.BasePrice,
-                    Uso = "IN",
-                    Forma = "PLANA",
-                    FactorForma = "MÓDULO"
-                };
-
-                SelectedItems.Add(item);
-                CurrentOrder.Items.Add(item);
-                addedCount++;
-            }
-
-            Log($"Búsqueda inteligente: {matches.Count} detectado(s), {addedCount} agregado(s).");
-            MessageBox.Show($"Se agregaron {addedCount} producto(s) automáticamente.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        [RelayCommand]
-        private async Task GenerateBudget()
-        {
-            await GenerateDocument(PresupuestosFolder, PresupuestosTemplate, false);
-        }
-
-        [RelayCommand]
-        private async Task GenerateOF()
-        {
-            await GenerateDocument(OfFolder, OfTemplate, false);
-        }
-
-        [RelayCommand]
-        private async Task GenerateOT()
-        {
-            await GenerateDocument(OtFolder, OtTemplate, true);
-        }
-
-        private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical)
+        /// <summary>
+        /// Persists the theme preference without showing any MessageBox.
+        /// This fixes the bug where toggling dark mode showed "Rutas guardadas correctamente."
+        /// </summary>
+        private void SaveThemePreferenceSilent()
         {
             try
             {
-                if (!ValidateOrderForGeneration(out string validationMessage))
+                Dictionary<string, string> settings;
+                if (File.Exists(SettingsFilePath))
                 {
-                    MessageBox.Show(validationMessage, "Datos incompletos", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    Log("Generación bloqueada por validaciones incompletas.");
-                    return;
-                }
-
-                Log($"Iniciando generación...");
-                
-                Log($"Carpeta destino: {targetDir}");
-                Log($"Plantilla origen: {templatePath}");
-
-                if (!Directory.Exists(targetDir))
-                {
-                    Log("Creando carpeta destino...");
-                    Directory.CreateDirectory(targetDir);
-                }
-
-                // Generar Nombre de Archivo según política corporativa:
-                // [nro]- [MMdd]- [empresa]- [lugar]- [iniciales].docx
-                string datePart = CurrentOrder.CreatedDate.ToString("MMdd");
-                string empresaPart = string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName) ? "CLIENTE" : CurrentOrder.Client.CompanyName;
-                string lugarPart = string.IsNullOrWhiteSpace(CurrentOrder.Location?.Name) ? "LUGAR" : CurrentOrder.Location.Name;
-                string inicialesPart = GetInitials(CurrentOrder.AdminName);
-
-                string fileName = $"{CurrentOrder.BudgetNumber}- {datePart}- {empresaPart}- {lugarPart}- {inicialesPart}.docx";
-                
-                // Limpiar caracteres no válidos para nombres de archivo de Windows
-                foreach (char c in Path.GetInvalidFileNameChars()) { fileName = fileName.Replace(c, '_'); }
-                
-                string outputPath = Path.Combine(targetDir, fileName);
-
-                Log($"Archivo de salida (Poliza Corporativa): {outputPath}");
-
-                if (!File.Exists(templatePath))
-                {
-                    string msg = $"ERROR: La plantilla no existe en: {templatePath}";
-                    Log(msg);
-                    MessageBox.Show(msg, "Error de Plantilla", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                Log("Llamando al servicio de Word (esto puede tardar unos segundos)...");
-                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical);
-                
-                Log("¡Documento generado con éxito!");
-                MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                string errorMsg = $"ERROR CRÍTICO: {ex.Message}";
-                Log(errorMsg);
-                Log(ex.StackTrace ?? "");
-                MessageBox.Show(errorMsg, "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private string GetInitials(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return "NA";
-            var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 1) return name.Substring(0, Math.Min(2, name.Length)).ToUpper();
-            return string.Join("", parts.Select(p => p[0])).ToUpper();
-        }
-
-        private bool ValidateOrderForGeneration(out string message)
-        {
-            var errors = new List<string>();
-
-            if (string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName))
-            {
-                errors.Add("Cliente: completá Empresa / Cliente.");
-            }
-
-            if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber))
-            {
-                errors.Add("N° Presupuesto: ingresá un número de presupuesto.");
-            }
-
-            if (!CurrentOrder.EventDate.HasValue)
-            {
-                errors.Add("Fecha del evento: seleccioná una fecha.");
-            }
-
-            if (EventDays < 1)
-            {
-                errors.Add("Días: debe ser mayor o igual a 1.");
-            }
-
-            if (!SelectedItems.Any())
-            {
-                errors.Add("Productos: agregá al menos un producto al pedido.");
-            }
-
-            if (!errors.Any())
-            {
-                message = string.Empty;
-                return true;
-            }
-
-            message = "No se puede generar el documento. Revisá estos campos:\n\n- " + string.Join("\n- ", errors);
-            return false;
-        }
-
-        private void Log(string message)
-        {
-            DebugLog += $"\n[{DateTime.Now:HH:mm:ss}] {message}";
-        }
-
-        private IEnumerable<SmartMatchResult> FindProductsFromParagraph(string paragraph)
-        {
-            var segments = BuildSmartSegments(paragraph);
-
-            var aggregated = new Dictionary<Guid, SmartMatchResult>();
-
-            foreach (var segment in segments)
-            {
-                int quantity = ExtractQuantityFromSegment(segment);
-                var ranked = AvailableProducts
-                    .Select(product => new SmartMatchResult(product, quantity, ScoreProductAgainstSegment(segment, product)))
-                    .OrderByDescending(x => x.Score)
-                    .ToList();
-
-                if (!ranked.Any())
-                {
-                    continue;
-                }
-
-                var best = ranked[0];
-                var second = ranked.Count > 1 ? ranked[1] : null;
-
-                // Umbral minimo para evitar elegir cualquier cosa cuando el texto no describe catalogo.
-                if (best.Score < 4.0)
-                {
-                    continue;
-                }
-
-                // Si el primero y el segundo son casi iguales, no forzar seleccion ambigua.
-                if (second != null && Math.Abs(best.Score - second.Score) < 0.35)
-                {
-                    continue;
-                }
-
-                if (aggregated.TryGetValue(best.Product.Id, out var existing))
-                {
-                    aggregated[best.Product.Id] = existing with
-                    {
-                        Quantity = existing.Quantity + best.Quantity,
-                        Score = Math.Max(existing.Score, best.Score)
-                    };
+                    var json = File.ReadAllText(SettingsFilePath);
+                    settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
                 }
                 else
                 {
-                    aggregated[best.Product.Id] = best;
+                    settings = new();
                 }
+
+                settings["IsDarkMode"] = IsDarkMode.ToString();
+                var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(SettingsFilePath, output);
             }
-
-            return aggregated.Values;
+            catch { /* Silently fail — theme persistence is non-critical */ }
         }
-
-        private static List<string> BuildSmartSegments(string paragraph)
-        {
-            var primarySegments = paragraph
-                .Split(new[] { '.', '\n', ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => !string.IsNullOrWhiteSpace(s));
-
-            var expandedSegments = new List<string>();
-            foreach (var segment in primarySegments)
-            {
-                var parts = Regex.Split(segment, @"\s+y\s+", RegexOptions.IgnoreCase)
-                    .Select(s => s.Trim())
-                    .Where(s => !string.IsNullOrWhiteSpace(s));
-                expandedSegments.AddRange(parts);
-            }
-
-            return expandedSegments;
-        }
-
-        private static int ExtractQuantityFromSegment(string segment)
-        {
-            string rawSegment = RemoveDiacritics(segment).ToLowerInvariant();
-
-            // Casos: "2x pantalla", "2 unidades pantalla", "pantalla x 2"
-            var explicitQtyPatterns = new[]
-            {
-                @"\b(\d{1,3})(?![\.,]\d)\s*(x|u|ud|uds|unidad|unidades)\b",
-                @"\b(?:x|por)\s*(\d{1,3})(?![\.,]\d)\b",
-                @"\b(\d{1,3})(?![\.,]\d)\s*(?:pantalla|pantallas|notebook|notebooks|camara|camaras|servicio|servicios|traslado|traslados|touch|equipo|equipos)\b"
-            };
-
-            foreach (var pattern in explicitQtyPatterns)
-            {
-                var qtyMatch = Regex.Match(rawSegment, pattern, RegexOptions.IgnoreCase);
-                if (qtyMatch.Success && int.TryParse(qtyMatch.Groups[1].Value, out int explicitQty) && explicitQty > 0)
-                {
-                    return explicitQty;
-                }
-            }
-
-            return 1;
-        }
-
-        private static double ScoreProductAgainstSegment(string segment, Product product)
-        {
-            string normalizedSegment = NormalizeText(segment);
-            string normalizedDescription = NormalizeText(product.Description);
-            string normalizedCategory = NormalizeText(product.Category);
-
-            var segmentTokens = ExtractMeaningfulTokens(normalizedSegment).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var productTokens = ExtractMeaningfulTokens(normalizedDescription).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var categoryTokens = ExtractMeaningfulTokens(normalizedCategory).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            if (!segmentTokens.Any() || !productTokens.Any())
-            {
-                return 0;
-            }
-
-            int overlap = segmentTokens.Intersect(productTokens, StringComparer.OrdinalIgnoreCase).Count();
-            int categoryOverlap = segmentTokens.Intersect(categoryTokens, StringComparer.OrdinalIgnoreCase).Count();
-
-            double coverage = (double)overlap / productTokens.Count;
-            double precision = (double)overlap / Math.Max(1, segmentTokens.Count);
-            double trigramSimilarity = DiceCoefficient(Trigrams(normalizedSegment), Trigrams(normalizedDescription));
-
-            double score = 0;
-            score += overlap * 2.7;
-            score += categoryOverlap * 0.8;
-            score += coverage * 3.5;
-            score += precision * 1.5;
-            score += trigramSimilarity * 4.0;
-
-            if (normalizedSegment.Contains(normalizedDescription, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 3.0;
-            }
-
-            return score;
-        }
-
-        private static IEnumerable<string> ExtractMeaningfulTokens(string text)
-        {
-            var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "de", "la", "el", "los", "las", "con", "para", "por", "del", "y", "plus", "pro", "edition", "business", "servicio"
-            };
-
-            return Regex.Split(text, @"[^a-z0-9]+")
-                .Where(t => t.Length >= 3 && !stopWords.Contains(t))
-                .Distinct(StringComparer.OrdinalIgnoreCase);
-        }
-
-        private static string NormalizeText(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return string.Empty;
-            }
-
-            string formD = RemoveDiacritics(text);
-            var sb = new StringBuilder(formD.Length);
-            foreach (char c in formD)
-            {
-                if (char.IsLetterOrDigit(c) || char.IsWhiteSpace(c))
-                {
-                    sb.Append(c);
-                }
-                else
-                {
-                    sb.Append(' ');
-                }
-            }
-
-            return Regex.Replace(sb.ToString().ToLowerInvariant(), @"\s+", " ").Trim();
-        }
-
-        private static bool ContainsWholeWord(string source, string word)
-        {
-            return Regex.IsMatch(source, $@"\b{Regex.Escape(word)}\b", RegexOptions.IgnoreCase);
-        }
-
-        private static HashSet<string> Trigrams(string input)
-        {
-            string text = $"  {input}  ";
-            var grams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (text.Length < 3)
-            {
-                grams.Add(text);
-                return grams;
-            }
-
-            for (int i = 0; i <= text.Length - 3; i++)
-            {
-                grams.Add(text.Substring(i, 3));
-            }
-
-            return grams;
-        }
-
-        private static double DiceCoefficient(HashSet<string> a, HashSet<string> b)
-        {
-            if (!a.Any() || !b.Any())
-            {
-                return 0;
-            }
-
-            int intersection = a.Intersect(b, StringComparer.OrdinalIgnoreCase).Count();
-            return (2.0 * intersection) / (a.Count + b.Count);
-        }
-
-        private static string RemoveDiacritics(string text)
-        {
-            string normalized = text.Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder(normalized.Length);
-            foreach (char c in normalized)
-            {
-                var category = CharUnicodeInfo.GetUnicodeCategory(c);
-                if (category != UnicodeCategory.NonSpacingMark)
-                {
-                    sb.Append(c);
-                }
-            }
-
-            return sb.ToString().Normalize(NormalizationForm.FormC);
-        }
-
-        partial void OnIsTechnicalViewChanged(bool value)
-        {
-            OnPropertyChanged(nameof(CommercialColumnsVisibility));
-        }
-
-        private sealed record SmartMatchResult(Product Product, int Quantity, double Score);
     }
 }

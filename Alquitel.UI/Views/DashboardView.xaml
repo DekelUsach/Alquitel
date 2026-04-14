@@ -1,0 +1,132 @@
+<UserControl x:Class="Alquitel.UI.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Margin="40,30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- HEADER -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,40">
+            <TextBlock Text="{Binding WelcomeMessage}" FontSize="16"
+                       Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
+            <TextBlock Text="Panel de Control" FontSize="34" FontWeight="Bold"
+                       Foreground="{DynamicResource TextBrush}"/>
+        </StackPanel>
+
+        <!-- METRIC CARDS -->
+        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,40">
+
+            <!-- Card: Productos -->
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
+                    Margin="0,0,16,0"
+                    Effect="{StaticResource StandardShadow}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,18">
+                        <Border Width="48" Height="48" CornerRadius="14"
+                                Background="{DynamicResource SecondaryColorBrush}"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="&#xE7BF;" FontFamily="Segoe MDL2 Assets" FontSize="22"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding TotalProducts}" FontSize="38" FontWeight="Bold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Productos en catálogo" FontSize="14"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card: Clientes -->
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
+                    Margin="8,0,8,0"
+                    Effect="{StaticResource StandardShadow}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,18">
+                        <Border Width="48" Height="48" CornerRadius="14"
+                                Background="{DynamicResource PrimaryBrush}"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="22"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding TotalClients}" FontSize="38" FontWeight="Bold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Clientes registrados" FontSize="14"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card: Órdenes -->
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
+                    Margin="16,0,0,0"
+                    Effect="{StaticResource StandardShadow}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,18">
+                        <Border Width="48" Height="48" CornerRadius="14"
+                                Background="#27AE60"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="22"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding TotalOrders}" FontSize="38" FontWeight="Bold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Presupuestos generados" FontSize="14"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- QUICK ACTIONS -->
+        <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="32,28"
+                Effect="{StaticResource StandardShadow}" VerticalAlignment="Top">
+            <StackPanel>
+                <TextBlock Text="Acciones Rápidas" FontSize="18" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,20"/>
+
+                <WrapPanel>
+                    <!-- New Budget -->
+                    <Button Style="{StaticResource DarkPillButton}" Height="52" Padding="24,0"
+                            Margin="0,0,12,12"
+                            Command="{Binding NewBudgetCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBlock Text="Nuevo Presupuesto" FontSize="14" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Refresh -->
+                    <Button Height="52" Padding="24,0" Margin="0,0,12,12"
+                            Background="{DynamicResource SurfaceAltBrush}"
+                            Foreground="{DynamicResource TextBrush}"
+                            BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                            Cursor="Hand"
+                            Command="{Binding RefreshCommand}">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="20" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBlock Text="Actualizar Métricas" FontSize="14" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

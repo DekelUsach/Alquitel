@@ -104,6 +104,11 @@ namespace Alquitel.Core.Entities
         
         public string? CantRackEnergia { get; set; }
 
+        // Additional fields from expanded Product model
+        public string? Accessories { get; set; }        // e.g. "Escalador/controlador de leds"
+        public string? ModuleDimensions { get; set; }   // e.g. "500 mm x 500 mm x 100 mm"
+        public string? IncludesNote { get; set; }       // e.g. "Incluye estructura para montaje de piso tipo layher"
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

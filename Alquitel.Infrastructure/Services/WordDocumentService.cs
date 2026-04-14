@@ -73,28 +73,55 @@ namespace Alquitel.Infrastructure.Services
                     if (mainItem != null)
                     {
                         ReplaceText(doc, "{{PIXEL_PITCH_TITLE}}", mainItem.PixelPitchTitle ?? "");
+                        ReplaceText(doc, "Pantalla de Leds 2 mm", mainItem.PixelPitchTitle ?? "");
+
                         ReplaceText(doc, "{{USO}}", mainItem.Uso ?? "");
+                        ReplaceText(doc, "Para interior", mainItem.Uso ?? "");
+                        ReplaceText(doc, "Para exterior", mainItem.Uso ?? "");
+
                         ReplaceText(doc, "{{FACTOR_FORMA}}", mainItem.FactorForma ?? "");
+                        ReplaceText(doc, "Vertical", mainItem.FactorForma ?? "");
+
                         ReplaceText(doc, "{{FORMA}}", mainItem.Forma ?? "");
+                        ReplaceText(doc, "FLEX", mainItem.Forma ?? "");
+
                         ReplaceText(doc, "{{PIXEL_PITCH_MODULE}}", mainItem.PixelPitchModule ?? "");
+                        ReplaceText(doc, "Píxeles de 2.6 mm", mainItem.PixelPitchModule ?? "");
+                        ReplaceText(doc, "Píxeles de 2.6^smm", mainItem.PixelPitchModule ?? ""); // For non-breaking space
                         
                         ReplaceText(doc, "{{PESO_POR_M2}}", mainItem.PesoPorM2 ?? "");
+                        ReplaceText(doc, "44 kg x m2", mainItem.PesoPorM2 ?? "");
+                        
                         ReplaceText(doc, "{{CONSUMO_POR_M2}}", mainItem.ConsumoPorM2 ?? "");
+                        ReplaceText(doc, "4 amperes x m2", mainItem.ConsumoPorM2 ?? "");
                         
                         ReplaceText(doc, "{{RESOLUCION_POR_M2_X}}", mainItem.ResolucionPorM2X ?? "");
                         ReplaceText(doc, "{{RESOLUCION_POR_M2_Y}}", mainItem.ResolucionPorM2Y ?? "");
+                        ReplaceText(doc, "384 x 384 pixeles x m2", $"{mainItem.ResolucionPorM2X} x {mainItem.ResolucionPorM2Y} pixeles x m2");
                         
                         ReplaceText(doc, "{{DIMENSION_1}}", mainItem.Dimension1 ?? "");
                         ReplaceText(doc, "{{DIMENSION_1_TYPE}}", mainItem.Dimension1Type ?? "");
                         ReplaceText(doc, "{{DIMENSION_2}}", mainItem.Dimension2 ?? "");
                         ReplaceText(doc, "{{DIMENSION_2_TYPE}}", mainItem.Dimension2Type ?? "");
+                        ReplaceText(doc, "8 x 3", $"{mainItem.Dimension1} x {mainItem.Dimension2}");
                         
                         ReplaceText(doc, "{{CANT_RACK_ENERGIA}}", mainItem.CantRackEnergia ?? "");
+                        ReplaceText(doc, "1 rack de energía con disyuntor y térmica", mainItem.CantRackEnergia ?? "");
+                        
+                        ReplaceText(doc, "{{ACCESORIOS}}", mainItem.Accessories ?? "");
+                        ReplaceText(doc, "Escalador/ controlador de leds", mainItem.Accessories ?? "");
+
+                        ReplaceText(doc, "{{MODULO_DIMENSIONES}}", mainItem.ModuleDimensions ?? "");
+                        ReplaceText(doc, "Módulos de 500 mm x 500 mm x 100 mm", mainItem.ModuleDimensions ?? "");
+
+                        ReplaceText(doc, "{{INCLUYE}}", mainItem.IncludesNote ?? "");
+                        ReplaceText(doc, "Incluye estructura para montaje de piso tipo layher", mainItem.IncludesNote ?? "");
                         
                         ReplaceText(doc, "{{CANTIDAD}}", mainItem.Quantity.ToString());
                         ReplaceText(doc, "{{DIAS}}", mainItem.Dias.ToString());
                         ReplaceText(doc, "{{COSTO_UNITARIO}}", mainItem.UnitPrice.ToString("C"));
                         ReplaceText(doc, "{{TOTAL}}", mainItem.Total.ToString("C"));
+                        ReplaceText(doc, "8.800.000", mainItem.Total.ToString("N0"));
                     }
 
                     // Bookmark-based replacement (fallback for templates using Word Bookmarks)

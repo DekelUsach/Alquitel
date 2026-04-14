@@ -12,7 +12,7 @@ namespace Alquitel.UI.Converters
     {
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            if (values.Length < 2 || values[0] is not Product product || values[1] is not MainViewModel vm)
+            if (values.Length < 2 || values[0] is not Product product || values[1] is not BudgetBuilderViewModel vm)
             {
                 return "+ Agregar al Pedido";
             }
@@ -36,7 +36,7 @@ namespace Alquitel.UI.Converters
             Brush addedBrush = Application.Current.TryFindResource("SecondaryColorBrush") as Brush
                 ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0D84E7"));
 
-            if (values.Length < 2 || values[0] is not Product product || values[1] is not MainViewModel vm)
+            if (values.Length < 2 || values[0] is not Product product || values[1] is not BudgetBuilderViewModel vm)
                 return defaultBrush;
 
             int quantity = vm.GetSelectedQuantity(product.Id);
@@ -51,7 +51,7 @@ namespace Alquitel.UI.Converters
     {
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            if (values.Length < 4 || values[0] is not Product product || values[1] is not MainViewModel vm || values[2] is not bool isMouseOver)
+            if (values.Length < 4 || values[0] is not Product product || values[1] is not BudgetBuilderViewModel vm || values[2] is not bool isMouseOver)
             {
                 return Visibility.Collapsed;
             }

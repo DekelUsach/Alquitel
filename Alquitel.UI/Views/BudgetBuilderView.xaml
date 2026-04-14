@@ -1,0 +1,458 @@
+<UserControl x:Class="Alquitel.UI.Views.BudgetBuilderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Alquitel.UI.Converters"
+             xmlns:helpers="clr-namespace:Alquitel.UI.Helpers">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <conv:ProductButtonTextConverter x:Key="ProductButtonTextConverter"/>
+        <conv:ProductButtonBackgroundConverter x:Key="ProductButtonBackgroundConverter"/>
+        <conv:ProductRemoveButtonVisibilityConverter x:Key="ProductRemoveButtonVisibilityConverter"/>
+        <helpers:BindingProxy x:Key="Proxy" Data="{Binding}"/>
+    </UserControl.Resources>
+
+    <Grid Margin="10,10,30,10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════════════ LEFT: PRODUCT CATALOG ═══════════════ -->
+        <Border Grid.Column="0" Padding="10,0,16,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Section title -->
+                <TextBlock Grid.Row="0" Text="Catálogo" FontSize="22" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" Margin="5,10,0,16"/>
+
+                <!-- Search bar -->
+                <Grid Grid.Row="1" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="44"/>
+                        <ColumnDefinition Width="44"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             VerticalAlignment="Center" Height="44"/>
+                    <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Margin="6,0,0,0" Height="44" Width="44" Padding="0"
+                            ToolTip="Armar pedido desde texto" Command="{Binding ParseSmartSearchCommand}">
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Button>
+                    <Button Grid.Column="2" Style="{StaticResource DarkPillButton}" Margin="6,0,0,0" Height="44" Width="44" Padding="0"
+                            ToolTip="Mostrar/Ocultar input de texto" Command="{Binding ToggleSmartSearchInputCommand}">
+                        <TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Button>
+                </Grid>
+
+                <!-- Smart search panel -->
+                <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="16" Padding="12" Margin="0,0,0,12"
+                        Visibility="{Binding IsSmartSearchVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                        Effect="{StaticResource StandardShadow}">
+                    <StackPanel>
+                        <TextBlock Text="Pegá un párrafo con productos y cantidades. Luego tocá la lupa para armar el pedido automático."
+                                   TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,8"/>
+                        <TextBox Height="80" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 Text="{Binding SmartSearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Product list -->
+                <ListBox Grid.Row="3" ItemsSource="{Binding AvailableProducts}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingStackPanel.IsVirtualizing="True">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter/>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="16" Padding="14" Margin="2,4,2,8"
+                                    BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                    Effect="{StaticResource StandardShadow}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Description}"
+                                               FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,8,2"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Category}"
+                                               FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,2"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Grid.RowSpan="2"
+                                               Text="{Binding BasePrice, StringFormat='{}{0:C}'}"
+                                               FontSize="15" Foreground="{DynamicResource SecondaryColorBrush}" FontWeight="Bold"
+                                               VerticalAlignment="Center" HorizontalAlignment="Right"/>
+
+                                    <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Button Grid.Column="0" Style="{StaticResource DarkPillButton}" Height="36" Margin="0"
+                                                Command="{Binding DataContext.AddProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Content>
+                                                <MultiBinding Converter="{StaticResource ProductButtonTextConverter}">
+                                                    <Binding/>
+                                                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                </MultiBinding>
+                                            </Button.Content>
+                                            <Button.Background>
+                                                <MultiBinding Converter="{StaticResource ProductButtonBackgroundConverter}">
+                                                    <Binding/>
+                                                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                </MultiBinding>
+                                            </Button.Background>
+                                        </Button>
+
+                                        <Button Grid.Column="1" Content="-" Width="36" Height="36" Margin="6,0,0,0"
+                                                Foreground="White" Background="#D46A6A" BorderThickness="0"
+                                                FontSize="16" FontWeight="Bold" Cursor="Hand"
+                                                Command="{Binding DataContext.RemoveProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Visibility>
+                                                <MultiBinding Converter="{StaticResource ProductRemoveButtonVisibilityConverter}">
+                                                    <Binding/>
+                                                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    <Binding Path="IsMouseOver" RelativeSource="{RelativeSource AncestorType=Border}"/>
+                                                    <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                </MultiBinding>
+                                            </Button.Visibility>
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}" CornerRadius="18">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════════ RIGHT: ORDER EDITOR ═══════════════ -->
+        <Border Grid.Column="1" Padding="20,10,10,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- HEADER FIELDS -->
+                <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="24,20"
+                        Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Row 1: Client + Budget Number -->
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*"/>
+                                <ColumnDefinition Width="1.5*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                <TextBlock Text="Empresa / Cliente" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <TextBox Height="44" Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Nº Presupuesto" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <TextBox Height="44" Text="{Binding CurrentOrder.BudgetNumber, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Row 2: Date, Days, Location, Admin -->
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.2*"/>
+                                <ColumnDefinition Width="0.7*"/>
+                                <ColumnDefinition Width="1.4*"/>
+                                <ColumnDefinition Width="1.4*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="Fecha del Evento" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <Border Background="{DynamicResource SurfaceAltBrush}" BorderThickness="1"
+                                        BorderBrush="{DynamicResource BorderBrush}" CornerRadius="18" Height="44">
+                                    <DatePicker SelectedDate="{Binding CurrentOrder.EventDate, UpdateSourceTrigger=PropertyChanged}"
+                                                Background="Transparent" BorderThickness="0" Margin="10,0"/>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                <TextBlock Text="Días" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <TextBox Height="44" Text="{Binding EventDays, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                                <TextBlock Text="Lugar del Evento" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <TextBox Height="44" Text="{Binding CurrentOrder.Location.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="Administrador" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontWeight="SemiBold" Margin="4,0,0,6" FontSize="12"/>
+                                <TextBox Height="44" Text="{Binding CurrentOrder.AdminName, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- VIEW TABS -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                    <Button Height="40" Padding="20,0" Margin="0,0,8,0" Cursor="Hand" BorderThickness="0"
+                            Command="{Binding SetCommercialViewCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="20"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTechnicalView}" Value="False">
+                                        <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="PRESUPUESTO COMERCIAL" FontWeight="Bold" FontSize="12"
+                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+
+                    <Button Height="40" Padding="20,0" Cursor="Hand" BorderThickness="0"
+                            Command="{Binding SetTechnicalViewCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="20"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTechnicalView}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="ORDEN DE TRABAJO" FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- DATA TABLE -->
+                <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="24,16"
+                        Effect="{StaticResource StandardShadow}">
+                    <DataGrid ItemsSource="{Binding SelectedItems}" AutoGenerateColumns="False"
+                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              RowDetailsVisibilityMode="Collapsed"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                              RowHeight="56">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description}" Width="3*" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Left"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                        <Setter Property="Margin" Value="4,0,0,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="CANT." Binding="{Binding Quantity}" Width="90">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.EditingElementStyle>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.EditingElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="DÍAS" Binding="{Binding Dias}" Width="80">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.EditingElementStyle>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.EditingElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="130"
+                                                Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="0,0,6,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.EditingElementStyle>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="HorizontalContentAlignment" Value="Right"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.EditingElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="SUBTOTAL" Binding="{Binding Total, Mode=OneWay, StringFormat='{}{0:C}'}" Width="140" IsReadOnly="True"
+                                                Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="Margin" Value="0,0,6,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTemplateColumn Header="" Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Borrar" Style="{StaticResource DarkPillButton}" Height="32" Width="80"
+                                                Padding="6,2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Background="#D46A6A"
+                                                Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+
+                <!-- FOOTER: Total + Generate Buttons -->
+                <Grid Grid.Row="3" Margin="0,16,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Total -->
+                    <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" CornerRadius="16" Padding="20,14"
+                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,12"
+                            Visibility="{Binding CommercialColumnsVisibility}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="PRESUPUESTO FINAL:" FontWeight="Bold" FontSize="15"
+                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding FinalBudget, Mode=OneWay, StringFormat={}{0:C2}, FallbackValue=$0.00, TargetNullValue=$0.00}"
+                                       FontWeight="Black" FontSize="24" Margin="14,0,0,0"
+                                       Foreground="{DynamicResource SecondaryColorBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Action Buttons -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Height="48" Style="{StaticResource DarkPillButton}" Padding="20,0"
+                                Command="{Binding GenerateBudgetCommand}"
+                                Visibility="{Binding CommercialColumnsVisibility}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR PRESUPUESTO" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="48" Style="{StaticResource DarkPillButton}" Padding="20,0" Margin="10,0"
+                                Command="{Binding GenerateOFCommand}"
+                                Visibility="{Binding CommercialColumnsVisibility}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR O. FACTURACIÓN" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="48" Style="{StaticResource DarkPillButton}" Padding="20,0"
+                                Command="{Binding GenerateOTCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE9F5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR O. TRABAJO" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,304 @@
+<UserControl x:Class="Alquitel.UI.Views.ProductEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid Margin="30,20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════════ LEFT: PRODUCT LIST ═══════════ -->
+        <Border Grid.Column="0" Padding="0,0,16,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Productos" FontSize="28" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" Margin="4,8,0,16"/>
+
+                <Button Grid.Row="1" Style="{StaticResource DarkPillButton}" Height="44" Margin="0,0,0,12"
+                        HorizontalAlignment="Stretch"
+                        Command="{Binding NewProductCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Nuevo Producto" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <ListBox Grid.Row="2" ItemsSource="{Binding Products}"
+                         SelectedItem="{Binding SelectedProduct, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0,0,0,4"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="itemBorder" Background="Transparent"
+                                                CornerRadius="12" Padding="14,10">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background"
+                                                        Value="{DynamicResource HoverBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background"
+                                                        Value="{DynamicResource SelectionBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Description}" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding Category}" FontSize="11"
+                                               Foreground="{DynamicResource MutedTextBrush}"/>
+                                    <TextBlock Text=" · " Foreground="{DynamicResource MutedTextBrush}" FontSize="11"/>
+                                    <TextBlock Text="{Binding BasePrice, StringFormat='{}{0:C}'}" FontSize="11"
+                                               Foreground="{DynamicResource SecondaryColorBrush}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ RIGHT: EDITOR FORM ═══════════ -->
+        <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,0,0,0">
+                <StackPanel Margin="10,8,10,20">
+
+                    <TextBlock Text="Editar Producto" FontSize="22" FontWeight="Bold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,8,0,20"/>
+
+                    <!-- ── Información General ── -->
+                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
+                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="INFORMACIÓN GENERAL" FontSize="11" FontWeight="Bold"
+                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock Text="Descripción" FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                                               FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                    <TextBlock Text="Categoría" FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                                               FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditCategory, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Precio Base" FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                                               FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditBasePrice, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Especificaciones LED ── -->
+                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
+                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="ESPECIFICACIONES LED (para presupuesto)" FontSize="11" FontWeight="Bold"
+                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
+
+                            <!-- Row 1: PixelPitchTitle + Uso + Forma + FactorForma -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock Text="Título Pixel Pitch" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditPixelPitchTitle, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                    <TextBlock Text="Uso" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultUso, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                                    <TextBlock Text="Forma" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultForma, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="3">
+                                    <TextBlock Text="Factor Forma" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultFactorForma, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Row 2: PixelPitchModule + ModuleDimensions -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock Text="Pixel Pitch Módulo" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultPixelPitchModule, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Dimensiones Módulo (ej: 500 mm x 500 mm x 100 mm)" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditModuleDimensions, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Row 3: Peso + Consumo -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock Text="Peso aprox. (ej: 44 kg x m2)" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultPesoPorM2, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Consumo aprox. (ej: 4 Amperes x m2)" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultConsumoPorM2, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Row 4: Resolución X + Y -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock Text="Resolución X (ej: 384)" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultResolucionX, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Resolución Y (ej: 384)" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                    <TextBox Height="42" Text="{Binding EditDefaultResolucionY, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Row 5: Accessories -->
+                            <StackPanel Margin="0,0,0,12">
+                                <TextBlock Text="Accesorios (ej: Escalador/controlador de leds)" FontSize="12"
+                                           Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                <TextBox Height="42" Text="{Binding EditAccessories, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <!-- Row 6: Includes Note -->
+                            <StackPanel>
+                                <TextBlock Text="Incluye (ej: Incluye estructura para montaje de piso tipo layher)" FontSize="12"
+                                           Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                                <TextBox Height="42" Text="{Binding EditIncludesNote, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Action Buttons ── -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button Height="44" Padding="20,0" Margin="0,0,8,0"
+                                Background="{DynamicResource SurfaceAltBrush}"
+                                Foreground="{DynamicResource TextBrush}"
+                                BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                Cursor="Hand"
+                                Command="{Binding CancelEditCommand}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="20" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <TextBlock Text="Cancelar" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Button>
+
+                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0" Margin="0,0,8,0"
+                                Background="#D46A6A"
+                                Command="{Binding DeleteProductCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="Eliminar" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0"
+                                Command="{Binding SaveProductCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="Guardar Producto" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Status -->
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" Margin="0,12,0,0"
+                               HorizontalAlignment="Right"
+                               Foreground="{DynamicResource SecondaryColorBrush}"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Empty state when not editing -->
+        <Border Grid.Column="1"
+                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}, ConverterParameter=inverse}"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- Only show when IsEditing is false — WPF BoolToVis doesn't support inverse natively,
+                 so we layer this behind the editor which covers it when visible -->
+        </Border>
+    </Grid>
+</UserControl>

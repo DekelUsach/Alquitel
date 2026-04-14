@@ -1,0 +1,65 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure.Persistence;
+using System;
+using System.Linq;
+
+namespace Alquitel.UI.ViewModels
+{
+    public partial class DashboardViewModel : ObservableObject
+    {
+        private readonly AlquitelDbContext _dbContext;
+        private readonly Action _navigateToBuilder;
+
+        [ObservableProperty]
+        private int _totalProducts;
+
+        [ObservableProperty]
+        private int _totalClients;
+
+        [ObservableProperty]
+        private int _totalOrders;
+
+        [ObservableProperty]
+        private string _welcomeMessage = string.Empty;
+
+        public DashboardViewModel(AlquitelDbContext dbContext, Action navigateToBuilder)
+        {
+            _dbContext = dbContext;
+            _navigateToBuilder = navigateToBuilder;
+            LoadMetrics();
+        }
+
+        private void LoadMetrics()
+        {
+            try
+            {
+                TotalProducts = _dbContext.Products.Count();
+                TotalClients = _dbContext.Clients.Count();
+                TotalOrders = _dbContext.Orders.Count();
+
+                var hour = DateTime.Now.Hour;
+                WelcomeMessage = hour switch
+                {
+                    < 12 => "Buenos días",
+                    < 18 => "Buenas tardes",
+                    _ => "Buenas noches"
+                };
+            }
+            catch
+            {
+                // Silently fallback if DB has issues
+                TotalProducts = 0;
+                TotalClients = 0;
+                TotalOrders = 0;
+                WelcomeMessage = "Bienvenido";
+            }
+        }
+
+        [RelayCommand]
+        private void NewBudget() => _navigateToBuilder();
+
+        [RelayCommand]
+        private void Refresh() => LoadMetrics();
+    }
+}

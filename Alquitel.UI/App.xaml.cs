@@ -21,7 +21,7 @@ namespace Alquitel.UI
 
                 ServiceProvider = serviceCollection.BuildServiceProvider();
 
-                // Initialize DB - This could be the failure point
+                // Initialize DB
                 var initService = ServiceProvider.GetRequiredService<DataInitializationService>();
                 initService.Initialize();
 
@@ -32,8 +32,8 @@ namespace Alquitel.UI
             }
             catch (Exception ex)
             {
-                // Mostraremos el error real en Windows para debuggear
-                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}\n\nDetalles:\n{ex.StackTrace}", "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}\n\nDetalles:\n{ex.StackTrace}",
+                    "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
         }
