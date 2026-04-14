@@ -234,9 +234,60 @@
 
                         <StackPanel Grid.Column="0" Margin="0,0,20,0">
                             <TextBlock Text="Fecha del Evento" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
-                            <Border Background="{StaticResource SurfaceBrush}" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" CornerRadius="18" Effect="{StaticResource StandardShadow}" Height="45">
-                                <DatePicker SelectedDate="{Binding CurrentOrder.EventDate, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Margin="10,0"/>
-                            </Border>
+                            <Grid>
+                                <Border Background="{StaticResource SurfaceBrush}" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" CornerRadius="18" Effect="{StaticResource StandardShadow}" Height="45">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="44"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Margin="16,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="14"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Text="{Binding CurrentOrder.EventDate, StringFormat={}{0:dd/MM/yyyy}, TargetNullValue=Seleccionar fecha}"/>
+
+                                        <ToggleButton Grid.Column="1"
+                                                      IsChecked="{Binding IsEventCalendarOpen, Mode=TwoWay}"
+                                                      Background="Transparent"
+                                                      BorderThickness="0"
+                                                      Cursor="Hand"
+                                                      FontFamily="Segoe MDL2 Assets"
+                                                      FontSize="16"
+                                                      Foreground="{StaticResource SecondaryColorBrush}"
+                                                      Content="&#xE787;"/>
+                                    </Grid>
+                                </Border>
+
+                                <Popup IsOpen="{Binding IsEventCalendarOpen}"
+                                       Placement="Bottom"
+                                       StaysOpen="False"
+                                       AllowsTransparency="True"
+                                       VerticalOffset="8">
+                                    <Border Background="{StaticResource SurfaceBrush}"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="14"
+                                            Padding="14"
+                                            Width="370"
+                                            Effect="{StaticResource StandardShadow}">
+                                        <StackPanel>
+                                            <TextBlock Text="Seleccionar fecha" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextBrush}" Margin="0,0,0,10"/>
+
+                                            <Calendar SelectedDate="{Binding CurrentOrder.EventDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      DisplayDateStart="{x:Static sys:DateTime.MinValue}"
+                                                      DisplayDateEnd="{x:Static sys:DateTime.MaxValue}"/>
+
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                                                <Button Content="Hoy" Style="{StaticResource DarkPillButton}" Width="78" Height="34" Padding="10,4" Margin="0" Command="{Binding SetTodayEventDateCommand}"/>
+                                                <Button Content="Cerrar" Style="{StaticResource DarkPillButton}" Width="88" Height="34" Padding="10,4" Margin="8,0,0,0" Background="#6B7280" Command="{Binding CloseEventCalendarCommand}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Popup>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Margin="0,0,20,0">

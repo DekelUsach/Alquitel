@@ -46,6 +46,9 @@ namespace Alquitel.UI.ViewModels
         private int _eventDays = 1;
 
         [ObservableProperty]
+        private bool _isEventCalendarOpen;
+
+        [ObservableProperty]
         private Order _currentOrder = new Order { Client = new Client(), Location = new Location() };
 
         [ObservableProperty]
@@ -376,6 +379,20 @@ namespace Alquitel.UI.ViewModels
             SelectedItems.Remove(existingItem);
             CurrentOrder.Items.Remove(existingItem);
             Log($"Producto eliminado del pedido: {product.Description}");
+        }
+
+        [RelayCommand]
+        private void SetTodayEventDate()
+        {
+            CurrentOrder.EventDate = DateTime.Today;
+            IsEventCalendarOpen = false;
+            OnPropertyChanged(nameof(CurrentOrder));
+        }
+
+        [RelayCommand]
+        private void CloseEventCalendar()
+        {
+            IsEventCalendarOpen = false;
         }
 
         [RelayCommand]
