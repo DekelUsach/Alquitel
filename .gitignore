@@ -58,4 +58,4 @@ package-lock.json
 youtube-screenshot.png
 
 # Configuración de usuario (paths locales, no committear)
-settings.json
+/settings.json

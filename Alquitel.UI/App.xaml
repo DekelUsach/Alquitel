@@ -14,7 +14,7 @@
 
             <!-- Botón Pill oscuro con hover/pressed -->
             <Style x:Key="DarkPillButton" TargetType="Button">
-                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
                 <Setter Property="Foreground" Value="White"/>
                 <Setter Property="Padding" Value="15,10"/>
                 <Setter Property="Margin" Value="5"/>
@@ -51,11 +51,11 @@
             <Style TargetType="TextBox">
                 <Setter Property="Padding" Value="15,10"/>
                 <Setter Property="FontSize" Value="14"/>
-                <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TextBox">
@@ -70,7 +70,7 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsFocused" Value="True">
                                     <Setter TargetName="border" Property="BorderBrush"
-                                            Value="{StaticResource SecondaryColorBrush}"/>
+                                            Value="{DynamicResource SecondaryColorBrush}"/>
                                     <Setter TargetName="border" Property="BorderThickness" Value="1.5"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -83,10 +83,10 @@
             <Style TargetType="DatePicker">
                 <Setter Property="Margin" Value="0"/>
                 <Setter Property="Height" Value="42"/>
-                <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             </Style>
 
             <!-- DataGrid base -->
@@ -97,35 +97,35 @@
                 <Setter Property="RowBackground" Value="Transparent"/>
                 <Setter Property="AlternatingRowBackground" Value="Transparent"/>
                 <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-                <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderBrush}"/>
                 <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
                 <Setter Property="HeadersVisibility" Value="Column"/>
                 <Setter Property="RowHeight" Value="50"/>
                 <Setter Property="FontSize" Value="14"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Setter Property="SelectionMode" Value="Single"/>
             </Style>
 
             <!-- DataGridColumnHeader -->
             <Style TargetType="DataGridColumnHeader">
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Setter Property="FontWeight" Value="Bold"/>
                 <Setter Property="Padding" Value="10,15"/>
                 <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             </Style>
 
             <!-- DataGridRow con hover y selección temáticos -->
             <Style TargetType="DataGridRow">
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="{StaticResource DataRowHoverBrush}"/>
+                        <Setter Property="Background" Value="{DynamicResource DataRowHoverBrush}"/>
                     </Trigger>
                     <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="{StaticResource SelectionBrush}"/>
+                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -134,12 +134,12 @@
             <Style TargetType="DataGridCell">
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Style.Triggers>
                     <Trigger Property="IsSelected" Value="True">
                         <Setter Property="Background" Value="Transparent"/>
                         <Setter Property="BorderThickness" Value="0"/>
-                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>

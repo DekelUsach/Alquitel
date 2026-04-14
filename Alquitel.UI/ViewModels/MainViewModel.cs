@@ -137,14 +137,12 @@ namespace Alquitel.UI.ViewModels
         private void SetCommercialView()
         {
             IsTechnicalView = false;
-            OnPropertyChanged(nameof(CommercialColumnsVisibility));
         }
 
         [RelayCommand]
         private void SetTechnicalView()
         {
             IsTechnicalView = true;
-            OnPropertyChanged(nameof(CommercialColumnsVisibility));
         }
 
         [RelayCommand]

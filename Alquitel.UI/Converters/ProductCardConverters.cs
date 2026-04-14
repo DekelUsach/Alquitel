@@ -51,7 +51,7 @@ namespace Alquitel.UI.Converters
     {
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            if (values.Length < 3 || values[0] is not Product product || values[1] is not MainViewModel vm || values[2] is not bool isMouseOver)
+            if (values.Length < 4 || values[0] is not Product product || values[1] is not MainViewModel vm || values[2] is not bool isMouseOver)
             {
                 return Visibility.Collapsed;
             }
