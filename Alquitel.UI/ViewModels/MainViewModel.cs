@@ -58,6 +58,12 @@ namespace Alquitel.UI.ViewModels
         private bool _isSettingsVisible;
 
         [ObservableProperty]
+        private bool _isDarkMode;
+
+        [ObservableProperty]
+        private bool _isTechnicalView;
+
+        [ObservableProperty]
         private string _presupuestosFolder = @"C:\Alquitel\1_PRESUPUESTOS";
 
         [ObservableProperty]
@@ -78,6 +84,8 @@ namespace Alquitel.UI.ViewModels
         public ObservableCollection<Product> AvailableProducts { get; } = new();
         public ObservableCollection<OrderItem> SelectedItems { get; } = new();
         public decimal FinalBudget => SelectedItems.Sum(i => i.Total);
+        public Visibility CommercialColumnsVisibility =>
+            IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
         public MainViewModel(AlquitelDbContext dbContext, IDocumentService documentService)
         {
@@ -97,10 +105,47 @@ namespace Alquitel.UI.ViewModels
             _productsView.Filter = FilterProduct;
 
             SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+            ApplyTheme(IsDarkMode);
         }
 
         [RelayCommand]
         private void ToggleSettings() => IsSettingsVisible = !IsSettingsVisible;
+
+        [RelayCommand]
+        private void ToggleTheme()
+        {
+            IsDarkMode = !IsDarkMode;
+            ApplyTheme(IsDarkMode);
+            SaveSettings();
+        }
+
+        private void ApplyTheme(bool isDark)
+        {
+            var themeFile = isDark ? "DarkTheme.xaml" : "LightTheme.xaml";
+            var uri = new Uri($"pack://application:,,,/Themes/{themeFile}");
+            var mergedDicts = Application.Current.Resources.MergedDictionaries;
+
+            var toRemove = mergedDicts
+                .Where(d => d.Source?.OriginalString.Contains("Theme.xaml") == true)
+                .ToList();
+            foreach (var d in toRemove) mergedDicts.Remove(d);
+
+            mergedDicts.Add(new ResourceDictionary { Source = uri });
+        }
+
+        [RelayCommand]
+        private void SetCommercialView()
+        {
+            IsTechnicalView = false;
+            OnPropertyChanged(nameof(CommercialColumnsVisibility));
+        }
+
+        [RelayCommand]
+        private void SetTechnicalView()
+        {
+            IsTechnicalView = true;
+            OnPropertyChanged(nameof(CommercialColumnsVisibility));
+        }
 
         [RelayCommand]
         private void BrowsePresupuestosFolder() => BrowseFolder(path => PresupuestosFolder = path);
@@ -133,6 +178,7 @@ namespace Alquitel.UI.ViewModels
                     ["OfTemplate"] = OfTemplate,
                     ["OtFolder"] = OtFolder,
                     ["OtTemplate"] = OtTemplate,
+                    ["IsDarkMode"] = IsDarkMode.ToString(),
                 };
                 var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(SettingsFilePath, json);
@@ -161,6 +207,9 @@ namespace Alquitel.UI.ViewModels
                 if (settings.TryGetValue("OfTemplate", out var ot2)) OfTemplate = ot2;
                 if (settings.TryGetValue("OtFolder", out var otf)) OtFolder = otf;
                 if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
+
+                if (settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
+                    IsDarkMode = isDark;
 
                 Log("Configuración de rutas cargada desde settings.json.");
             }
@@ -745,6 +794,11 @@ namespace Alquitel.UI.ViewModels
             }
 
             return sb.ToString().Normalize(NormalizationForm.FormC);
+        }
+
+        partial void OnIsTechnicalViewChanged(bool value)
+        {
+            OnPropertyChanged(nameof(CommercialColumnsVisibility));
         }
 
         private sealed record SmartMatchResult(Product Product, int Quantity, double Score);
