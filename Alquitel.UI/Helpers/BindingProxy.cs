@@ -17,6 +17,6 @@ namespace Alquitel.UI.Helpers
 
         public static readonly DependencyProperty DataProperty =
             DependencyProperty.Register(nameof(Data), typeof(object), typeof(BindingProxy),
-                new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
+                new FrameworkPropertyMetadata(null));
     }
 }

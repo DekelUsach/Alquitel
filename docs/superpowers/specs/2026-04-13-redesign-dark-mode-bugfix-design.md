@@ -131,7 +131,11 @@ Las tabs "PRESUPUESTO COMERCIAL" y "ORDEN DE TRABAJO" pasan a ser interactivas:
 
 En `MainWindow.xaml`, reemplazar los `Border` estáticos de tabs por dos `Button` con estilos condicionales usando `DataTrigger` bindeando a `IsTechnicalView`.
 
-Las columnas del DataGrid que dependen del modo se controlan con `Visibility` bindeada a `IsTechnicalView` mediante el converter `BooleanToVisibilityConverter` existente (con inversión para la vista técnica).
+Las columnas del DataGrid que dependen del modo se controlan así:
+- Agregar `InverseBooleanToVisibilityConverter` en `Alquitel.UI/Converters/` (WPF no lo incluye por defecto): devuelve `Collapsed` cuando el bool es `true` y `Visible` cuando es `false`.
+- Registrarlo en `Window.Resources` como `x:Key="InverseBoolToVisibilityConverter"`.
+- Las columnas "PRECIO UNIT." y "SUBTOTAL" usan `InverseBoolToVisibilityConverter` bindeando a `DataContext.IsTechnicalView`.
+- El panel "PRESUPUESTO FINAL" y los botones comerciales usan el mismo converter.
 
 ---
 

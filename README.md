@@ -16,10 +16,11 @@ Sistema de gestión interna para **Alquitel**, diseñado para la administración
 
 ---
 
-## 🚀 Requisitos de Ejecución
+## 🚀 Requisitos de Ejecución e Instalación
 1. **.NET 8 SDK** instalado.
-2. **Microsoft Word** instalado localmente (requerido para la generación de documentos `.docx`).
-3. **Estructura de Directorios**: Los archivos `template.docx` deben residir en la raíz o carpetas correspondientes dentro de `C:\Alquitel`.
+2. **Microsoft Word** instalado localmente (Versión de escritorio obligatoria; requiere registro del *ProgID* `Word.Application`). El sistema utiliza automatización COM nativa, por lo que licencias de solo lectura o versiones web no son compatibles.
+3. **Estructura de Directorios Crítica**: El sistema tiene rutas absolutas preconfiguradas. **DEBE existir** la carpeta `C:\Alquitel` en el disco local y, dentro de ella, la subcarpeta `1_PRESUPUESTOS`.
+4. **Plantilla Base**: El archivo `template.docx` debe residir exactamente en `C:\Alquitel\1_PRESUPUESTOS\template.docx` para que la generación de presupuestos funcione.
 
 ---
 
@@ -59,6 +60,24 @@ dotnet restore
 # Compilar y Ejecutar
 dotnet run --project Alquitel.UI\Alquitel.UI.csproj
 ```
+
+---
+
+## 📄 Funcionamiento del Sistema de Documentos
+
+El motor de generación de Alquitel automatiza la creación de archivos `.docx` inyectando datos directamente desde la interfaz de usuario en tus plantillas de Word.
+
+### ¿Cómo funciona la inyección de datos?
+A diferencia de otros sistemas que manipulan el archivo XML, Alquitel abre una instancia invisible de Word y realiza una búsqueda y reemplazo inteligente. Soporta tres métodos simultáneos:
+1.  **Etiquetas Literales**: Busca textos como `[CLIENTE]`, `{{CUIT}}`, `[NUMERO]`, `[LUGAR]` o `(fecha)`.
+2.  **Marcadores (Bookmarks)**: Si tu plantilla tiene marcadores de Word (e.g., `BK_CLIENT_NAME`), el sistema escribirá directamente sobre ellos.
+3.  **Tablas Dinámicas**: Si existe un marcador llamado `BK_EQUIPMENT_TABLE`, el sistema generará automáticamente una tabla con todos los productos seleccionados, cantidades y subtotales.
+
+### ¿Por qué a un colega podría no funcionarle?
+Si a ti te funciona pero a otra persona no, revisen estos tres puntos en su PC:
+*   **Falta la carpeta o la plantilla**: El programa busca la plantilla en `C:\Alquitel\1_PRESUPUESTOS\template.docx`. Si el colega no creó esa carpeta manualmente o no puso el archivo allí con ese nombre exacto, el sistema fallará.
+*   **Word no es "Desktop"**: Si tiene una versión de prueba o una versión de Windows Store que no registra correctamente el componente `Word.Application` en el registro de Windows, el código no podrá "llamar" a Word de manera externa.
+*   **Confusión de Etiquetas**: Asegúrate de que las etiquetas en el Word coincidan con lo que el código busca (`[...]`, `{{...}}`). Puedes usar la herramienta `ReadTemplate` para listar qué etiquetas están en el archivo.
 
 ---
 
