@@ -15,6 +15,7 @@ using System.Text.RegularExpressions;
 using System.Globalization;
 using System.Text;
 using System.Collections.Specialized;
+using System.Text.Json;
 
 namespace Alquitel.UI.ViewModels
 {
@@ -23,6 +24,8 @@ namespace Alquitel.UI.ViewModels
         private readonly AlquitelDbContext _dbContext;
         private readonly IDocumentService _documentService;
         private readonly ICollectionView _productsView;
+
+        private static readonly string SettingsFilePath = Path.Combine(@"C:\Alquitel", "settings.json");
 
         [ObservableProperty]
         private string _debugLog = "Iniciando sistema Alquitel...";
@@ -51,6 +54,27 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private int _selectionVersion;
 
+        [ObservableProperty]
+        private bool _isSettingsVisible;
+
+        [ObservableProperty]
+        private string _presupuestosFolder = @"C:\Alquitel\1_PRESUPUESTOS";
+
+        [ObservableProperty]
+        private string _presupuestosTemplate = @"C:\Alquitel\1_PRESUPUESTOS\template.docx";
+
+        [ObservableProperty]
+        private string _ofFolder = @"C:\Alquitel\2_OF";
+
+        [ObservableProperty]
+        private string _ofTemplate = @"C:\Alquitel\OF  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
+
+        [ObservableProperty]
+        private string _otFolder = @"C:\Alquitel\3_OT";
+
+        [ObservableProperty]
+        private string _otTemplate = @"C:\Alquitel\OT  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
+
         public ObservableCollection<Product> AvailableProducts { get; } = new();
         public ObservableCollection<OrderItem> SelectedItems { get; } = new();
         public decimal FinalBudget => SelectedItems.Sum(i => i.Total);
@@ -59,6 +83,8 @@ namespace Alquitel.UI.ViewModels
         {
             _dbContext = dbContext;
             _documentService = documentService;
+
+            LoadSettings();
 
             // Cargar productos existentes
             try {
@@ -71,6 +97,95 @@ namespace Alquitel.UI.ViewModels
             _productsView.Filter = FilterProduct;
 
             SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+        }
+
+        [RelayCommand]
+        private void ToggleSettings() => IsSettingsVisible = !IsSettingsVisible;
+
+        [RelayCommand]
+        private void BrowsePresupuestosFolder() => BrowseFolder(path => PresupuestosFolder = path);
+
+        [RelayCommand]
+        private void BrowsePresupuestosTemplate() => BrowseFile(path => PresupuestosTemplate = path);
+
+        [RelayCommand]
+        private void BrowseOfFolder() => BrowseFolder(path => OfFolder = path);
+
+        [RelayCommand]
+        private void BrowseOfTemplate() => BrowseFile(path => OfTemplate = path);
+
+        [RelayCommand]
+        private void BrowseOtFolder() => BrowseFolder(path => OtFolder = path);
+
+        [RelayCommand]
+        private void BrowseOtTemplate() => BrowseFile(path => OtTemplate = path);
+
+        [RelayCommand]
+        private void SaveSettings()
+        {
+            try
+            {
+                var settings = new Dictionary<string, string>
+                {
+                    ["PresupuestosFolder"] = PresupuestosFolder,
+                    ["PresupuestosTemplate"] = PresupuestosTemplate,
+                    ["OfFolder"] = OfFolder,
+                    ["OfTemplate"] = OfTemplate,
+                    ["OtFolder"] = OtFolder,
+                    ["OtTemplate"] = OtTemplate,
+                };
+                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(SettingsFilePath, json);
+                Log("Configuración de rutas guardada correctamente.");
+                MessageBox.Show("Rutas guardadas correctamente.", "Configuración", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Log("Error guardando configuración: " + ex.Message);
+                MessageBox.Show("Error al guardar: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(SettingsFilePath)) return;
+                var json = File.ReadAllText(SettingsFilePath);
+                var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                if (settings == null) return;
+
+                if (settings.TryGetValue("PresupuestosFolder", out var pf)) PresupuestosFolder = pf;
+                if (settings.TryGetValue("PresupuestosTemplate", out var pt)) PresupuestosTemplate = pt;
+                if (settings.TryGetValue("OfFolder", out var of)) OfFolder = of;
+                if (settings.TryGetValue("OfTemplate", out var ot2)) OfTemplate = ot2;
+                if (settings.TryGetValue("OtFolder", out var otf)) OtFolder = otf;
+                if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
+
+                Log("Configuración de rutas cargada desde settings.json.");
+            }
+            catch (Exception ex)
+            {
+                Log("Error cargando configuración: " + ex.Message);
+            }
+        }
+
+        private void BrowseFolder(Action<string> setter)
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Seleccionar carpeta" };
+            if (dialog.ShowDialog() == true)
+                setter(dialog.FolderName);
+        }
+
+        private void BrowseFile(Action<string> setter)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Seleccionar plantilla",
+                Filter = "Documentos Word (*.docx)|*.docx|Todos los archivos (*.*)|*.*"
+            };
+            if (dialog.ShowDialog() == true)
+                setter(dialog.FileName);
         }
 
         private void OnSelectedItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -286,22 +401,22 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task GenerateBudget()
         {
-            await GenerateDocument("1_PRESUPUESTOS", @"1_PRESUPUESTOS\template.docx", false);
+            await GenerateDocument(PresupuestosFolder, PresupuestosTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOF()
         {
-            await GenerateDocument("2_OF", "OF  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx", false);
+            await GenerateDocument(OfFolder, OfTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOT()
         {
-            await GenerateDocument("3_OT", "OT  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx", true);
+            await GenerateDocument(OtFolder, OtTemplate, true);
         }
 
-        private async Task GenerateDocument(string folderName, string templateName, bool isTechnical)
+        private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical)
         {
             try
             {
@@ -312,29 +427,10 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                Log($"Iniciando generación de {folderName}...");
-                
-                string baseDir = @"C:\Alquitel";
-                string targetDir = Path.Combine(baseDir, folderName);
-                string templatePath = Path.Combine(baseDir, templateName);
+                Log($"Iniciando generación...");
                 
                 Log($"Carpeta destino: {targetDir}");
                 Log($"Plantilla origen: {templatePath}");
-
-                // DEBUG: Extract literal placeholder text from actual zip structure for analysis
-                try {
-                    using var zip = System.IO.Compression.ZipFile.OpenRead(templatePath);
-                    var entry = zip.GetEntry("word/document.xml");
-                    using var stream = new StreamReader(entry.Open());
-                    string xml = stream.ReadToEnd();
-                    var matches = System.Text.RegularExpressions.Regex.Matches(xml, @"<w:t[^>]*>(.*?)</w:t>");
-                    var sb = new System.Text.StringBuilder();
-                    foreach (System.Text.RegularExpressions.Match m in matches) sb.Append(m.Groups[1].Value);
-                    File.WriteAllText(@"C:\Alquitel\dump.txt", sb.ToString());
-                    Log("Se exportó el texto de la plantilla a dump.txt para depuración.");
-                } catch (Exception zipEx) {
-                    Log("Error en debug_zip: " + zipEx.Message);
-                }
 
                 if (!Directory.Exists(targetDir))
                 {
