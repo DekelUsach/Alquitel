@@ -45,3 +45,17 @@ bookmarks_encontrados.txt
 3_OT/
 .agents
 AGENTS.md
+
+# Debug outputs generados en runtime
+dump.txt
+
+# Node tooling
+node_modules/
+package.json
+package-lock.json
+
+# Archivos de trabajo locales
+youtube-screenshot.png
+
+# Configuración de usuario (paths locales, no committear)
+settings.json
