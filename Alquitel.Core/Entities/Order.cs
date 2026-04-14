@@ -80,7 +80,7 @@ namespace Alquitel.Core.Entities
             }
         }
 
-        public decimal Total => Quantity * UnitPrice;
+        public decimal Total => Quantity * UnitPrice * Dias;
 
         public string? TechnicalNotes { get; set; }
 

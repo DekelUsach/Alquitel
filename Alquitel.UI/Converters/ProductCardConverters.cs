@@ -29,31 +29,29 @@ namespace Alquitel.UI.Converters
 
     public class ProductButtonBackgroundConverter : IMultiValueConverter
     {
-        private static readonly Brush DefaultBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1B2E58"));
-        private static readonly Brush AddedBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#5A9EEA"));
-
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
+            Brush defaultBrush = Application.Current.TryFindResource("PrimaryBrush") as Brush
+                ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1B2E58"));
+            Brush addedBrush = Application.Current.TryFindResource("SecondaryColorBrush") as Brush
+                ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0D84E7"));
+
             if (values.Length < 2 || values[0] is not Product product || values[1] is not MainViewModel vm)
-            {
-                return DefaultBrush;
-            }
+                return defaultBrush;
 
             int quantity = vm.GetSelectedQuantity(product.Id);
-            return quantity > 0 ? AddedBrush : DefaultBrush;
+            return quantity > 0 ? addedBrush : defaultBrush;
         }
 
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
-        {
-            throw new NotSupportedException();
-        }
+            => throw new NotSupportedException();
     }
 
     public class ProductRemoveButtonVisibilityConverter : IMultiValueConverter
     {
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            if (values.Length < 3 || values[0] is not Product product || values[1] is not MainViewModel vm || values[2] is not bool isMouseOver)
+            if (values.Length < 4 || values[0] is not Product product || values[1] is not MainViewModel vm || values[2] is not bool isMouseOver)
             {
                 return Visibility.Collapsed;
             }
