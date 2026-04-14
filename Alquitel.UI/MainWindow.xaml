@@ -4,6 +4,7 @@
         xmlns:vm="clr-namespace:Alquitel.UI.ViewModels"
         xmlns:conv="clr-namespace:Alquitel.UI.Converters"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:helpers="clr-namespace:Alquitel.UI.Helpers"
         Title="Grupo Alquitel - Sistema Administrativo" Height="900" Width="1440"
         Background="{StaticResource BackgroundBrush}"
         Foreground="{StaticResource TextBrush}"
@@ -13,6 +14,8 @@
         <conv:ProductButtonTextConverter x:Key="ProductButtonTextConverter"/>
         <conv:ProductButtonBackgroundConverter x:Key="ProductButtonBackgroundConverter"/>
         <conv:ProductRemoveButtonVisibilityConverter x:Key="ProductRemoveButtonVisibilityConverter"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+        <helpers:BindingProxy x:Key="Proxy" Data="{Binding}"/>
     </Window.Resources>
     <Grid Margin="15">
         <Grid.ColumnDefinitions>
@@ -24,7 +27,35 @@
         <Border Grid.Column="0" Background="Transparent" Padding="15">
             <StackPanel>
                 <!-- Título / Logo Placeholder as per Mockup -->
-                <TextBlock Text="Grupo Alquitel" FontSize="36" FontWeight="Black" FontStyle="Italic" Foreground="{StaticResource SecondaryColorBrush}" Margin="0,10,0,30" HorizontalAlignment="Center"/>
+                <Grid Margin="0,10,0,30">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Grupo Alquitel"
+                               FontSize="32" FontWeight="Black" FontStyle="Italic"
+                               Foreground="{StaticResource SecondaryColorBrush}"
+                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <Button Grid.Column="1" Style="{StaticResource DarkPillButton}"
+                            Height="38" Width="38" Padding="0"
+                            VerticalAlignment="Center"
+                            ToolTip="Cambiar tema claro/oscuro"
+                            Command="{Binding ToggleThemeCommand}">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="&#xE708;"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDarkMode}" Value="True">
+                                            <Setter Property="Text" Value="&#xE706;"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                </Grid>
 
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
@@ -79,7 +110,7 @@
                                     </Grid.RowDefinitions>
                                     
                                     <!-- Image Placeholder -->
-                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3" Width="70" Height="70" Background="#E5E7EB" CornerRadius="8" Margin="0,0,10,0"/>
+                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3" Width="70" Height="70" Background="{StaticResource SurfaceAltBrush}" CornerRadius="8" Margin="0,0,10,0"/>
 
                                     <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Description}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Margin="0,0,0,2"/>
                                     <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Category}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,4"/>
@@ -155,14 +186,14 @@
         <Border Grid.Column="1" Padding="20,10,40,20" Background="Transparent">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>  <!-- Row 0: Encabezado -->
+                    <RowDefinition Height="Auto"/>  <!-- Row 1: Panel configuración (colapsable) -->
+                    <RowDefinition Height="*"/>     <!-- Row 2: Tabla -->
+                    <RowDefinition Height="Auto"/>  <!-- Row 3: Botonera -->
                 </Grid.RowDefinitions>
 
                 <!-- ENCABEZADO: INFORMACIÓN DEL CLIENTE Y GENERAL -->
-                <Grid Grid.Row="0" Margin="0,0,0,30">
+                <Grid Grid.Row="0" Margin="0,0,0,20">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -170,6 +201,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="3*"/>
                         <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="50"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Fila 1 -->
@@ -177,14 +209,22 @@
                         <TextBlock Text="Empresa / Cliente" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
                         <TextBox Height="45" Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    
-                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,20">
+
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,20,20">
                         <TextBlock Text="Nº Presupuesto" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="5,0,0,8" FontSize="13"/>
                         <TextBox Height="45" Text="{Binding CurrentOrder.BudgetNumber, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
 
+                    <!-- Botón Configuración -->
+                    <Button Grid.Row="0" Grid.Column="2" VerticalAlignment="Bottom" Margin="0,0,0,20"
+                            Style="{StaticResource DarkPillButton}" Height="45" Width="45" Padding="0"
+                            ToolTip="Configuración de rutas"
+                            Command="{Binding ToggleSettingsCommand}">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="17" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Button>
+
                     <!-- Fila 2 -->
-                    <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                    <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1.2*"/>
                             <ColumnDefinition Width="0.8*"/>
@@ -216,6 +256,163 @@
                     </Grid>
                 </Grid>
 
+                <!-- PANEL CONFIGURACIÓN DE RUTAS (Row 1 — colapsable) -->
+                <Border Grid.Row="1"
+                        Background="{StaticResource SurfaceBrush}" CornerRadius="20" Padding="24,20"
+                        Margin="0,0,0,20" Effect="{StaticResource StandardShadow}"
+                        Visibility="{Binding IsSettingsVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header row -->
+                        <Grid Grid.Row="0" Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                           Foreground="{StaticResource SecondaryColorBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Text="CONFIGURACIÓN DE RUTAS" FontWeight="Bold" FontSize="14"
+                                           Foreground="{StaticResource SecondaryColorBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="32" Width="32" Padding="0"
+                                    ToolTip="Cerrar" Command="{Binding ToggleSettingsCommand}">
+                                <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- 3-column card layout: Presupuestos | OF | OT -->
+                        <Grid Grid.Row="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- PRESUPUESTOS -->
+                            <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource BackgroundBrush}" CornerRadius="14" Padding="16,14">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                        <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource SecondaryColorBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Presupuestos" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Carpeta destino" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding PresupuestosFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar carpeta" Command="{Binding BrowsePresupuestosFolderCommand}">
+                                            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Plantilla (.docx)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding PresupuestosTemplate, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar plantilla" Command="{Binding BrowsePresupuestosTemplateCommand}">
+                                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- OF -->
+                            <Border Grid.Row="0" Grid.Column="2" Background="{StaticResource BackgroundBrush}" CornerRadius="14" Padding="16,14">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                        <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource SecondaryColorBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Orden de Facturación" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Carpeta destino" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding OfFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar carpeta" Command="{Binding BrowseOfFolderCommand}">
+                                            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Plantilla (.docx)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding OfTemplate, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar plantilla" Command="{Binding BrowseOfTemplateCommand}">
+                                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- OT -->
+                            <Border Grid.Row="0" Grid.Column="4" Background="{StaticResource BackgroundBrush}" CornerRadius="14" Padding="16,14">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                        <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource SecondaryColorBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Orden de Trabajo" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Carpeta destino" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding OtFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar carpeta" Command="{Binding BrowseOtFolderCommand}">
+                                            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Plantilla (.docx)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="38"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Height="38" FontSize="11" Text="{Binding OtTemplate, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Button Grid.Column="1" Style="{StaticResource DarkPillButton}" Height="38" Width="38" Padding="0" Margin="4,0,0,0"
+                                                ToolTip="Seleccionar plantilla" Command="{Binding BrowseOtTemplateCommand}">
+                                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+                                    Content="GUARDAR CONFIGURACIÓN"
+                                    Height="40" Width="200"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,16,0,0"
+                                    Style="{StaticResource DarkPillButton}"
+                                    Command="{Binding SaveSettingsCommand}"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
                 <!-- PESTAÑAS Y TABLA DE DATOS -->
                 <Grid Grid.Row="2">
                     <Grid.RowDefinitions>
@@ -224,14 +421,68 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
-                        <!-- Active Tab -->
-                        <Border Background="{StaticResource SecondaryColorBrush}" CornerRadius="20" Padding="30,12" Margin="0,0,10,0" Effect="{StaticResource StandardShadow}">
-                            <TextBlock Text="PRESUPUESTO COMERCIAL" Foreground="White" FontWeight="Bold" FontSize="14"/>
-                        </Border>
-                        <!-- Inactive Tab -->
-                        <Border Background="Transparent" CornerRadius="20" Padding="30,12">
-                            <TextBlock Text="ORDEN DE TRABAJO (TÉCNICA)" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="14"/>
-                        </Border>
+                        <Button Height="44" Padding="24,0" Margin="0,0,10,0"
+                                Cursor="Hand" BorderThickness="0"
+                                Command="{Binding SetCommercialViewCommand}"
+                                Effect="{StaticResource StandardShadow}">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="FontSize" Value="14"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="20" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTechnicalView}" Value="False">
+                                            <Setter Property="Background" Value="{StaticResource SecondaryColorBrush}"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <TextBlock Text="PRESUPUESTO COMERCIAL" FontWeight="Bold" FontSize="14"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Button>
+
+                        <Button Height="44" Padding="24,0"
+                                Cursor="Hand" BorderThickness="0"
+                                Command="{Binding SetTechnicalViewCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="FontSize" Value="14"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="20" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTechnicalView}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource SecondaryColorBrush}"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <TextBlock Text="ORDEN DE TRABAJO (TÉCNICA)" FontWeight="SemiBold" FontSize="14"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Button>
                     </StackPanel>
 
                     <!-- LA TABLA GRANDE -->
@@ -287,7 +538,8 @@
                                     </DataGridTextColumn.EditingElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="140">
+                                <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="140"
+                                                    Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -305,7 +557,8 @@
                                     </DataGridTextColumn.EditingElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTextColumn Header="SUBTOTAL" Binding="{Binding Total, Mode=OneWay, StringFormat='{}{0:C}'}" Width="150" IsReadOnly="True">
+                                <DataGridTextColumn Header="SUBTOTAL" Binding="{Binding Total, Mode=OneWay, StringFormat='{}{0:C}'}" Width="150" IsReadOnly="True"
+                                                    Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -339,7 +592,8 @@
 
                 <!-- BOTONERA INFERIOR -->
                 <StackPanel Grid.Row="3" Margin="0,30,0,0">
-                    <Border Background="{StaticResource SurfaceBrush}" CornerRadius="16" Padding="18,12" Effect="{StaticResource StandardShadow}" HorizontalAlignment="Stretch">
+                    <Border Background="{StaticResource SurfaceBrush}" CornerRadius="16" Padding="18,12" Effect="{StaticResource StandardShadow}" HorizontalAlignment="Stretch"
+                            Visibility="{Binding CommercialColumnsVisibility}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -352,9 +606,32 @@
                     </Border>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-                        <Button Content="GENERAR PRESUPUESTO" Height="50" Width="220" Style="{StaticResource DarkPillButton}" Command="{Binding GenerateBudgetCommand}"/>
-                        <Button Content="GENERAR O. FACTURACIÓN" Height="50" Width="220" Style="{StaticResource DarkPillButton}" Margin="15,0" Command="{Binding GenerateOFCommand}"/>
-                        <Button Content="GENERAR O. TRABAJO" Height="50" Width="220" Style="{StaticResource DarkPillButton}" Command="{Binding GenerateOTCommand}"/>
+                        <Button Height="50" Width="220" Style="{StaticResource DarkPillButton}"
+                                Command="{Binding GenerateBudgetCommand}"
+                                Visibility="{Binding CommercialColumnsVisibility}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR PRESUPUESTO" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="50" Width="230" Style="{StaticResource DarkPillButton}" Margin="15,0"
+                                Command="{Binding GenerateOFCommand}"
+                                Visibility="{Binding CommercialColumnsVisibility}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR O. FACTURACIÓN" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="50" Width="220" Style="{StaticResource DarkPillButton}"
+                                Command="{Binding GenerateOTCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE9F5;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="GENERAR O. TRABAJO" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Grid>
