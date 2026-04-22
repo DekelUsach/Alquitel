@@ -72,18 +72,18 @@ La solución aplica el patrón **MVVM** bajo los lineamientos de _Clean Architec
 
 ```mermaid
 graph TD
-    UI[🖥️ Alquitel.UI (WPF / C#)] --> Core[📦 Alquitel.Core (Domain)]
-    Infra[⚙️ Alquitel.Infrastructure] --> Core
+    UI["🖥️ Alquitel.UI (WPF / C#)"] --> Core["📦 Alquitel.Core (Domain)"]
+    Infra["⚙️ Alquitel.Infrastructure"] --> Core
     UI --> Infra
     
     subgraph Capa de Infraestructura
-        DB[(SQLite)] <--> EF[Entity Framework 8]
-        Word[Word Document Service] <--> COM[Word.Application COM]
-        Polly[Polly Resiliency] --> Word
+        DB[(SQLite)] <--> EF["Entity Framework 8"]
+        Word["Word Document Service"] <--> COM["Word.Application COM"]
+        Polly["Polly Resiliency"] --> Word
     end
     
     EF --> |JSON & Meta-Data| Core
-    COM -.-> |Genera Archivos| Docs[Presupuesto_Final.docx]
+    COM -.-> |Genera Archivos| Docs["Presupuesto_Final.docx"]
 ```
 
 ---
