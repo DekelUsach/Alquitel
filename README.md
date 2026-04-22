@@ -1,91 +1,200 @@
-# 🏢 Alquitel - Gestión Corporativa y Documental
+<div align="center">
+  <img src="https://img.shields.io/badge/Alquitel-Gestión%20y%20Operativa-003B57?style=for-the-badge" alt="Alquitel Logo">
+  <h1>🏢 Alquitel - Gestión Corporativa y Documental</h1>
+  
+  <p>
+    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet" alt=".NET 8">
+    <img src="https://img.shields.io/badge/WPF-Windows_Presentation_Foundation-blue?style=flat-square&logo=windows" alt="WPF">
+    <img src="https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+    <img src="https://img.shields.io/badge/Estado-Producción-success?style=flat-square" alt="Producción">
+  </p>
+  
+  <p><i>Automatiza tus presupuestos, optimiza tu logística y olvídate del trabajo manual.</i></p>
+</div>
 
-Sistema de gestión interna para **Alquitel**, diseñado para la administración de clientes, pedidos y generación automatizada de documentación técnica y comercial mediante integración con Microsoft Word.
+<br>
+
+Sistema integral de gestión interna diseñado específicamente para **Alquitel**, enfocado en la administración de clientes, control de pedidos y generación **100% automatizada** de documentación comercial y técnica, a través de una integración profunda y dinámica con Microsoft Word.
+
+> [!NOTE]
+> Esta versión (v2.0) introduce un motor algorítmico de parsing de texto y soporte completo de campos dinámicos para presupuestos adaptables, convirtiéndola en la actualización más importante del ecosistema.
 
 ---
 
-## 🎨 Características Principales
-- **Interfaz Moderna y Minimalista**: Diseño institucional en Azul Alquitel con bordes redondeados y experiencia de usuario fluida.
-- **Generación de Documentos (Motor Late-Bound)**: 
-  - Generación dinámica de **Presupuestos**, **Órdenes de Facturación (OF)** y **Órdenes de Trabajo (OT)**.
-  - Compatible con cualquier versión de Microsoft Word instalada.
-  - Soporta marcadores (`Bookmarks`) y reemplazo de texto global (`Find & Replace`).
-- **Consola de Seguimiento (Debug)**: Panel integrado para monitoreo de procesos y detección de errores en tiempo real.
-- **Base de Datos Local**: Persistencia robusta mediante SQLite y Entity Framework Core 8.
-- **Auto-Guardado Inteligente**: Integración con OneDrive para almacenamiento automático en carpetas estructurales (`1_PRESUPUESTOS`, `2_OF`, `3_OT`).
+## 📑 Tabla de Contenidos
+1. [🎯 Casos de Uso y Valor de Negocio](#-casos-de-uso-y-valor-de-negocio)
+2. [✨ Novedades y Evolución del Sistema (v2.0)](#-novedades-y-evolución-del-sistema-v20)
+3. [🏗️ Arquitectura del Sistema](#️-arquitectura-del-sistema)
+4. [📂 Estructura de Directorios](#-estructura-de-directorios)
+5. [🚀 Requisitos de Ejecución e Instalación](#-requisitos-de-ejecución-e-instalación)
+6. [📄 Funcionamiento del Motor de Documentos](#-funcionamiento-del-motor-de-documentos)
+7. [🛠️ Stack Tecnológico Completo](#️-stack-tecnológico-completo)
+8. [⚠️ Resolución de Problemas (Troubleshooting)](#️-resolución-de-problemas-troubleshooting)
+
+---
+
+## 🎯 Casos de Uso y Valor de Negocio
+
+La plataforma Alquitel no es solo un gestor de bases de datos, es un **acelerador de flujos de trabajo**. Diseñado para ahorrarle horas al área comercial y al área técnica:
+
+- **Cotizaciones en Segundos**: Copiando un correo de un cliente ("Necesito 3 pantallas y 2 notebooks por 3 días"), el **Buscador Inteligente** inserta los productos en el carrito de manera automática.
+- **Doble Perfil de Documentos**: Con un solo clic se genera la cotización para el cliente (con precios de alquiler) y la **Orden de Trabajo (OT)** técnica (ocultando precios, mostrando especificaciones de cableado o logística).
+- **Adiós a los Errores de Tipeo**: Al conectar la base de datos de SQLite directamente con el archivo `.docx` corporativo, los errores de importes y matemáticas en presupuestos desaparecen por completo.
+
+---
+
+## ✨ Novedades y Evolución del Sistema (v2.0)
+
+El sistema ha sido reescrito desde cero a nivel de UI y Word Interop para dejar atrás limitaciones rígidas. Las nuevas implementaciones son:
+
+### 1. 🧠 Búsqueda Inteligente (Smart Search Engine)
+Un potente motor algorítmico (basado en _Coeficientes de Dice_ y _extracción de Trigramas_) capaz de analizar lenguaje natural y **detectar automáticamente los productos, cantidades y días**.
+
+### 2. 🎛️ Arquitectura de Campos Dinámicos en JSON
+Los productos ya no dependen de propiedades estáticas (columnas SQL fijas). Implementamos un sistema visual donde los usuarios configuran **Campos Dinámicos** (ilimitados) decidiendo el color, la negrita y los detalles técnicos. Toda esta meta-data viaja automáticamente a los Presupuestos.
+
+### 3. 📄 Nuevo Motor de Generación Dinámica (Interop Optimizado)
+Adiós al bloqueo o congelamiento de MS Word. El motor ha sido optimizado con **STA Threads (Single-Threaded Apartments)** y reemplazó las tablas viejas por la super-etiqueta `{{PRODUCTOS_AQUI}}`:
+- **Inyección de Imágenes**: Mapea e inserta imágenes (100x100) en el catálogo de salida.
+- **Evade COM Exceptions**: Nuevo parche que soluciona los clásicos problemas de formato y *rango inaccesible* al interactuar con tablas de Word.
+
+### 4. 🌙 Interfaz Premium UX y Dark Mode
+Aplicación de un diseño sobrio, oscuro e institucional. Incluye animaciones fluidas, pestañas contextuales ("Presupuesto Comercial" vs "Orden de Trabajo") y validaciones reactivas instantáneas.
+
+### 5. ⚙️ Configurador de Rutas Flexibles
+Panel integrado para asignar la carpeta de destino y el archivo Plantilla (`template.docx`). Ideal para trabajar sobre una cuenta compartida de **OneDrive** sin que las rutas queden bloqueadas.
+
+---
+
+## 🏗️ Arquitectura del Sistema
+
+La solución aplica el patrón **MVVM** bajo los lineamientos de _Clean Architecture_.
+
+```mermaid
+graph TD
+    UI[🖥️ Alquitel.UI (WPF / C#)] --> Core[📦 Alquitel.Core (Domain)]
+    Infra[⚙️ Alquitel.Infrastructure] --> Core
+    UI --> Infra
+    
+    subgraph Capa de Infraestructura
+        DB[(SQLite)] <--> EF[Entity Framework 8]
+        Word[Word Document Service] <--> COM[Word.Application COM]
+        Polly[Polly Resiliency] --> Word
+    end
+    
+    EF --> |JSON & Meta-Data| Core
+    COM -.-> |Genera Archivos| Docs[Presupuesto_Final.docx]
+```
+
+---
+
+## 📂 Estructura de Directorios
+
+> [!TIP]
+> Se aconseja replicar esta estructura en su directorio raíz (Ej: `C:\Alquitel\`) para simplificar el autoguardado.
+
+```text
+Alquitel/
+├── Alquitel.Core/           # Capa de Dominio (Modelos: Order, Product, Client)
+├── Alquitel.Infrastructure/ # Capa de Datos (DbSet) y Servicios Externos (Word)
+├── Alquitel.UI/             # Capa Visual (Ventanas WPF, ViewModels)
+├── 1_PRESUPUESTOS/          # Salida recomendada para cotizaciones comerciales
+├── 2_OF/                    # Salida recomendada para Órdenes de Facturación
+└── 3_OT/                    # Salida recomendada para Órdenes de Trabajo técnicas
+```
 
 ---
 
 ## 🚀 Requisitos de Ejecución e Instalación
-1. **.NET 8 SDK** instalado.
-2. **Microsoft Word** instalado localmente (Versión de escritorio obligatoria; requiere registro del *ProgID* `Word.Application`). El sistema utiliza automatización COM nativa, por lo que licencias de solo lectura o versiones web no son compatibles.
-3. **Estructura de Directorios Crítica**: El sistema tiene rutas absolutas preconfiguradas. **DEBE existir** la carpeta `C:\Alquitel` en el disco local y, dentro de ella, la subcarpeta `1_PRESUPUESTOS`.
-4. **Plantilla Base**: El archivo `template.docx` debe residir exactamente en `C:\Alquitel\1_PRESUPUESTOS\template.docx` para que la generación de presupuestos funcione.
+
+> [!IMPORTANT]  
+> Para que el módulo de creación documental funcione, es un requisito insalvable contar con Microsoft Office instalado.
+
+1. **.NET 8 SDK / Runtime** instalado.
+2. **Microsoft Word (Versión de Escritorio)**: Las versiones de la "Microsoft Store" a veces no exponen el componente COM, se exige el instalador clásico de Office (`Word.Application`).
+3. Permisos de escritura para que la base de datos interna `SQLite` pueda actualizar el esquema localmente.
 
 ---
 
-## 🛠️ Stack Tecnológico
-- **Frontend**: WPF (Windows Presentation Foundation) con C# 12.
-- **Backend**: .NET 8.0 Windows.
-- **Arquitectura**: Clean Architecture / MVVM.
-- **Servicios**: COM Interop (Dynamic Late-Binding) para automatización de Word.
-- **Librerías**:
-  - `CommunityToolkit.Mvvm` (MVVM)
-  - `Microsoft.EntityFrameworkCore` (ORM)
-  - `Polly` (Resiliencia ante bloqueos de archivos en OneDrive)
+## 📄 Funcionamiento del Motor de Documentos
 
----
+El funcionamiento del motor es el siguiente: el `BudgetBuilderViewModel` recoge la estructura de datos temporal y la envía a `WordDocumentService` que inicia un subproceso asíncrono para no trabar la interfaz gráfica.
 
-## 📦 Estructura del Proyecto
-```text
-Alquitel/
-├── Alquitel.Core/           # Entidades e Interfaces de negocio
-├── Alquitel.Infrastructure/ # Persistencia y Servicios Externos (Word)
-├── Alquitel.UI/             # Interfaz de usuario (WPF) e Instrucciones UI
-├── 1_PRESUPUESTOS/          # Salida de presupuestos generados
-├── 2_OF/                    # Salida de Órdenes de Facturación
-└── 3_OT/                    # Salida de Órdenes de Trabajo
+### Etiquetas Soportadas
+Cualquier plantilla `.docx` reconocerá lo siguiente:
+- `[CLIENTE]`, `{{CLIENTE}}` -> Extrae el Razón Social.
+- `[CUIT]`, `{{CUIT}}` -> CUIT del Cliente.
+- `[NUMERO]`, `{{NUMERO}}` -> Correlativo.
+- `(fecha)` -> Fecha generada.
+
+### El Tag Mágico: `{{PRODUCTOS_AQUI}}`
+Este tag es el corazón de la modernización. Al ejecutarse la generación documental, Word borrará el texto y armará el layout tabla por tabla de forma invisible.
+
+```mermaid
+sequenceDiagram
+    participant User as Empleado
+    participant UI as App Alquitel
+    participant Word as Motor Interop
+    
+    User->>UI: Clic "Generar Documento"
+    UI->>Word: Inicia Hilo Background (STA)
+    Word->>Word: Clona Plantilla para evadir "Lock Files"
+    Word->>Word: Reemplaza Tags Globales
+    Word->>Word: Encuentra {{PRODUCTOS_AQUI}}
+    loop Renderizado de Productos
+        Word->>Word: Inserta Thumbnail Image
+        Word->>Word: Inserta Título y Propiedades Dinámicas
+        Word->>Word: Mapea Sumatorias Monetarias
+    end
+    Word-->>UI: Retorna Archivo finalizado
+    UI->>User: 🟢 Archivo Listo!
 ```
 
 ---
 
-## 📝 Instrucciones de Instalación
-```bash
-# Clonar repositorio
-git clone <url-repo>
+## 🛠️ Stack Tecnológico Completo
 
-# Restaurar dependencias
+| Capa | Tecnología Utilizada | Detalle |
+| :--- | :--- | :--- |
+| **Frontend UI** | `C# 12`, `WPF`, `XAML` | Framework nativo de escritorio Windows de alto desempeño. |
+| **Patrón Reactivo** | `CommunityToolkit.Mvvm` | Data-Binding bidireccional moderno sin código espagueti. |
+| **Framework Base** | `.NET 8.0` | Target `net8.0-windows` estricto (no cross-platform debido al COM). |
+| **Persistencia** | `EF Core Sqlite` | Base de datos embebida (`Microsoft.EntityFrameworkCore.Sqlite`). |
+| **Resiliencia** | `Polly` | Algoritmos de reintento exponencial ante fallos de disco duro (I/O). |
+| **Automatización** | `dynamic` COM | Enlace tardío para compatibilidad con Word 2013, 2016, 2019, 365. |
+
+---
+
+## 💻 Compilación y CLI
+
+Para modificar el software localmente:
+
+```bash
+# 1. Clonar repositorio
+git clone <url-repo>
+cd Alquitel
+
+# 2. Compilar dependencias
 dotnet restore
 
-# Compilar y Ejecutar
+# 3. Ejecutar en Debug
 dotnet run --project Alquitel.UI\Alquitel.UI.csproj
+
+# 4. Generar ejecutable de Producción autónomo (Self-Contained)
+dotnet publish Alquitel.UI\Alquitel.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
 ---
 
-## 📄 Funcionamiento del Sistema de Documentos
+## ⚠️ Resolución de Problemas (Troubleshooting)
 
-El motor de generación de Alquitel automatiza la creación de archivos `.docx` inyectando datos directamente desde la interfaz de usuario en tus plantillas de Word.
+> [!WARNING]
+> **El proceso de Generación se traba o tarda 60 segundos**: Esto ocurre típicamente si el documento de destino está siendo utilizado por otro programa, o si el usuario no tiene permisos de guardado en la carpeta de la nube (OneDrive). `Polly` hará 5 reintentos silenciados antes de mostrar el cartel de error rojo. Cerrá Word y volvé a intentarlo.
 
-### ¿Cómo funciona la inyección de datos?
-A diferencia de otros sistemas que manipulan el archivo XML, Alquitel abre una instancia invisible de Word y realiza una búsqueda y reemplazo inteligente. Soporta tres métodos simultáneos:
-1.  **Etiquetas Literales**: Busca textos como `[CLIENTE]`, `{{CUIT}}`, `[NUMERO]`, `[LUGAR]` o `(fecha)`.
-2.  **Marcadores (Bookmarks)**: Si tu plantilla tiene marcadores de Word (e.g., `BK_CLIENT_NAME`), el sistema escribirá directamente sobre ellos.
-3.  **Tablas Dinámicas**: Si existe un marcador llamado `BK_EQUIPMENT_TABLE`, el sistema generará automáticamente una tabla con todos los productos seleccionados, cantidades y subtotales.
+> [!CAUTION]
+> **Microsoft Word No Responde o No Inicializa**: Asegúrate de que tu MS Word no esté corriendo en un entorno aislado (Sandbox) y de no usar cuentas no activadas. Un "Reparar Office" de Windows lo resuelve el 99% de las veces.
 
-### ¿Por qué a un colega podría no funcionarle?
-Si a ti te funciona pero a otra persona no, revisen estos tres puntos en su PC:
-*   **Falta la carpeta o la plantilla**: El programa busca la plantilla en `C:\Alquitel\1_PRESUPUESTOS\template.docx`. Si el colega no creó esa carpeta manualmente o no puso el archivo allí con ese nombre exacto, el sistema fallará.
-*   **Word no es "Desktop"**: Si tiene una versión de prueba o una versión de Windows Store que no registra correctamente el componente `Word.Application` en el registro de Windows, el código no podrá "llamar" a Word de manera externa.
-*   **Confusión de Etiquetas**: Asegúrate de que las etiquetas en el Word coincidan con lo que el código busca (`[...]`, `{{...}}`). Puedes usar la herramienta `ReadTemplate` para listar qué etiquetas están en el archivo.
+- **La tabla de productos se ve "chueca" o sin imágenes**: Verifica que la imagen configurada en tu catálogo exista físicamente en tu disco duro en la ruta provista. Si la imagen se borró o movió, el motor simplemente emitirá el texto sin romper el documento completo.
 
 ---
-
-## ⚠️ Notas de Integración
-Si el programa no genera documentos:
-1. Desplegar la **Consola de Seguimiento** en la parte inferior de la ventana principal.
-2. Verificar que las plantillas no estén abiertas en Word para evitar bloqueos de archivo.
-3. El sistema buscará automáticamente etiquetas como `[CLIENTE]`, `{{CLIENTE}}` o marcadores de Word en tus plantillas.
-
----
-*© 2026 Alquitel - Sistema de Gestión de Activos.*
+*© 2026 Alquitel - Gestión Innovadora para Arquitectura de Eventos.*
