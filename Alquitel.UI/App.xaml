@@ -145,6 +145,26 @@
                 </Style.Triggers>
             </Style>
 
+            <!-- DataGrid cell text styles -->
+            <Style x:Key="DataGridCellText" TargetType="TextBlock">
+                <Setter Property="Padding" Value="10,0"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+
+            <Style x:Key="DataGridCellTextMuted" TargetType="TextBlock"
+                   BasedOn="{StaticResource DataGridCellText}">
+                <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                <Setter Property="FontSize" Value="13"/>
+            </Style>
+
+            <Style x:Key="DataGridCellTextAccent" TargetType="TextBlock"
+                   BasedOn="{StaticResource DataGridCellText}">
+                <Setter Property="Foreground" Value="{DynamicResource SecondaryColorBrush}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+            </Style>
+
             <!-- ListBox transparent (for product catalog) -->
             <Style TargetType="ListBox">
                 <Setter Property="Background" Value="Transparent"/>

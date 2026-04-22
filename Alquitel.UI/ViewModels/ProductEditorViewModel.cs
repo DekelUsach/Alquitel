@@ -5,9 +5,30 @@ using Alquitel.Infrastructure.Persistence;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.Json;
+using Microsoft.Win32;
+using System.Collections.Generic;
 
 namespace Alquitel.UI.ViewModels
 {
+    public partial class CustomFieldViewModel : ObservableObject
+    {
+        [ObservableProperty] private string _label = string.Empty;
+        [ObservableProperty] private string _value = string.Empty;
+        [ObservableProperty] private bool _isBold = false;
+        [ObservableProperty] private bool _isUnderline = false;
+        [ObservableProperty] private string _colorHex = "#E6EDF3"; // Default TextBrush color
+
+        public IReadOnlyList<string> AvailableColors { get; } = new[] 
+        { 
+            "#E6EDF3", // Default White/Gray
+            "#91c991", // Green
+            "#E53E3E", // Intense Red
+            "#F68787", // Soft Red
+            "#1F6FEB"  // Blue
+        };
+    }
+
     public partial class ProductEditorViewModel : ObservableObject
     {
         private readonly AlquitelDbContext _dbContext;
@@ -27,18 +48,9 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty] private string _editDescription = string.Empty;
         [ObservableProperty] private string _editCategory = "General";
         [ObservableProperty] private decimal _editBasePrice;
-        [ObservableProperty] private string _editPixelPitchTitle = string.Empty;
-        [ObservableProperty] private string _editDefaultUso = "IN";
-        [ObservableProperty] private string _editDefaultForma = "PLANA";
-        [ObservableProperty] private string _editDefaultFactorForma = "MÓDULO";
-        [ObservableProperty] private string _editDefaultPixelPitchModule = string.Empty;
-        [ObservableProperty] private string _editAccessories = string.Empty;
-        [ObservableProperty] private string _editModuleDimensions = string.Empty;
-        [ObservableProperty] private string _editDefaultPesoPorM2 = string.Empty;
-        [ObservableProperty] private string _editDefaultConsumoPorM2 = string.Empty;
-        [ObservableProperty] private string _editDefaultResolucionX = string.Empty;
-        [ObservableProperty] private string _editDefaultResolucionY = string.Empty;
-        [ObservableProperty] private string _editIncludesNote = string.Empty;
+        [ObservableProperty] private string? _editImagePath;
+
+        public ObservableCollection<CustomFieldViewModel> CustomFields { get; } = new();
 
         public ProductEditorViewModel(AlquitelDbContext dbContext)
         {
@@ -69,18 +81,31 @@ namespace Alquitel.UI.ViewModels
             EditDescription = p.Description;
             EditCategory = p.Category;
             EditBasePrice = p.BasePrice;
-            EditPixelPitchTitle = p.PixelPitchTitle ?? string.Empty;
-            EditDefaultUso = p.DefaultUso ?? "IN";
-            EditDefaultForma = p.DefaultForma ?? "PLANA";
-            EditDefaultFactorForma = p.DefaultFactorForma ?? "MÓDULO";
-            EditDefaultPixelPitchModule = p.DefaultPixelPitchModule ?? string.Empty;
-            EditAccessories = p.Accessories ?? string.Empty;
-            EditModuleDimensions = p.ModuleDimensions ?? string.Empty;
-            EditDefaultPesoPorM2 = p.DefaultPesoPorM2 ?? string.Empty;
-            EditDefaultConsumoPorM2 = p.DefaultConsumoPorM2 ?? string.Empty;
-            EditDefaultResolucionX = p.DefaultResolucionX ?? string.Empty;
-            EditDefaultResolucionY = p.DefaultResolucionY ?? string.Empty;
-            EditIncludesNote = p.IncludesNote ?? string.Empty;
+            EditImagePath = p.ImagePath;
+
+            CustomFields.Clear();
+            if (!string.IsNullOrWhiteSpace(p.CustomFieldsJson))
+            {
+                try
+                {
+                    var fields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(p.CustomFieldsJson);
+                    if (fields != null)
+                    {
+                        foreach (var f in fields)
+                        {
+                            CustomFields.Add(new CustomFieldViewModel
+                            {
+                                Label = f.Label,
+                                Value = f.Value,
+                                IsBold = f.IsBold,
+                                IsUnderline = f.IsUnderline,
+                                ColorHex = f.ColorHex
+                            });
+                        }
+                    }
+                }
+                catch { } // Ignore JSON parsing errors for bad data
+            }
         }
 
         [RelayCommand]
@@ -90,20 +115,45 @@ namespace Alquitel.UI.ViewModels
             EditDescription = string.Empty;
             EditCategory = "General";
             EditBasePrice = 0;
-            EditPixelPitchTitle = string.Empty;
-            EditDefaultUso = "IN";
-            EditDefaultForma = "PLANA";
-            EditDefaultFactorForma = "MÓDULO";
-            EditDefaultPixelPitchModule = string.Empty;
-            EditAccessories = string.Empty;
-            EditModuleDimensions = string.Empty;
-            EditDefaultPesoPorM2 = string.Empty;
-            EditDefaultConsumoPorM2 = string.Empty;
-            EditDefaultResolucionX = string.Empty;
-            EditDefaultResolucionY = string.Empty;
-            EditIncludesNote = string.Empty;
+            EditImagePath = null;
+            CustomFields.Clear();
+            
             IsEditing = true;
             StatusMessage = string.Empty;
+        }
+
+        [RelayCommand]
+        private void AddCustomField()
+        {
+            CustomFields.Add(new CustomFieldViewModel());
+        }
+
+        [RelayCommand]
+        private void RemoveCustomField(CustomFieldViewModel field)
+        {
+            if (field != null)
+                CustomFields.Remove(field);
+        }
+
+        [RelayCommand]
+        private void SelectImage()
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Seleccionar Imagen del Producto",
+                Filter = "Archivos de imagen (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png|Todos los archivos (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                EditImagePath = dialog.FileName;
+            }
+        }
+
+        [RelayCommand]
+        private void RemoveImage()
+        {
+            EditImagePath = null;
         }
 
         [RelayCommand]
@@ -176,21 +226,18 @@ namespace Alquitel.UI.ViewModels
             p.Description = EditDescription.Trim();
             p.Category = EditCategory.Trim();
             p.BasePrice = EditBasePrice;
-            p.PixelPitchTitle = NullIfEmpty(EditPixelPitchTitle);
-            p.DefaultUso = NullIfEmpty(EditDefaultUso);
-            p.DefaultForma = NullIfEmpty(EditDefaultForma);
-            p.DefaultFactorForma = NullIfEmpty(EditDefaultFactorForma);
-            p.DefaultPixelPitchModule = NullIfEmpty(EditDefaultPixelPitchModule);
-            p.Accessories = NullIfEmpty(EditAccessories);
-            p.ModuleDimensions = NullIfEmpty(EditModuleDimensions);
-            p.DefaultPesoPorM2 = NullIfEmpty(EditDefaultPesoPorM2);
-            p.DefaultConsumoPorM2 = NullIfEmpty(EditDefaultConsumoPorM2);
-            p.DefaultResolucionX = NullIfEmpty(EditDefaultResolucionX);
-            p.DefaultResolucionY = NullIfEmpty(EditDefaultResolucionY);
-            p.IncludesNote = NullIfEmpty(EditIncludesNote);
-        }
+            p.ImagePath = EditImagePath;
 
-        private static string? NullIfEmpty(string s) =>
-            string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+            var definitions = CustomFields.Select(cf => new CustomFieldDefinition
+            {
+                Label = cf.Label.Trim(),
+                Value = cf.Value.Trim(),
+                IsBold = cf.IsBold,
+                IsUnderline = cf.IsUnderline,
+                ColorHex = cf.ColorHex
+            }).ToList();
+
+            p.CustomFieldsJson = JsonSerializer.Serialize(definitions);
+        }
     }
 }

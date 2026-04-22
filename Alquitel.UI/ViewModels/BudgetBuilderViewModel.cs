@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.IO;
@@ -137,19 +138,10 @@ namespace Alquitel.UI.ViewModels
                 Quantity = 1,
                 Dias = EventDays,
                 UnitPrice = product.BasePrice,
-                // Copy LED defaults from Product
-                PixelPitchTitle = product.PixelPitchTitle,
-                Uso = product.DefaultUso ?? "IN",
-                Forma = product.DefaultForma ?? "PLANA",
-                FactorForma = product.DefaultFactorForma ?? "MÓDULO",
-                PixelPitchModule = product.DefaultPixelPitchModule,
-                PesoPorM2 = product.DefaultPesoPorM2,
-                ConsumoPorM2 = product.DefaultConsumoPorM2,
-                ResolucionPorM2X = product.DefaultResolucionX,
-                ResolucionPorM2Y = product.DefaultResolucionY,
-                Accessories = product.Accessories,
-                ModuleDimensions = product.ModuleDimensions,
-                IncludesNote = product.IncludesNote,
+                // Copy dynamic fields from Product
+                ImagePath = product.ImagePath,
+                CustomFieldsJson = product.CustomFieldsJson,
+                RequestedMeasure = string.Empty, // Starts off empty, user fills it in for the budget
             };
             SelectedItems.Add(item);
             CurrentOrder.Items.Add(item);
@@ -210,7 +202,9 @@ namespace Alquitel.UI.ViewModels
                     Quantity = result.Quantity,
                     Dias = EventDays,
                     UnitPrice = result.Product.BasePrice,
-                    Uso = "IN", Forma = "PLANA", FactorForma = "MÓDULO"
+                    ImagePath = result.Product.ImagePath,
+                    CustomFieldsJson = result.Product.CustomFieldsJson,
+                    RequestedMeasure = string.Empty
                 };
                 SelectedItems.Add(item);
                 CurrentOrder.Items.Add(item);
@@ -267,11 +261,163 @@ namespace Alquitel.UI.ViewModels
                 }
 
                 await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical);
+                await PersistOrderAsync();
                 MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error: {ex.Message}", "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public void LoadOrder(Order order)
+        {
+            var full = _dbContext.Orders
+                .Include(o => o.Client)
+                .Include(o => o.Location)
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .FirstOrDefault(o => o.Id == order.Id);
+
+            if (full == null) return;
+
+            CurrentOrder = new Order
+            {
+                Id = full.Id,
+                BudgetNumber = full.BudgetNumber,
+                AdminName = full.AdminName,
+                CreatedDate = full.CreatedDate,
+                EventDate = full.EventDate,
+                Status = full.Status,
+                Client = full.Client ?? new Client(),
+                Location = full.Location ?? new Location(),
+            };
+
+            SelectedItems.Clear();
+            CurrentOrder.Items.Clear();
+
+            foreach (var item in full.Items)
+            {
+                var oi = new OrderItem
+                {
+                    Id = item.Id,
+                    OrderId = item.OrderId,
+                    ProductId = item.ProductId,
+                    Product = item.Product,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPrice,
+                    Dias = item.Dias,
+                    TechnicalNotes = item.TechnicalNotes,
+                    ImagePath = item.ImagePath,
+                    CustomFieldsJson = item.CustomFieldsJson,
+                    RequestedMeasure = item.RequestedMeasure,
+                };
+                SelectedItems.Add(oi);
+                CurrentOrder.Items.Add(oi);
+            }
+
+            EventDays = full.Items.FirstOrDefault()?.Dias ?? 1;
+            CuitInput = full.Client?.Cuit ?? string.Empty;
+        }
+
+        private async Task PersistOrderAsync()
+        {
+            try
+            {
+                var locName = CurrentOrder.Location?.Name ?? string.Empty;
+                var location = _dbContext.Locations.FirstOrDefault(l => l.Name == locName);
+                if (location == null && !string.IsNullOrWhiteSpace(locName))
+                {
+                    location = new Location { Name = locName };
+                    _dbContext.Locations.Add(location);
+                    await _dbContext.SaveChangesAsync();
+                }
+                else if (location == null)
+                {
+                    location = new Location { Id = Guid.Empty, Name = string.Empty };
+                }
+
+                var clientId = CurrentOrder.Client?.Id ?? Guid.Empty;
+                var locationId = location.Id;
+
+                var trackedOrder = _dbContext.ChangeTracker.Entries<Order>()
+                    .FirstOrDefault(e => e.Entity.Id == CurrentOrder.Id);
+                if (trackedOrder != null) trackedOrder.State = EntityState.Detached;
+
+                var orderExists = _dbContext.Orders.Any(o => o.Id == CurrentOrder.Id);
+
+                if (!orderExists)
+                {
+                    var orderToSave = new Order
+                    {
+                        Id = CurrentOrder.Id,
+                        BudgetNumber = CurrentOrder.BudgetNumber,
+                        AdminName = CurrentOrder.AdminName,
+                        ClientId = clientId,
+                        LocationId = locationId,
+                        CreatedDate = CurrentOrder.CreatedDate,
+                        EventDate = CurrentOrder.EventDate,
+                        Status = CurrentOrder.Status,
+                    };
+                    _dbContext.Orders.Add(orderToSave);
+                    await _dbContext.SaveChangesAsync();
+
+                    foreach (var item in CurrentOrder.Items)
+                    {
+                        _dbContext.OrderItems.Add(new OrderItem
+                        {
+                            Id = item.Id,
+                            OrderId = orderToSave.Id,
+                            ProductId = item.ProductId,
+                            Quantity = item.Quantity,
+                            UnitPrice = item.UnitPrice,
+                            Dias = item.Dias,
+                            TechnicalNotes = item.TechnicalNotes,
+                            ImagePath = item.ImagePath,
+                            CustomFieldsJson = item.CustomFieldsJson,
+                            RequestedMeasure = item.RequestedMeasure,
+                        });
+                    }
+                    await _dbContext.SaveChangesAsync();
+                }
+                else
+                {
+                    var tracked = _dbContext.Orders.Find(CurrentOrder.Id);
+                    if (tracked != null)
+                    {
+                        tracked.BudgetNumber = CurrentOrder.BudgetNumber;
+                        tracked.AdminName = CurrentOrder.AdminName;
+                        tracked.ClientId = clientId;
+                        tracked.LocationId = locationId;
+                        tracked.EventDate = CurrentOrder.EventDate;
+                        tracked.Status = CurrentOrder.Status;
+                    }
+
+                    var oldItems = _dbContext.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
+                    _dbContext.OrderItems.RemoveRange(oldItems);
+                    await _dbContext.SaveChangesAsync();
+
+                    foreach (var item in CurrentOrder.Items)
+                    {
+                        _dbContext.OrderItems.Add(new OrderItem
+                        {
+                            Id = Guid.NewGuid(),
+                            OrderId = CurrentOrder.Id,
+                            ProductId = item.ProductId,
+                            Quantity = item.Quantity,
+                            UnitPrice = item.UnitPrice,
+                            Dias = item.Dias,
+                            TechnicalNotes = item.TechnicalNotes,
+                            ImagePath = item.ImagePath,
+                            CustomFieldsJson = item.CustomFieldsJson,
+                            RequestedMeasure = item.RequestedMeasure,
+                        });
+                    }
+                    await _dbContext.SaveChangesAsync();
+                }
+            }
+            catch
+            {
+                // Persistence is non-critical — document was already generated
             }
         }
 

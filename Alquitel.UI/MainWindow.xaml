@@ -22,6 +22,9 @@
         <DataTemplate DataType="{x:Type vm:ProductEditorViewModel}">
             <views:ProductEditorView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PresupuestosViewModel}">
+            <views:PresupuestosView/>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -150,6 +153,41 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding ActiveSection}" Value="Productos">
+                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!-- Presupuestos List -->
+                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
+                            ToolTip="Listado de Presupuestos"
+                            Command="{Binding NavigateToPresupuestosCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
+                                                    CornerRadius="14" Padding="0">
+                                                <TextBlock Text="&#xE9F9;" FontFamily="Segoe MDL2 Assets" FontSize="20"
+                                                           Foreground="{DynamicResource MutedTextBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="navBg" Property="Background"
+                                                            Value="{DynamicResource HoverBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuestos">
                                         <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>

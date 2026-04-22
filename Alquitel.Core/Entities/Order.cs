@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace Alquitel.Core.Entities
@@ -31,6 +32,8 @@ namespace Alquitel.Core.Entities
         public DateTime? EventDate { get; set; }
         public OrderStatus Status { get; set; } = OrderStatus.Draft;
         public List<OrderItem> Items { get; set; } = new();
+
+        public decimal Total => Items?.Sum(i => i.Total) ?? 0m;
     }
 
     public class OrderItem : INotifyPropertyChanged
@@ -84,30 +87,25 @@ namespace Alquitel.Core.Entities
 
         public string? TechnicalNotes { get; set; }
 
-        // Campos Específicos para Pantallas LED (según plantilla de presupuesto)
-        public string? PixelPitchTitle { get; set; }
-        public string? Uso { get; set; }
-        public string? FactorForma { get; set; }
-        public string? Forma { get; set; }
-        public string? PixelPitchModule { get; set; }
+        // ── Dynamic System properties ───────────────────────
+        public string? ImagePath { get; set; }
         
-        public string? PesoPorM2 { get; set; }
-        public string? ConsumoPorM2 { get; set; }
+        // Serialized List<CustomFieldDefinition>
+        public string? CustomFieldsJson { get; set; } 
         
-        public string? ResolucionPorM2X { get; set; }
-        public string? ResolucionPorM2Y { get; set; }
-        
-        public string? Dimension1 { get; set; }
-        public string? Dimension1Type { get; set; }
-        public string? Dimension2 { get; set; }
-        public string? Dimension2Type { get; set; }
-        
-        public string? CantRackEnergia { get; set; }
-
-        // Additional fields from expanded Product model
-        public string? Accessories { get; set; }        // e.g. "Escalador/controlador de leds"
-        public string? ModuleDimensions { get; set; }   // e.g. "500 mm x 500 mm x 100 mm"
-        public string? IncludesNote { get; set; }       // e.g. "Incluye estructura para montaje de piso tipo layher"
+        // Medida solicitada, variable por cliente/presupuesto
+        // e.g. "Medida solicitada: 8 x 3"
+        private string? _requestedMeasure;
+        public string? RequestedMeasure
+        {
+            get => _requestedMeasure;
+            set
+            {
+                if (_requestedMeasure == value) return;
+                _requestedMeasure = value;
+                OnPropertyChanged();
+            }
+        }
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

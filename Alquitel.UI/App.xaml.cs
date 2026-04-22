@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Infrastructure.Services;
 using Alquitel.UI.ViewModels;
@@ -40,7 +41,9 @@ namespace Alquitel.UI
 
         private void ConfigureServices(IServiceCollection services)
         {
-            services.AddDbContext<AlquitelDbContext>();
+            services.AddDbContext<AlquitelDbContext>(
+                options => options.UseSqlite(@"Data Source=C:\Alquitel\Alquitel.db"),
+                ServiceLifetime.Singleton);
             services.AddSingleton<DataInitializationService>();
             services.AddSingleton<IDocumentService, WordDocumentService>();
             services.AddSingleton<MainViewModel>();

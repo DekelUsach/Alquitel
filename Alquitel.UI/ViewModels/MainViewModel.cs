@@ -74,6 +74,13 @@ namespace Alquitel.UI.ViewModels
             CurrentViewModel = new ProductEditorViewModel(_dbContext);
         }
 
+        [RelayCommand]
+        private void NavigateToPresupuestos()
+        {
+            ActiveSection = "Presupuestos";
+            CurrentViewModel = new PresupuestosViewModel(_settingsVm);
+        }
+
         // ── Theme ────────────────────────────────────────────────────
 
         [RelayCommand]

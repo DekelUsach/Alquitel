@@ -358,6 +358,22 @@
                                 </DataGridTextColumn.EditingElementStyle>
                             </DataGridTextColumn>
 
+                            <DataGridTextColumn Header="MEDIDA SOLICITADA" Binding="{Binding RequestedMeasure}" Width="160">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Left"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="4,0,0,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.EditingElementStyle>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.EditingElementStyle>
+                            </DataGridTextColumn>
+
                             <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="130"
                                                 Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
                                 <DataGridTextColumn.ElementStyle>

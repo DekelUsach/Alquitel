@@ -127,120 +127,109 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ── Especificaciones LED ── -->
+                    <!-- ── Imagen del Producto ── -->
                     <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
                             Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
                         <StackPanel>
-                            <TextBlock Text="ESPECIFICACIONES LED (para presupuesto)" FontSize="11" FontWeight="Bold"
+                            <TextBlock Text="IMAGEN (Opcional)" FontSize="11" FontWeight="Bold"
+                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
+                            
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource DarkPillButton}" Height="34" Width="120"
+                                        Command="{Binding SelectImageCommand}" Margin="0,0,12,0">
+                                    <TextBlock Text="Seleccionar..." FontSize="12"/>
+                                </Button>
+                                
+                                <TextBlock Text="{Binding EditImagePath}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="0,0,12,0"/>
+                                           
+                                <Button Content="&#xE74D;" FontFamily="Segoe MDL2 Assets"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="#E53E3E" Cursor="Hand" FontSize="14"
+                                        Command="{Binding RemoveImageCommand}"
+                                        ToolTip="Quitar imagen"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- ── Campos Personalizados ── -->
+                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
+                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="CAMPOS PERSONALIZADOS (Aparecerán en el Presupuesto)" FontSize="11" FontWeight="Bold"
                                        Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
 
-                            <!-- Row 1: PixelPitchTitle + Uso + Forma + FactorForma -->
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="2*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+                            <ItemsControl ItemsSource="{Binding CustomFields}" Margin="0,0,0,12">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="100"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                    <TextBlock Text="Título Pixel Pitch" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditPixelPitchTitle, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <!-- Label -->
+                                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                                <TextBlock Text="Etiqueta" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                <TextBox Height="34" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" Padding="8,0"/>
+                                            </StackPanel>
+
+                                            <!-- Value -->
+                                            <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                                <TextBlock Text="Valor" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                <TextBox Height="34" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Padding="8,0"/>
+                                            </StackPanel>
+
+                                            <!-- Bold -->
+                                            <StackPanel Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Bottom" Height="34" HorizontalAlignment="Center">
+                                                <CheckBox Content="N." IsChecked="{Binding IsBold}" Foreground="{DynamicResource TextBrush}"
+                                                          VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Negrita"/>
+                                            </StackPanel>
+                                            
+                                            <!-- Underline -->
+                                            <StackPanel Grid.Column="3" Margin="0,0,8,0" VerticalAlignment="Bottom" Height="34" HorizontalAlignment="Center">
+                                                <CheckBox Content="S." IsChecked="{Binding IsUnderline}" Foreground="{DynamicResource TextBrush}"
+                                                          VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Subrayado"/>
+                                            </StackPanel>
+
+                                            <!-- Color -->
+                                            <StackPanel Grid.Column="4" Margin="0,0,8,0">
+                                                <TextBlock Text="Color" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                <ComboBox ItemsSource="{Binding AvailableColors}" SelectedItem="{Binding ColorHex}" Height="34">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Rectangle Fill="{Binding}" Width="16" Height="16" Margin="0,0,6,0" Stroke="Gray" StrokeThickness="1" RadiusX="2" RadiusY="2"/>
+                                                                <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </StackPanel>
+
+                                            <!-- Remove -->
+                                            <Button Grid.Column="5" Content="&#xE74D;" FontFamily="Segoe MDL2 Assets"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Foreground="#E53E3E" Cursor="Hand"
+                                                    Command="{Binding DataContext.RemoveCustomFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    VerticalAlignment="Bottom" Height="34" ToolTip="Eliminar campo" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button Style="{StaticResource DarkPillButton}" Height="36" Width="150" HorizontalAlignment="Left"
+                                    Command="{Binding AddCustomFieldCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Añadir Campo" FontSize="12" VerticalAlignment="Center"/>
                                 </StackPanel>
-
-                                <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                                    <TextBlock Text="Uso" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultUso, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="2" Margin="0,0,12,0">
-                                    <TextBlock Text="Forma" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultForma, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="3">
-                                    <TextBlock Text="Factor Forma" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultFactorForma, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Row 2: PixelPitchModule + ModuleDimensions -->
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="2*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                    <TextBlock Text="Pixel Pitch Módulo" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultPixelPitchModule, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Dimensiones Módulo (ej: 500 mm x 500 mm x 100 mm)" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditModuleDimensions, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Row 3: Peso + Consumo -->
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                    <TextBlock Text="Peso aprox. (ej: 44 kg x m2)" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultPesoPorM2, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Consumo aprox. (ej: 4 Amperes x m2)" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultConsumoPorM2, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Row 4: Resolución X + Y -->
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                    <TextBlock Text="Resolución X (ej: 384)" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultResolucionX, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Resolución Y (ej: 384)" FontSize="12"
-                                               Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditDefaultResolucionY, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Row 5: Accessories -->
-                            <StackPanel Margin="0,0,0,12">
-                                <TextBlock Text="Accesorios (ej: Escalador/controlador de leds)" FontSize="12"
-                                           Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                <TextBox Height="42" Text="{Binding EditAccessories, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-
-                            <!-- Row 6: Includes Note -->
-                            <StackPanel>
-                                <TextBlock Text="Incluye (ej: Incluye estructura para montaje de piso tipo layher)" FontSize="12"
-                                           Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                <TextBox Height="42" Text="{Binding EditIncludesNote, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Border>
 

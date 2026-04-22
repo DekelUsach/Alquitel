@@ -11,12 +11,7 @@ namespace Alquitel.Infrastructure.Persistence
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
 
-        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        {
-            // The database file is stored locally, but OneDrive sync may lock it.
-            // Ensure journaling mode is set to WAL for better concurrency.
-            optionsBuilder.UseSqlite("Data Source=Alquitel.db");
-        }
+        public AlquitelDbContext(DbContextOptions<AlquitelDbContext> options) : base(options) { }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
