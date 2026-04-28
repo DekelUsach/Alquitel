@@ -71,6 +71,8 @@ namespace Alquitel.UI
             services.AddTransient<BudgetBuilderViewModel>();
             services.AddTransient<ProductEditorViewModel>();
             services.AddTransient<PresupuestosViewModel>();
+            services.AddTransient<ClientsViewModel>();
+            services.AddTransient<LocationsViewModel>();
             
             services.AddSingleton<MainWindow>();
         }

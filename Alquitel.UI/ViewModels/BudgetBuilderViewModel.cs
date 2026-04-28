@@ -18,10 +18,11 @@ using System.Globalization;
 using System.Text;
 using System.Collections.Specialized;
 using System.Collections.Generic;
+using Alquitel.Core.Helpers;
 
 namespace Alquitel.UI.ViewModels
 {
-    public partial class BudgetBuilderViewModel : ObservableObject, IAsyncInitialization
+    public partial class BudgetBuilderViewModel : ObservableObject, IAsyncInitialization, IDisposable
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
@@ -63,6 +64,8 @@ namespace Alquitel.UI.ViewModels
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
         private Dictionary<Guid, ProductCacheEntry> _productSearchCache = new();
+        private CancellationTokenSource? _autosaveCts;
+        private string _draftsFolder;
 
         private class ProductCacheEntry
         {
@@ -82,6 +85,12 @@ namespace Alquitel.UI.ViewModels
             _productsView.Filter = FilterProduct;
 
             SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+
+            _draftsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Alquitel", "Drafts");
+            if (!Directory.Exists(_draftsFolder))
+            {
+                Directory.CreateDirectory(_draftsFolder);
+            }
         }
 
         public async Task InitializeAsync()
@@ -111,6 +120,47 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "Failed to load products in BudgetBuilder");
             }
+
+            _autosaveCts?.Cancel();
+            _autosaveCts = new CancellationTokenSource();
+            _ = AutosaveLoopAsync(_autosaveCts.Token);
+        }
+
+        private async Task AutosaveLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), token);
+                    if (SelectedItems.Any() && CurrentOrder != null)
+                    {
+                        var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
+                        var path = Path.Combine(_draftsFolder, draftName);
+                        // Convert to DTO to avoid circular references during serialization
+                        var dto = new
+                        {
+                            BudgetNumber = CurrentOrder.BudgetNumber,
+                            ClientName = CurrentOrder.Client?.CompanyName,
+                            EventDate = CurrentOrder.EventDate,
+                            Items = SelectedItems.Select(i => new { i.ProductId, i.Quantity, i.Total, i.RequestedMeasure }).ToList()
+                        };
+                        var json = System.Text.Json.JsonSerializer.Serialize(dto, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                        await File.WriteAllTextAsync(path, json, token);
+                    }
+                }
+                catch (TaskCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Autosave failed");
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _autosaveCts?.Cancel();
+            _autosaveCts?.Dispose();
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -133,6 +183,12 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnCuitInputChanged(string value)
         {
+            if (!string.IsNullOrWhiteSpace(value) && !CuitValidator.IsValid(value))
+            {
+                // We could show a visual cue, but for now we just log or ignore
+                // We can't block typing, but we can prevent finding a client if invalid
+            }
+
             try
             {
                 using var db = _dbContextFactory.CreateDbContext();
@@ -304,7 +360,7 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical);
+                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical, _appSettings.ExportPdf);
                 bool persisted = await PersistOrderAsync();
 
                 if (persisted)
@@ -498,6 +554,13 @@ namespace Alquitel.UI.ViewModels
         {
             var errors = new List<string>();
             if (string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName)) errors.Add("Cliente: completá Empresa / Cliente.");
+            
+            var cuit = CurrentOrder.Client?.Cuit ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(cuit) && !CuitValidator.IsValid(cuit))
+            {
+                errors.Add("CUIT: el número ingresado no es válido (falló verificación AFIP).");
+            }
+            
             if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber)) errors.Add("N° Presupuesto: ingresá un número.");
             if (!CurrentOrder.EventDate.HasValue) errors.Add("Fecha del evento: seleccioná una fecha.");
             if (EventDays < 1) errors.Add("Días: debe ser mayor o igual a 1.");

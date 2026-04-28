@@ -13,6 +13,8 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
+using System.Windows.Data;
+using System.ComponentModel;
 
 namespace Alquitel.UI.ViewModels
 {
@@ -81,6 +83,11 @@ namespace Alquitel.UI.ViewModels
 
         [ObservableProperty]
         private bool _isEditing;
+
+        [ObservableProperty]
+        private string _searchText = string.Empty;
+
+        private readonly ICollectionView _productsView;
 
         // ── Editable fields (bound to the form) ─────────────────
         [ObservableProperty] private string _editCategory = "General";
@@ -188,7 +195,22 @@ namespace Alquitel.UI.ViewModels
         public ProductEditorViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory)
         {
             _dbContextFactory = dbContextFactory;
+            _productsView = CollectionViewSource.GetDefaultView(Products);
+            _productsView.Filter = FilterProduct;
             LoadProducts();
+        }
+
+        partial void OnSearchTextChanged(string value)
+        {
+            _productsView.Refresh();
+        }
+
+        private bool FilterProduct(object item)
+        {
+            if (item is not Product product) return false;
+            if (string.IsNullOrWhiteSpace(SearchText)) return true;
+            return product.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
+                || product.Category.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
         }
 
         private void LoadProducts()

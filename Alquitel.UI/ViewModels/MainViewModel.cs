@@ -90,6 +90,20 @@ namespace Alquitel.UI.ViewModels
             _navigationService.NavigateTo<PresupuestosViewModel>();
         }
 
+        [RelayCommand]
+        private void NavigateToClients()
+        {
+            ActiveSection = "Clientes";
+            _navigationService.NavigateTo<ClientsViewModel>();
+        }
+
+        [RelayCommand]
+        private void NavigateToLocations()
+        {
+            ActiveSection = "Ubicaciones";
+            _navigationService.NavigateTo<LocationsViewModel>();
+        }
+
         // ── Theme ────────────────────────────────────────────────────
 
         [RelayCommand]

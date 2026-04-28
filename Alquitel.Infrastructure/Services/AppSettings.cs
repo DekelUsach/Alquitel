@@ -17,6 +17,7 @@ namespace Alquitel.Infrastructure.Services
         public string OtFolder { get; set; } = @"C:\Alquitel\3_OT";
         public string OtTemplate { get; set; } = @"C:\Alquitel\template_ot.docx";
         public bool IsDarkMode { get; set; }
+        public bool ExportPdf { get; set; } = true;
         public List<string> SmartSearchStopWords { get; set; } = new List<string> { "de", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "plus", "pro", "edition", "business", "servicio" };
         public double SmartSearchThreshold { get; set; } = 4.0;
 
@@ -43,6 +44,8 @@ namespace Alquitel.Infrastructure.Services
                     if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
                     if (settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
                         IsDarkMode = isDark;
+                    if (settings.TryGetValue("ExportPdf", out var expPdf) && bool.TryParse(expPdf, out var ePdf))
+                        ExportPdf = ePdf;
                     
                     if (settings.TryGetValue("SmartSearchThreshold", out var thresh) && double.TryParse(thresh, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var th))
                         SmartSearchThreshold = th;
@@ -73,6 +76,7 @@ namespace Alquitel.Infrastructure.Services
                     ["OtFolder"] = OtFolder,
                     ["OtTemplate"] = OtTemplate,
                     ["IsDarkMode"] = IsDarkMode.ToString(),
+                    ["ExportPdf"] = ExportPdf.ToString(),
                     ["SmartSearchThreshold"] = SmartSearchThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     ["SmartSearchStopWords"] = JsonSerializer.Serialize(SmartSearchStopWords)
                 };

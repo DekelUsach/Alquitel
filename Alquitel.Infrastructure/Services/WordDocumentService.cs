@@ -36,7 +36,7 @@ namespace Alquitel.Infrastructure.Services
                     AppLog.Warning(exception, $"Error generating document (Retry {retryCount} due to file lock)");
                 });
 
-        public async Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical)
+        public async Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical, bool exportPdf = false)
         {
             await _retryPolicy.ExecuteAsync(async () =>
             {
@@ -63,6 +63,11 @@ namespace Alquitel.Infrastructure.Services
                         }
 
                         session.SaveAndClose(outputPath);
+                        if (exportPdf)
+                        {
+                            var pdfPath = Path.ChangeExtension(outputPath, ".pdf");
+                            session.ExportAsPdf(pdfPath);
+                        }
                         tcs.SetResult(true);
                     }
                     catch (Exception ex)

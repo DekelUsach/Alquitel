@@ -1,0 +1,95 @@
+<UserControl x:Class="Alquitel.UI.Views.ClientsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid Margin="30,20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: List -->
+        <Border Grid.Column="0" Padding="0,0,16,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Directorio" FontSize="28" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" Margin="4,8,0,16"/>
+
+                <Button Grid.Row="1" Style="{StaticResource DarkPillButton}" Height="44" Margin="0,0,0,16"
+                        Command="{Binding NewClientCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Nuevo Cliente" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <ListBox Grid.Row="2" ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,4">
+                                <TextBlock Text="{Binding CompanyName}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="{Binding Cuit}" FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Right: Editor -->
+        <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,0,0,0">
+                <StackPanel Margin="10,8,10,20">
+                    <TextBlock Text="Editar Cliente" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,8,0,20"/>
+
+                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20" Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="DATOS EMPRESA" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
+
+                            <TextBlock Text="Empresa / Cliente" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                            <TextBox Height="42" Text="{Binding EditCompanyName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+
+                            <TextBlock Text="CUIT" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                            <TextBox Height="42" Text="{Binding EditCuit, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+                            
+                            <TextBlock Text="Contacto" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                            <TextBox Height="42" Text="{Binding EditContactName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+                            
+                            <TextBlock Text="Teléfono" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                            <TextBox Height="42" Text="{Binding EditPhone, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+                            
+                            <TextBlock Text="Email" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold" Margin="4,0,0,5"/>
+                            <TextBox Height="42" Text="{Binding EditEmail, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Actions -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Height="44" Padding="20,0" Margin="0,0,8,0" Background="{DynamicResource SurfaceAltBrush}" Foreground="{DynamicResource TextBrush}"
+                                BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Command="{Binding CancelEditCommand}">
+                            <TextBlock Text="Cancelar" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Button>
+                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0" Margin="0,0,8,0" Background="#D46A6A"
+                                Command="{Binding DeleteClientCommand}">
+                            <TextBlock Text="Eliminar" FontSize="13" VerticalAlignment="Center"/>
+                        </Button>
+                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0" Command="{Binding SaveClientCommand}">
+                            <TextBlock Text="Guardar Cliente" FontSize="13" VerticalAlignment="Center"/>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" Foreground="{DynamicResource SecondaryColorBrush}" HorizontalAlignment="Right" Margin="0,12,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

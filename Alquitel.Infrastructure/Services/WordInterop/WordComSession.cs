@@ -77,6 +77,28 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             }
         }
 
+        public void ExportAsPdf(string pdfPath)
+        {
+            if (Document != null)
+            {
+                // 17 = wdExportFormatPDF
+                Document.ExportAsFixedFormat(
+                    OutputFileName: pdfPath,
+                    ExportFormat: 17,
+                    OpenAfterExport: false,
+                    OptimizeFor: 0, // wdExportOptimizeForPrint
+                    Range: 0, // wdExportAllDocument
+                    Item: 0, // wdExportDocumentContent
+                    IncludeDocProps: true,
+                    KeepIRM: true,
+                    CreateBookmarks: 0, // wdExportCreateNoBookmarks
+                    DocStructureTags: true,
+                    BitmapMissingFonts: true,
+                    UseISO19005_1: false
+                );
+            }
+        }
+
         public void Dispose()
         {
             if (_tempPath != null)

@@ -9,6 +9,7 @@ namespace Alquitel.Core.Interfaces
         string OtFolder { get; set; }
         string OtTemplate { get; set; }
         bool IsDarkMode { get; set; }
+        bool ExportPdf { get; set; }
         List<string> SmartSearchStopWords { get; set; }
         double SmartSearchThreshold { get; set; }
         void LoadSettings();
