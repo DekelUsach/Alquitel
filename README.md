@@ -143,6 +143,22 @@ El `WordDocumentService` utiliza una arquitectura desacoplada para inyectar dato
 
 ---
 
+## 🔧 Roadmap de Próximas Implementaciones
+
+Secciones técnicas pendientes de ejecución para completar la evolución del sistema:
+
+### Fase 6 — Observabilidad y Resiliencia (En Progreso)
+- **6.1 Serilog Integration**: Implementación de logging estructurado en archivo y consola para diagnóstico de errores COM silenciosos.
+- **6.2 Global Exception Handler**: Captura de excepciones no controladas a nivel de AppDomain y Dispatcher para evitar cierres abruptos.
+- **6.3 Auto-Backup Database**: Job en segundo plano para respaldar `Alquitel.db` en `%AppData%\Alquitel\backups` cada 6 horas.
+
+### Fase 7 — Seguridad y DevOps (Pendiente)
+- **7.1 Path Validation**: Sanitización de rutas en `Process.Start` para prevenir Path Traversal en la apertura de documentos.
+- **7.2 Secrets Management**: Migración de cadenas de conexión y configuraciones sensibles a `UserSecrets` de .NET.
+- **7.3 Auto-Update Engine**: Implementación de Velopack para actualizaciones automáticas "over-the-air" sin intervención manual del usuario.
+
+---
+
 ## 🛠️ Stack Tecnológico Completo
 
 | Capa | Tecnología |
