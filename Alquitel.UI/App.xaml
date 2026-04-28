@@ -79,14 +79,93 @@
                 </Setter>
             </Style>
 
-            <!-- DatePicker -->
+            <!-- DatePicker pill — matches TextBox design -->
+            <Style TargetType="DatePickerTextBox">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                <Setter Property="Padding" Value="4,0"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DatePickerTextBox">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Background="Transparent"
+                                          VerticalAlignment="Center"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style TargetType="DatePicker">
                 <Setter Property="Margin" Value="0"/>
                 <Setter Property="Height" Value="42"/>
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DatePicker">
+                            <Border x:Name="Root"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Effect="{StaticResource StandardShadow}">
+                                <Grid Margin="12,0,8,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <DatePickerTextBox x:Name="PART_TextBox"
+                                                       Grid.Column="0"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       Background="Transparent"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="13"/>
+                                    <Button x:Name="PART_Button"
+                                            Grid.Column="1"
+                                            Width="28" Height="28"
+                                            Cursor="Hand"
+                                            Focusable="False">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Btn"
+                                                        Background="Transparent"
+                                                        CornerRadius="8"
+                                                        Width="28" Height="28">
+                                                    <Path Data="M6,2 L6,0 M10,2 L10,0 M2,5 L14,5 M2,2 L14,2 Q15,2 15,3 L15,14 Q15,15 14,15 L2,15 Q1,15 1,14 L1,3 Q1,2 2,2 Z"
+                                                          Stroke="{DynamicResource MutedTextBrush}"
+                                                          StrokeThickness="1.2"
+                                                          Width="14" Height="15"
+                                                          Stretch="Uniform"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Btn" Property="Background"
+                                                                Value="{DynamicResource HoverBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Popup x:Name="PART_Popup" AllowsTransparency="True"
+                                           Placement="Bottom" StaysOpen="False"/>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter TargetName="Root" Property="BorderBrush"
+                                            Value="{DynamicResource SecondaryColorBrush}"/>
+                                    <Setter TargetName="Root" Property="BorderThickness" Value="1.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <!-- DataGrid base -->

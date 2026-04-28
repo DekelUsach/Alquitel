@@ -122,7 +122,7 @@ namespace Alquitel.Infrastructure.Services
                         ReplaceText(doc, "[PRESUPUESTO]",  order.BudgetNumber);
 
                         ReplaceText(doc, "(nombre cliente)", order.Client?.CompanyName ?? "N/A");
-                        ReplaceText(doc, "(servicio contratado)", order.Items.FirstOrDefault()?.Product?.Description ?? "N/A");
+                        ReplaceText(doc, "(servicio contratado)", StripTags(order.Items.FirstOrDefault()?.Product?.Description) ?? "N/A");
                         ReplaceText(doc, "(lugar del evento)", order.Location?.Name ?? "N/A");
 
                         ReplaceText(doc, "(Empleado que hizo el presupuesto)", order.AdminName);
@@ -134,119 +134,11 @@ namespace Alquitel.Infrastructure.Services
                         var searchRange = doc.Content;
                         if (searchRange.Find.Execute("{{PRODUCTOS_AQUI}}"))
                         {
-                            searchRange.Text = ""; // clear placeholder
+                            searchRange.Text = ""; // collapse placeholder
 
                             foreach (var item in order.Items)
                             {
-                                // 1. Create Layout Table (2 columns: left Image, right Details)
-                                var prodTable = doc.Tables.Add(searchRange, 1, 2);
-                                prodTable.Borders.Enable = 0;
-                                prodTable.Cell(1, 1).Width = wordApp.CentimetersToPoints(4f);
-                                prodTable.Cell(1, 2).Width = wordApp.CentimetersToPoints(12f);
-
-                                // Insert Image if available
-                                if (!string.IsNullOrEmpty(item.ImagePath) && System.IO.File.Exists(item.ImagePath))
-                                {
-                                    object missing = System.Reflection.Missing.Value;
-                                    var imageRange = prodTable.Cell(1, 1).Range;
-                                    imageRange.Collapse(ref missing);
-                                    var shape = imageRange.InlineShapes.AddPicture(item.ImagePath, false, true);
-                                    shape.Width = 100;
-                                    shape.Height = 100;
-                                }
-
-                                var textRange = prodTable.Cell(1, 2).Range;
-                                textRange.Text = "";
-
-                                // Insert Title
-                                var titlePara = textRange.Paragraphs.Add();
-                                titlePara.Range.Text = item.Product?.Description + "\n";
-                                titlePara.Range.Font.Bold = 1;
-                                titlePara.Range.Font.Size = 14;
-                                titlePara.Range.Font.Color = 16777215; // WdColorWhite
-
-                                // Insert Custom Fields
-                                if (!string.IsNullOrWhiteSpace(item.CustomFieldsJson))
-                                {
-                                    try
-                                    {
-                                        var fields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(item.CustomFieldsJson);
-                                        if (fields != null)
-                                        {
-                                            foreach (var f in fields)
-                                            {
-                                                var p = textRange.Paragraphs.Add();
-                                                p.Range.Font.Bold = f.IsBold ? 1 : 0;
-                                                p.Range.Font.Underline = f.IsUnderline ? 1 : 0;
-                                                p.Range.Font.Size = 11;
-
-                                                try
-                                                {
-                                                    if (f.ColorHex.StartsWith("#") && f.ColorHex.Length == 7)
-                                                    {
-                                                        string r = f.ColorHex.Substring(1, 2);
-                                                        string g = f.ColorHex.Substring(3, 2);
-                                                        string b = f.ColorHex.Substring(5, 2);
-                                                        p.Range.Font.Color = Convert.ToInt32(r, 16) + (Convert.ToInt32(g, 16) * 0x100) + (Convert.ToInt32(b, 16) * 0x10000);
-                                                    }
-                                                    else
-                                                    {
-                                                        p.Range.Font.Color = 16777215;
-                                                    }
-                                                }
-                                                catch { p.Range.Font.Color = 16777215; }
-
-                                                p.Range.Text = $"{f.Label}: {f.Value}\n";
-                                            }
-                                        }
-                                    }
-                                    catch { }
-                                }
-
-                                // Insert Requested Measure
-                                if (!string.IsNullOrWhiteSpace(item.RequestedMeasure))
-                                {
-                                    var measureP = textRange.Paragraphs.Add();
-                                    measureP.Range.Text = $"Medida solicitada: {item.RequestedMeasure}\n";
-                                    measureP.Range.Font.Bold = 1;
-                                    measureP.Range.Font.Underline = 1;
-                                    measureP.Range.Font.Size = 11;
-                                    measureP.Range.Font.Color = 16777215;
-                                }
-
-                                // Get position exactly after the product table
-                                int nextPos = prodTable.Range.End;
-                                var summaryRange = doc.Range(nextPos, nextPos);
-                                summaryRange.InsertParagraphAfter(); // A little spacing
-                                nextPos = summaryRange.End;
-                                summaryRange = doc.Range(nextPos, nextPos);
-
-                                // 2. Create Summary Table (Cant, Dias, Costo U, Total)
-                                var summaryTable = doc.Tables.Add(summaryRange, 1, 4);
-                                summaryTable.Borders.Enable = 1;
-                                summaryTable.Borders.InsideLineStyle = 1;
-                                summaryTable.Borders.OutsideLineStyle = 1;
-
-                                summaryTable.Shading.BackgroundPatternColor = 16757640;
-                                summaryTable.Cell(1, 1).Range.Text = $"Cant.: {item.Quantity}";
-                                summaryTable.Cell(1, 2).Range.Text = $"Días: {item.Dias}";
-                                summaryTable.Cell(1, 3).Range.Text = isTechnical ? "Costo U.: ----" : $"Costo U.: {item.UnitPrice:C}";
-                                summaryTable.Cell(1, 4).Range.Text = isTechnical ? "Total: ----" : $"Total: {item.Total:C}";
-
-                                foreach (dynamic cell in summaryTable.Range.Cells)
-                                {
-                                    cell.Range.Font.Bold = 1;
-                                    cell.Range.Font.Color = 0;
-                                    cell.VerticalAlignment = 1;
-                                }
-
-                                // Position for the next product
-                                int finalPos = summaryTable.Range.End;
-                                searchRange = doc.Range(finalPos, finalPos);
-                                searchRange.InsertParagraphAfter();
-                                searchRange.InsertParagraphAfter();
-                                object collapseEnd = 0;
-                                searchRange.Collapse(ref collapseEnd);
+                                RenderProduct(doc, wordApp, ref searchRange, item, isTechnical);
                             }
                         }
 
@@ -320,6 +212,313 @@ namespace Alquitel.Infrastructure.Services
 
                 await tcs.Task;
             });
+        }
+
+        // Word color values are BGR: 0x00BBGGRR
+        private const int WD_WHITE   = 0x00FFFFFF;
+        private const int WD_BLACK   = 0x00000000;
+        private const int WD_AUTO    = -16777216; // wdColorAutomatic — adapts to Word theme (dark/light)
+        private const int WD_RED     = 0x000000FF; // #FF0000
+        private const int WD_GREEN   = 0x00006600; // #006600
+        private const int WD_DARKRED = 0x000000C0; // #C00000
+        private const int WD_BLUE    = 0x00C7681F; // #1F68C7
+        private const string FONT_NAME = "Montserrat";
+
+        private sealed class Segment
+        {
+            public string Text = "";
+            public int Color = WD_BLACK;
+            public bool Bold;
+            public bool Italic;
+            public bool Underline;
+        }
+
+        // Parse inline color/style tags. Supported: [red] [green] [darkred] [blue] [white] [black] [b] [i] [u]
+        private static List<Segment> ParseSegments(string? text, int defaultColor, bool defaultBold = false, bool defaultUnderline = false)
+        {
+            var result = new List<Segment>();
+            if (string.IsNullOrEmpty(text)) return result;
+
+            int color = defaultColor;
+            bool bold = defaultBold, italic = false, underline = defaultUnderline;
+            var stack = new Stack<(int color, bool bold, bool italic, bool underline)>();
+
+            int i = 0;
+            var buf = new System.Text.StringBuilder();
+            void Flush()
+            {
+                if (buf.Length == 0) return;
+                result.Add(new Segment { Text = buf.ToString(), Color = color, Bold = bold, Italic = italic, Underline = underline });
+                buf.Clear();
+            }
+
+            while (i < text.Length)
+            {
+                if (text[i] == '[')
+                {
+                    int close = text.IndexOf(']', i + 1);
+                    if (close > i)
+                    {
+                        string tag = text.Substring(i + 1, close - i - 1).Trim().ToLowerInvariant();
+                        bool isClose = tag.StartsWith("/");
+                        string name = isClose ? tag.Substring(1) : tag;
+                        int? newColor = name switch
+                        {
+                            "red"     => WD_RED,
+                            "green"   => WD_GREEN,
+                            "darkred" => WD_DARKRED,
+                            "blue"    => WD_BLUE,
+                            "white"   => WD_WHITE,
+                            "black"   => WD_BLACK,
+                            _ => (int?)null
+                        };
+                        bool isStyle = name == "b" || name == "i" || name == "u";
+
+                        if (newColor.HasValue || isStyle)
+                        {
+                            Flush();
+                            if (!isClose)
+                            {
+                                stack.Push((color, bold, italic, underline));
+                                if (newColor.HasValue) color = newColor.Value;
+                                if (name == "b") bold = true;
+                                if (name == "i") italic = true;
+                                if (name == "u") underline = true;
+                            }
+                            else if (stack.Count > 0)
+                            {
+                                var s = stack.Pop();
+                                color = s.color; bold = s.bold; italic = s.italic; underline = s.underline;
+                            }
+                            i = close + 1;
+                            continue;
+                        }
+                    }
+                }
+                buf.Append(text[i]);
+                i++;
+            }
+            Flush();
+            return result;
+        }
+
+        private static string? StripTags(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            return System.Text.RegularExpressions.Regex.Replace(text, @"\[/?[a-zA-Z]+\]", "");
+        }
+
+        private static int HexToBgr(string hex, int fallback)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(hex) || !hex.StartsWith("#") || hex.Length != 7) return fallback;
+                int r = Convert.ToInt32(hex.Substring(1, 2), 16);
+                int g = Convert.ToInt32(hex.Substring(3, 2), 16);
+                int b = Convert.ToInt32(hex.Substring(5, 2), 16);
+                return r | (g << 8) | (b << 16);
+            }
+            catch { return fallback; }
+        }
+
+        // Append colored segments to a Range (range gets advanced via InsertAfter)
+        private static void AppendSegments(dynamic range, IEnumerable<Segment> segments, int sizePt)
+        {
+            foreach (var s in segments)
+            {
+                if (string.IsNullOrEmpty(s.Text)) continue;
+                int startLen = (int)range.End;
+                range.Collapse(0); // wdCollapseEnd = 0
+                range.InsertAfter(s.Text);
+                range.SetRange(startLen, range.End);
+                range.Font.Name = FONT_NAME;
+                range.Font.Size = sizePt;
+                range.Font.Bold = s.Bold ? 1 : 0;
+                range.Font.Italic = s.Italic ? 1 : 0;
+                range.Font.Underline = s.Underline ? 1 /*wdUnderlineSingle*/ : 0;
+                range.Font.Color = s.Color;
+                // Clear inherited highlight/shading from template hyperlink style
+                try { range.HighlightColorIndex = 0; } catch { }
+                try { range.Shading.BackgroundPatternColor = -16777216; /* wdColorAutomatic */ } catch { }
+                try { range.Shading.Texture = 0; } catch { }
+                try { range.Font.Underline = s.Underline ? 1 : 0; } catch { }
+                range.Collapse(0);
+            }
+        }
+
+        private static void ResetParagraphStyle(dynamic doc, dynamic range)
+        {
+            try { range.set_Style(doc.Styles["Normal"]); } catch { }
+            try { range.ParagraphFormat.Shading.BackgroundPatternColor = -16777216; } catch { }
+        }
+
+        private static void RenderProduct(dynamic doc, dynamic wordApp, ref dynamic insertRange, OrderItem item, bool isTechnical)
+        {
+            // ── 1. TITLE PARAGRAPH ──
+            insertRange.Collapse(0);
+            ResetParagraphStyle(doc, insertRange);
+            insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
+            insertRange.ParagraphFormat.SpaceBefore = 6;
+            insertRange.ParagraphFormat.SpaceAfter = 0;
+
+            var titleSegments = ParseSegments(item.Product?.Description ?? "Producto", WD_BLACK, defaultBold: true);
+            AppendSegments(insertRange, titleSegments, 12);
+
+            // Insert floating image anchored to the title paragraph (left, wrap tight)
+            if (!string.IsNullOrEmpty(item.ImagePath) && System.IO.File.Exists(item.ImagePath))
+            {
+                try
+                {
+                    int titleStart = (int)insertRange.Paragraphs[1].Range.Start;
+                    int titleEnd   = (int)insertRange.Paragraphs[1].Range.End;
+                    var anchorRange = doc.Range(titleStart, titleStart);
+
+                    dynamic shape = doc.Shapes.AddPicture(
+                        FileName: item.ImagePath,
+                        LinkToFile: false,
+                        SaveWithDocument: true,
+                        Left: 0f,
+                        Top: 0f,
+                        Width: wordApp.CentimetersToPoints(2.5f),
+                        Height: wordApp.CentimetersToPoints(2.5f),
+                        Anchor: anchorRange);
+
+                    shape.WrapFormat.Type = 3; // wdWrapTight
+                    shape.WrapFormat.Side = 2; // wdWrapRight (text on right)
+                    shape.RelativeHorizontalPosition = 2; // wdRelativeHorizontalPositionColumn
+                    shape.RelativeVerticalPosition   = 3; // wdRelativeVerticalPositionParagraph
+                    shape.Left = wordApp.CentimetersToPoints(0f);
+                    shape.Top  = wordApp.CentimetersToPoints(0f);
+                }
+                catch { /* image insert is best-effort */ }
+            }
+
+            // New paragraph after title
+            insertRange.Collapse(0);
+            insertRange.InsertParagraphAfter();
+            insertRange.Collapse(0);
+
+            // ── 2. DETAIL PARAGRAPHS (custom fields) ──
+            if (!string.IsNullOrWhiteSpace(item.CustomFieldsJson))
+            {
+                try
+                {
+                    var fields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(item.CustomFieldsJson);
+                    if (fields != null)
+                    {
+                        foreach (var f in fields)
+                        {
+                            ResetParagraphStyle(doc, insertRange);
+                            insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
+                            insertRange.ParagraphFormat.SpaceBefore = 0;
+                            insertRange.ParagraphFormat.SpaceAfter = 0;
+
+                            int fieldColor = HexToBgr(f.ColorHex, WD_BLACK);
+
+                            // Label run (bold/underline per field flags)
+                            if (!string.IsNullOrEmpty(f.Label))
+                            {
+                                var labelSegs = new List<Segment>
+                                {
+                                    new Segment {
+                                        Text = string.IsNullOrEmpty(f.Value) ? f.Label : f.Label + ": ",
+                                        Color = fieldColor, Bold = f.IsBold, Underline = f.IsUnderline
+                                    }
+                                };
+                                AppendSegments(insertRange, labelSegs, 9);
+                            }
+
+                            // Value run (parsed for inline tags, defaults to plain in same color)
+                            if (!string.IsNullOrEmpty(f.Value))
+                            {
+                                var valueSegs = ParseSegments(f.Value, fieldColor);
+                                AppendSegments(insertRange, valueSegs, 9);
+                            }
+
+                            insertRange.Collapse(0);
+                            insertRange.InsertParagraphAfter();
+                            insertRange.Collapse(0);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // ── 3. REQUESTED MEASURE ──
+            if (!string.IsNullOrWhiteSpace(item.RequestedMeasure))
+            {
+                ResetParagraphStyle(doc, insertRange);
+                insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
+                insertRange.ParagraphFormat.SpaceBefore = 0;
+                insertRange.ParagraphFormat.SpaceAfter = 0;
+
+                AppendSegments(insertRange, new[] {
+                    new Segment { Text = "Medida solicitada: ", Color = WD_BLACK, Bold = true, Underline = true }
+                }, 9);
+                AppendSegments(insertRange, ParseSegments(item.RequestedMeasure, WD_RED, defaultBold: true), 9);
+
+                insertRange.Collapse(0);
+                insertRange.InsertParagraphAfter();
+                insertRange.Collapse(0);
+            }
+
+            // Empty spacer paragraph (so image float ends before summary)
+            insertRange.ParagraphFormat.LeftIndent = 0;
+            insertRange.InsertParagraphAfter();
+            insertRange.Collapse(0);
+
+            // ── 4. SUMMARY TABLE 1×4 ──
+            var summaryTable = doc.Tables.Add(insertRange, 1, 4);
+            summaryTable.AllowAutoFit = false;
+            try
+            {
+                summaryTable.Rows.Alignment = 1; // wdAlignRowCenter
+                summaryTable.Rows.HeightRule = 2; // wdRowHeightExact
+                summaryTable.Rows.Height = wordApp.CentimetersToPoints(0.65f);
+            }
+            catch { }
+
+            summaryTable.Cell(1, 1).Width = wordApp.CentimetersToPoints(2.2f);
+            summaryTable.Cell(1, 2).Width = wordApp.CentimetersToPoints(2.0f);
+            summaryTable.Cell(1, 3).Width = wordApp.CentimetersToPoints(4.0f);
+            summaryTable.Cell(1, 4).Width = wordApp.CentimetersToPoints(5.0f);
+
+            // White inner borders, no outer
+            try
+            {
+                summaryTable.Borders.OutsideLineStyle = 0; // wdLineStyleNone
+                summaryTable.Borders.InsideLineStyle  = 1; // wdLineStyleSingle
+                summaryTable.Borders.InsideLineWidth  = 4; // 0.5pt
+                summaryTable.Borders.InsideColor      = WD_WHITE;
+            }
+            catch { }
+
+            string c1 = $"Cant.: {item.Quantity}";
+            string c2 = $"Días: {item.Dias}";
+            string c3 = isTechnical ? "Costo U.: -----" : $"Costo U.: {(item.UnitPrice == 0 ? "-----" : item.UnitPrice.ToString("N0", new System.Globalization.CultureInfo("es-AR")))}";
+            string c4 = isTechnical ? "Total: -----" : $"Total: $ {item.Total.ToString("N0", new System.Globalization.CultureInfo("es-AR"))}";
+
+            string[] cells = { c1, c2, c3, c4 };
+            for (int c = 1; c <= 4; c++)
+            {
+                dynamic cell = summaryTable.Cell(1, c);
+                cell.Shading.BackgroundPatternColor = WD_BLUE;
+                cell.VerticalAlignment = 1; // wdCellAlignVerticalCenter
+                var cr = cell.Range;
+                cr.Text = cells[c - 1];
+                cr.Font.Name = FONT_NAME;
+                cr.Font.Size = 10;
+                cr.Font.Bold = 1;
+                cr.Font.Color = WD_WHITE;
+                cr.ParagraphFormat.Alignment = c == 1 || c == 2 ? 1 /*wdAlignParagraphCenter*/ : 0 /*wdAlignParagraphLeft*/;
+            }
+
+            // Move insertRange after the summary table
+            int after = (int)summaryTable.Range.End;
+            insertRange = doc.Range(after, after);
+            insertRange.InsertParagraphAfter();
+            insertRange.InsertParagraphAfter();
+            insertRange.Collapse(0);
         }
 
         private static void ReplaceBookmark(dynamic doc, string name, string text)

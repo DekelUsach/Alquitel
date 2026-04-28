@@ -142,28 +142,14 @@
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="DESDE (MODIFICADO)" FontSize="10" FontWeight="Bold"
                                    Foreground="{DynamicResource MutedTextBrush}" Margin="4,0,0,4"/>
-                        <Border Background="{DynamicResource SurfaceAltBrush}"
-                                BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                                CornerRadius="12" Height="40">
-                            <DatePicker SelectedDate="{Binding FilterDateFrom}"
-                                        Background="Transparent" BorderThickness="0"
-                                        Foreground="{DynamicResource TextBrush}"
-                                        Height="38" Margin="8,0"/>
-                        </Border>
+                        <DatePicker SelectedDate="{Binding FilterDateFrom}" Height="42"/>
                     </StackPanel>
 
                     <!-- Date To -->
                     <StackPanel Grid.Column="4">
                         <TextBlock Text="HASTA (MODIFICADO)" FontSize="10" FontWeight="Bold"
                                    Foreground="{DynamicResource MutedTextBrush}" Margin="4,0,0,4"/>
-                        <Border Background="{DynamicResource SurfaceAltBrush}"
-                                BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                                CornerRadius="12" Height="40">
-                            <DatePicker SelectedDate="{Binding FilterDateTo}"
-                                        Background="Transparent" BorderThickness="0"
-                                        Foreground="{DynamicResource TextBrush}"
-                                        Height="38" Margin="8,0"/>
-                        </Border>
+                        <DatePicker SelectedDate="{Binding FilterDateTo}" Height="42"/>
                     </StackPanel>
                 </Grid>
             </Border>

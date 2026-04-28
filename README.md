@@ -51,7 +51,10 @@ El sistema ha sido reescrito desde cero a nivel de UI y Word Interop para dejar 
 Un potente motor algorítmico (basado en _Coeficientes de Dice_ y _extracción de Trigramas_) capaz de analizar lenguaje natural y **detectar automáticamente los productos, cantidades y días**.
 
 ### 2. 🎛️ Arquitectura de Campos Dinámicos en JSON
-Los productos ya no dependen de propiedades estáticas (columnas SQL fijas). Implementamos un sistema visual donde los usuarios configuran **Campos Dinámicos** (ilimitados) decidiendo el color, la negrita y los detalles técnicos. Toda esta meta-data viaja automáticamente a los Presupuestos.
+Los productos ya no dependen de propiedades estáticas (columnas SQL fijas). Implementamos un sistema visual donde los usuarios configuran:
+- **Descripción Segmentada**: Título del producto dividido en fragmentos independientes, cada uno con color (Negro, Rojo, Verde, Rojo Oscuro), negrita e itálica. Ideal para destacar especificaciones (ej: "Pantalla de Leds 2 mm - **Para interior – FLEX – Vertical**" con colores).
+- **Campos Dinámicos** (ilimitados): Propiedades técnicas (resolución, peso, consumo, etc.) con color y formato independiente.
+Toda esta meta-data viaja automáticamente a los Presupuestos renderizados en Word.
 
 ### 3. 📄 Nuevo Motor de Generación Dinámica (Interop Optimizado)
 Adiós al bloqueo o congelamiento de MS Word. El motor ha sido optimizado con **STA Threads (Single-Threaded Apartments)** y reemplazó las tablas viejas por la super-etiqueta `{{PRODUCTOS_AQUI}}`:
@@ -121,14 +124,31 @@ Alquitel/
 El funcionamiento del motor es el siguiente: el `BudgetBuilderViewModel` recoge la estructura de datos temporal y la envía a `WordDocumentService` que inicia un subproceso asíncrono para no trabar la interfaz gráfica.
 
 ### Etiquetas Soportadas
-Cualquier plantilla `.docx` reconocerá lo siguiente:
-- `[CLIENTE]`, `{{CLIENTE}}` -> Extrae el Razón Social.
-- `[CUIT]`, `{{CUIT}}` -> CUIT del Cliente.
-- `[NUMERO]`, `{{NUMERO}}` -> Correlativo.
-- `(fecha)` -> Fecha generada.
+
+**Placeholders Globales:**
+- `[CLIENTE]`, `{{CLIENTE}}` → Razón Social del Cliente.
+- `[CUIT]`, `{{CUIT}}` → CUIT del Cliente.
+- `[NUMERO]`, `{{NUMERO}}` → Número de Presupuesto.
+- `(fecha)` → Fecha generada.
+
+**Tags Inline en Descripción de Productos:**
+Dentro del campo **Descripción Segmentada**, se pueden usar los tags inline (aunque recomendamos usar el editor visual):
+- `[red]...[/red]` → Texto en Rojo.
+- `[green]...[/green]` → Texto en Verde.
+- `[darkred]...[/darkred]` → Texto en Rojo Oscuro.
+- `[b]...[/b]` → Negrita.
+- `[i]...[/i]` → Cursiva.
+
+Ejemplo: `Pantalla de Leds 2 mm - [red]Para interior – [/red][green]FLEX[/green] [darkred][i]– Vertical[/i][/darkred]`
 
 ### El Tag Mágico: `{{PRODUCTOS_AQUI}}`
-Este tag es el corazón de la modernización. Al ejecutarse la generación documental, Word borrará el texto y armará el layout tabla por tabla de forma invisible.
+Este tag es el corazón de la modernización. Al ejecutarse la generación documental, Word borrará el texto y armará el layout producto por producto de forma invisible.
+
+**Renderizado de cada Producto:**
+1. **Título Segmentado**: Imagen flotante a la izquierda (2.5×2.5cm, envuelto en texto). Título en Montserrat 12pt bold con colores inline `[red]...[/red]`, `[green]...[/green]`, `[darkred]...[/darkred]`.
+2. **Detalles Dinámicos**: Párrafos Montserrat 9pt con CustomFields. Cada campo aplica color, negrita, subrayado según su configuración.
+3. **Medida Solicitada** (si existe): "Medida solicitada: " bold subrayado + valor coloreado en rojo.
+4. **Tabla Resumen**: 1×4 con celda fill azul `#1F68C7`, texto blanco bold 10pt. Cant.: | Días: | Costo U.: | Total: $.
 
 ```mermaid
 sequenceDiagram
@@ -141,10 +161,11 @@ sequenceDiagram
     Word->>Word: Clona Plantilla para evadir "Lock Files"
     Word->>Word: Reemplaza Tags Globales
     Word->>Word: Encuentra {{PRODUCTOS_AQUI}}
-    loop Renderizado de Productos
-        Word->>Word: Inserta Thumbnail Image
-        Word->>Word: Inserta Título y Propiedades Dinámicas
-        Word->>Word: Mapea Sumatorias Monetarias
+    loop Por cada Producto
+        Word->>Word: Inserta Imagen flotante izq (wrap tight)
+        Word->>Word: Título Montserrat 12pt + tags color [red]/[green]/[darkred]
+        Word->>Word: CustomFields Montserrat 9pt con formato individual
+        Word->>Word: Tabla resumen 1×4 (fill azul, blanco 10pt)
     end
     Word-->>UI: Retorna Archivo finalizado
     UI->>User: 🟢 Archivo Listo!
@@ -183,6 +204,32 @@ dotnet run --project Alquitel.UI\Alquitel.UI.csproj
 # 4. Generar ejecutable de Producción autónomo (Self-Contained)
 dotnet publish Alquitel.UI\Alquitel.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
+
+---
+
+## 📝 Guía: Editor de Productos con Descripción Segmentada
+
+Al crear o editar un producto, la **Descripción** se construye mediante segmentos independientes:
+
+1. **Añadir Segmento**: Botón "Añadir Segmento" crea un nuevo campo de texto.
+2. **Personalizar cada Segmento**:
+   - **Texto**: Contenido del fragmento (ej: "Pantalla de Leds 2 mm - ").
+   - **Color**: Selector visual (Negro, Rojo `#FF0000`, Verde `#006600`, Rojo Oscuro `#C00000`).
+   - **Negrita (N)**: Checkbox para aplicar bold.
+   - **Cursiva (I)**: Checkbox para aplicar italic.
+   - **Eliminar**: Botón rojo `✕`.
+
+3. **Vista Previa en Vivo**: Border superior muestra cómo se vería en el presupuesto (colores reales, estilos aplicados).
+
+**Ejemplo** (Pantalla LED):
+| Segmento | Texto | Color | N | I |
+|----------|-------|-------|---|---|
+| 1 | Pantalla de Leds 2 mm - | Negro | ✓ | |
+| 2 | Para interior – | Rojo | ✓ | |
+| 3 | FLEX | Verde | ✓ | |
+| 4 | – Vertical | Rojo Oscuro | ✓ | ✓ |
+
+Los segmentos se concatenan automáticamente al guardar. En el presupuesto aparecerán exactamente como se vea en la vista previa.
 
 ---
 
