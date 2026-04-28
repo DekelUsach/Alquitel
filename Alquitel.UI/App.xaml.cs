@@ -23,7 +23,6 @@ namespace Alquitel.UI
 
                 ServiceProvider = serviceCollection.BuildServiceProvider();
 
-                // Initialize DB
                 var initService = ServiceProvider.GetRequiredService<DataInitializationService>();
                 initService.Initialize();
 
@@ -42,9 +41,8 @@ namespace Alquitel.UI
 
         private void ConfigureServices(IServiceCollection services)
         {
-            services.AddDbContext<AlquitelDbContext>(
-                options => options.UseSqlite(AppPaths.DbConnectionString),
-                ServiceLifetime.Singleton);
+            services.AddDbContextFactory<AlquitelDbContext>(
+                options => options.UseSqlite(AppPaths.DbConnectionString));
             services.AddSingleton<DataInitializationService>();
             services.AddSingleton<IDocumentService, WordDocumentService>();
             services.AddSingleton<MainViewModel>();

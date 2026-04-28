@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -22,7 +23,7 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class BudgetBuilderViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
         private readonly ICollectionView _productsView;
         private readonly SettingsViewModel _settingsVm;
@@ -60,15 +61,21 @@ namespace Alquitel.UI.ViewModels
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
-        public BudgetBuilderViewModel(AlquitelDbContext dbContext, IDocumentService documentService, SettingsViewModel settingsVm)
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, SettingsViewModel settingsVm)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _settingsVm = settingsVm;
 
-            try {
-                foreach(var p in _dbContext.Products.ToList()) AvailableProducts.Add(p);
-            } catch { }
+            try
+            {
+                using var db = _dbContextFactory.CreateDbContext();
+                foreach (var p in db.Products.AsNoTracking().ToList()) AvailableProducts.Add(p);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "Failed to load products in BudgetBuilder");
+            }
 
             _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
             _productsView.Filter = FilterProduct;
@@ -96,11 +103,19 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnCuitInputChanged(string value)
         {
-            var client = _dbContext.Clients.FirstOrDefault(c => c.Cuit == value);
-            if (client != null)
+            try
             {
-                CurrentOrder.Client = client;
-                OnPropertyChanged(nameof(CurrentOrder));
+                using var db = _dbContextFactory.CreateDbContext();
+                var client = db.Clients.AsNoTracking().FirstOrDefault(c => c.Cuit == value);
+                if (client != null)
+                {
+                    CurrentOrder.Client = client;
+                    OnPropertyChanged(nameof(CurrentOrder));
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "CUIT lookup failed for {Cuit}", value);
             }
         }
 
@@ -261,18 +276,33 @@ namespace Alquitel.UI.ViewModels
                 }
 
                 await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical);
-                await PersistOrderAsync();
-                MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                bool persisted = await PersistOrderAsync();
+
+                if (persisted)
+                {
+                    MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                        "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
+                        "Revisá el archivo de log para más detalles.",
+                        "Documento generado, persistencia falló", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
                 MessageBox.Show($"Error: {ex.Message}", "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         public void LoadOrder(Order order)
         {
-            var full = _dbContext.Orders
+            using var db = _dbContextFactory.CreateDbContext();
+            var full = db.Orders
+                .AsNoTracking()
                 .Include(o => o.Client)
                 .Include(o => o.Location)
                 .Include(o => o.Items).ThenInclude(i => i.Product)
@@ -319,17 +349,19 @@ namespace Alquitel.UI.ViewModels
             CuitInput = full.Client?.Cuit ?? string.Empty;
         }
 
-        private async Task PersistOrderAsync()
+        private async Task<bool> PersistOrderAsync()
         {
             try
             {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+
                 var locName = CurrentOrder.Location?.Name ?? string.Empty;
-                var location = _dbContext.Locations.FirstOrDefault(l => l.Name == locName);
+                var location = db.Locations.FirstOrDefault(l => l.Name == locName);
                 if (location == null && !string.IsNullOrWhiteSpace(locName))
                 {
                     location = new Location { Name = locName };
-                    _dbContext.Locations.Add(location);
-                    await _dbContext.SaveChangesAsync();
+                    db.Locations.Add(location);
+                    await db.SaveChangesAsync();
                 }
                 else if (location == null)
                 {
@@ -339,11 +371,7 @@ namespace Alquitel.UI.ViewModels
                 var clientId = CurrentOrder.Client?.Id ?? Guid.Empty;
                 var locationId = location.Id;
 
-                var trackedOrder = _dbContext.ChangeTracker.Entries<Order>()
-                    .FirstOrDefault(e => e.Entity.Id == CurrentOrder.Id);
-                if (trackedOrder != null) trackedOrder.State = EntityState.Detached;
-
-                var orderExists = _dbContext.Orders.Any(o => o.Id == CurrentOrder.Id);
+                var orderExists = db.Orders.Any(o => o.Id == CurrentOrder.Id);
 
                 if (!orderExists)
                 {
@@ -358,12 +386,12 @@ namespace Alquitel.UI.ViewModels
                         EventDate = CurrentOrder.EventDate,
                         Status = CurrentOrder.Status,
                     };
-                    _dbContext.Orders.Add(orderToSave);
-                    await _dbContext.SaveChangesAsync();
+                    db.Orders.Add(orderToSave);
+                    await db.SaveChangesAsync();
 
                     foreach (var item in CurrentOrder.Items)
                     {
-                        _dbContext.OrderItems.Add(new OrderItem
+                        db.OrderItems.Add(new OrderItem
                         {
                             Id = item.Id,
                             OrderId = orderToSave.Id,
@@ -377,11 +405,11 @@ namespace Alquitel.UI.ViewModels
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }
-                    await _dbContext.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
                 else
                 {
-                    var tracked = _dbContext.Orders.Find(CurrentOrder.Id);
+                    var tracked = db.Orders.Find(CurrentOrder.Id);
                     if (tracked != null)
                     {
                         tracked.BudgetNumber = CurrentOrder.BudgetNumber;
@@ -392,13 +420,13 @@ namespace Alquitel.UI.ViewModels
                         tracked.Status = CurrentOrder.Status;
                     }
 
-                    var oldItems = _dbContext.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
-                    _dbContext.OrderItems.RemoveRange(oldItems);
-                    await _dbContext.SaveChangesAsync();
+                    var oldItems = db.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
+                    db.OrderItems.RemoveRange(oldItems);
+                    await db.SaveChangesAsync();
 
                     foreach (var item in CurrentOrder.Items)
                     {
-                        _dbContext.OrderItems.Add(new OrderItem
+                        db.OrderItems.Add(new OrderItem
                         {
                             Id = Guid.NewGuid(),
                             OrderId = CurrentOrder.Id,
@@ -412,12 +440,16 @@ namespace Alquitel.UI.ViewModels
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }
-                    await _dbContext.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
+
+                AppLog.Information("Order persisted: {OrderId} ({Budget})", CurrentOrder.Id, CurrentOrder.BudgetNumber);
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                // Persistence is non-critical — document was already generated
+                AppLog.Error(ex, "PersistOrderAsync failed for order {OrderId}", CurrentOrder.Id);
+                return false;
             }
         }
 

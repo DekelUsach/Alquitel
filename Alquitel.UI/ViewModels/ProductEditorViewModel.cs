@@ -1,7 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -67,7 +69,7 @@ namespace Alquitel.UI.ViewModels
 
     public partial class ProductEditorViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
 
         public ObservableCollection<Product> Products { get; } = new();
 
@@ -183,16 +185,17 @@ namespace Alquitel.UI.ViewModels
             return result;
         }
 
-        public ProductEditorViewModel(AlquitelDbContext dbContext)
+        public ProductEditorViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
             LoadProducts();
         }
 
         private void LoadProducts()
         {
             Products.Clear();
-            foreach (var p in _dbContext.Products.OrderBy(p => p.Category).ThenBy(p => p.Description).ToList())
+            using var db = _dbContextFactory.CreateDbContext();
+            foreach (var p in db.Products.OrderBy(p => p.Category).ThenBy(p => p.Description).ToList())
                 Products.Add(p);
         }
 
@@ -237,7 +240,10 @@ namespace Alquitel.UI.ViewModels
                         }
                     }
                 }
-                catch { } // Ignore JSON parsing errors for bad data
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Failed to parse CustomFieldsJson for product {ProductId}", p.Id);
+                }
             }
         }
 
@@ -313,26 +319,30 @@ namespace Alquitel.UI.ViewModels
 
             try
             {
+                using var db = _dbContextFactory.CreateDbContext();
                 Product target;
                 if (SelectedProduct != null)
                 {
-                    target = SelectedProduct;
+                    target = db.Products.Find(SelectedProduct.Id) ?? new Product { Id = SelectedProduct.Id };
+                    if (db.Entry(target).State == EntityState.Detached) db.Products.Add(target);
                 }
                 else
                 {
                     target = new Product();
-                    _dbContext.Products.Add(target);
+                    db.Products.Add(target);
                 }
 
                 ApplyFormToProduct(target);
-                _dbContext.SaveChanges();
+                db.SaveChanges();
 
+                Guid savedId = target.Id;
                 LoadProducts();
-                SelectedProduct = Products.FirstOrDefault(p => p.Id == target.Id);
+                SelectedProduct = Products.FirstOrDefault(p => p.Id == savedId);
                 StatusMessage = "✓ Producto guardado correctamente.";
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "SaveProduct failed");
                 StatusMessage = $"✗ Error al guardar: {ex.Message}";
             }
         }
@@ -344,8 +354,13 @@ namespace Alquitel.UI.ViewModels
 
             try
             {
-                _dbContext.Products.Remove(SelectedProduct);
-                _dbContext.SaveChanges();
+                using var db = _dbContextFactory.CreateDbContext();
+                var tracked = db.Products.Find(SelectedProduct.Id);
+                if (tracked != null)
+                {
+                    db.Products.Remove(tracked);
+                    db.SaveChanges();
+                }
                 SelectedProduct = null;
                 IsEditing = false;
                 LoadProducts();
@@ -353,6 +368,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "DeleteProduct failed");
                 StatusMessage = $"✗ Error al eliminar: {ex.Message}";
             }
         }

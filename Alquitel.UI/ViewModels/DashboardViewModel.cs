@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 
@@ -8,7 +9,7 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class DashboardViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly Action _navigateToBuilder;
 
         [ObservableProperty]
@@ -23,9 +24,9 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _welcomeMessage = string.Empty;
 
-        public DashboardViewModel(AlquitelDbContext dbContext, Action navigateToBuilder)
+        public DashboardViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, Action navigateToBuilder)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
             _navigateToBuilder = navigateToBuilder;
             LoadMetrics();
         }
@@ -34,9 +35,10 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
-                TotalProducts = _dbContext.Products.Count();
-                TotalClients = _dbContext.Clients.Count();
-                TotalOrders = _dbContext.Orders.Count();
+                using var db = _dbContextFactory.CreateDbContext();
+                TotalProducts = db.Products.Count();
+                TotalClients = db.Clients.Count();
+                TotalOrders = db.Orders.Count();
 
                 var hour = DateTime.Now.Hour;
                 WelcomeMessage = hour switch
@@ -46,9 +48,9 @@ namespace Alquitel.UI.ViewModels
                     _ => "Buenas noches"
                 };
             }
-            catch
+            catch (Exception ex)
             {
-                // Silently fallback if DB has issues
+                Alquitel.Infrastructure.AppLog.Warning(ex, "Dashboard metrics load failed");
                 TotalProducts = 0;
                 TotalClients = 0;
                 TotalOrders = 0;

@@ -1,5 +1,6 @@
 using Alquitel.Core.Entities;
 using Alquitel.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -8,20 +9,21 @@ namespace Alquitel.Infrastructure.Services
 {
     public class DataInitializationService
     {
-        private readonly AlquitelDbContext _context;
+        private readonly IDbContextFactory<AlquitelDbContext> _factory;
 
-        public DataInitializationService(AlquitelDbContext context)
+        public DataInitializationService(IDbContextFactory<AlquitelDbContext> factory)
         {
-            _context = context;
+            _factory = factory;
         }
 
         public void Initialize()
         {
-            _context.Database.EnsureCreated();
+            using var context = _factory.CreateDbContext();
+            context.Database.EnsureCreated();
 
-            if (!_context.Products.Any())
+            if (!context.Products.Any())
             {
-                _context.Products.AddRange(new List<Product>
+                context.Products.AddRange(new List<Product>
                 {
                     new Product { Description = "Pantalla LED 2.6mm P2", Category = "Visuales", BasePrice = 1200 },
                     new Product { Description = "Touch Screen 85 Pro", Category = "Interactivos", BasePrice = 850 },
@@ -30,12 +32,11 @@ namespace Alquitel.Infrastructure.Services
                     new Product { Description = "Servicio Técnico Plus (x Hora)", Category = "Servicios", BasePrice = 60 },
                     new Product { Description = "Traslado Moreno / La Rural", Category = "Logística", BasePrice = 450 }
                 });
-                _context.SaveChanges();
+                context.SaveChanges();
             }
 
-            // Demo product showcasing the full Presupuesto rendering (inline color tags + custom fields)
             const string DEMO_NAME = "DEMO - Pantalla de Leds 2 mm";
-            if (!_context.Products.Any(p => p.Description.StartsWith("DEMO -")))
+            if (!context.Products.Any(p => p.Description.StartsWith("DEMO -")))
             {
                 var demoFields = new List<CustomFieldDefinition>
                 {
@@ -48,26 +49,26 @@ namespace Alquitel.Infrastructure.Services
                     new() { Label = "",                Value = "1 rack de energía con disyuntor y térmica",               ColorHex = "#000000" },
                     new() { Label = "",                Value = "[b][i]Incluye estructura para montaje de piso tipo layher[/i][/b]", ColorHex = "#000000" }
                 };
-                _context.Products.Add(new Product
+                context.Products.Add(new Product
                 {
                     Description = $"{DEMO_NAME} - [red]Para interior – [/red][green]FLEX[/green] [darkred][i]– Vertical[/i][/darkred]",
                     Category = "Visuales",
                     BasePrice = 1100000,
                     CustomFieldsJson = JsonSerializer.Serialize(demoFields)
                 });
-                _context.SaveChanges();
+                context.SaveChanges();
             }
 
-            if (!_context.Locations.Any())
+            if (!context.Locations.Any())
             {
-                _context.Locations.AddRange(new List<Location>
+                context.Locations.AddRange(new List<Location>
                 {
                     new Location { Name = "Moreno" },
                     new Location { Name = "La Rural" },
                     new Location { Name = "Costa Salguero" },
                     new Location { Name = "Centro Cultural Kirchner" }
                 });
-                _context.SaveChanges();
+                context.SaveChanges();
             }
         }
     }

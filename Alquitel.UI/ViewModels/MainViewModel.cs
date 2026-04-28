@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.IO;
 using System.Text.Json;
@@ -16,7 +17,7 @@ namespace Alquitel.UI.ViewModels
     /// </summary>
     public partial class MainViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
         private readonly SettingsViewModel _settingsVm;
 
@@ -31,9 +32,9 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _activeSection = "Dashboard";
 
-        public MainViewModel(AlquitelDbContext dbContext, IDocumentService documentService)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _settingsVm = new SettingsViewModel();
 
@@ -51,14 +52,14 @@ namespace Alquitel.UI.ViewModels
         private void NavigateToDashboard()
         {
             ActiveSection = "Dashboard";
-            CurrentViewModel = new DashboardViewModel(_dbContext, () => NavigateToBuilder());
+            CurrentViewModel = new DashboardViewModel(_dbContextFactory, () => NavigateToBuilder());
         }
 
         [RelayCommand]
         private void NavigateToBuilder()
         {
             ActiveSection = "Presupuesto";
-            CurrentViewModel = new BudgetBuilderViewModel(_dbContext, _documentService, _settingsVm);
+            CurrentViewModel = new BudgetBuilderViewModel(_dbContextFactory, _documentService, _settingsVm);
         }
 
         [RelayCommand]
@@ -72,7 +73,7 @@ namespace Alquitel.UI.ViewModels
         private void NavigateToProducts()
         {
             ActiveSection = "Productos";
-            CurrentViewModel = new ProductEditorViewModel(_dbContext);
+            CurrentViewModel = new ProductEditorViewModel(_dbContextFactory);
         }
 
         [RelayCommand]
