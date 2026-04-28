@@ -13,7 +13,7 @@ using System.Windows.Data;
 
 namespace Alquitel.UI.ViewModels
 {
-    public partial class PresupuestosViewModel : ObservableObject, IDisposable
+    public partial class PresupuestosViewModel : ObservableObject, IDisposable, IAsyncInitialization
     {
         private readonly IAppSettings _appSettings;
         private readonly IDialogService _dialogService;
@@ -62,8 +62,7 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnFolderPathChanged(string value)
         {
-            LoadFiles();
-            StartWatching();
+            _ = InitializeAsync();
             SyncPathToSettings();
         }
 
@@ -100,7 +99,7 @@ namespace Alquitel.UI.ViewModels
             return true;
         }
 
-        private void LoadFiles()
+        public async Task InitializeAsync()
         {
             Files.Clear();
             try
@@ -119,15 +118,16 @@ namespace Alquitel.UI.ViewModels
                 var paths = Directory.GetFiles(FolderPath, "*.docx", SearchOption.TopDirectoryOnly);
                 foreach (var p in paths)
                 {
-                    try { Files.Add(PresupuestoFile.FromPath(p)); }
+                    try { Files.Add(await Task.Run(() => PresupuestoFile.FromPath(p))); }
                     catch (Exception ex) { AppLog.Warning(ex, "Skipping unreadable file {Path}", p); }
                 }
 
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
+                StartWatching();
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "LoadFiles failed for {Folder}", FolderPath);
+                AppLog.Error(ex, "InitializeAsync failed for {Folder}", FolderPath);
                 StatusMessage = $"Error al leer la carpeta: {ex.Message}";
             }
         }
@@ -156,9 +156,17 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
-        private void OnFileChanged(object sender, FileSystemEventArgs e)
+        private DateTime _lastFileSystemEvent = DateTime.MinValue;
+        private readonly TimeSpan _debounceDelay = TimeSpan.FromMilliseconds(300);
+
+        private async void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            _dispatcher.InvokeAsync(LoadFiles);
+            var now = DateTime.UtcNow;
+            if (now - _lastFileSystemEvent < _debounceDelay) return;
+            _lastFileSystemEvent = now;
+
+            await Task.Delay(_debounceDelay);
+            _dispatcher.InvokeAsync(() => _ = InitializeAsync());
         }
 
         private void SyncPathToSettings()
@@ -174,8 +182,7 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void Refresh()
         {
-            LoadFiles();
-            StartWatching();
+            _ = InitializeAsync();
         }
 
         [RelayCommand]

@@ -22,11 +22,19 @@ namespace Alquitel.UI.Services
         {
             var viewModel = _serviceProvider.GetRequiredService<T>();
             MainViewModel.CurrentViewModel = viewModel;
+            if (viewModel is IAsyncInitialization asyncVm)
+            {
+                _ = asyncVm.InitializeAsync();
+            }
         }
 
         public void NavigateTo<T>(T viewModel) where T : ObservableObject
         {
             MainViewModel.CurrentViewModel = viewModel;
+            if (viewModel is IAsyncInitialization asyncVm)
+            {
+                _ = asyncVm.InitializeAsync();
+            }
         }
     }
 }

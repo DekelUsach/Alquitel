@@ -17,6 +17,8 @@ namespace Alquitel.Infrastructure.Services
         public string OtFolder { get; set; } = @"C:\Alquitel\3_OT";
         public string OtTemplate { get; set; } = @"C:\Alquitel\template_ot.docx";
         public bool IsDarkMode { get; set; }
+        public List<string> SmartSearchStopWords { get; set; } = new List<string> { "de", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "plus", "pro", "edition", "business", "servicio" };
+        public double SmartSearchThreshold { get; set; } = 4.0;
 
         public AppSettings(string settingsFilePath)
         {
@@ -41,6 +43,15 @@ namespace Alquitel.Infrastructure.Services
                     if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
                     if (settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
                         IsDarkMode = isDark;
+                    
+                    if (settings.TryGetValue("SmartSearchThreshold", out var thresh) && double.TryParse(thresh, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var th))
+                        SmartSearchThreshold = th;
+
+                    if (settings.TryGetValue("SmartSearchStopWords", out var stopWordsJson))
+                    {
+                        try { SmartSearchStopWords = JsonSerializer.Deserialize<List<string>>(stopWordsJson) ?? SmartSearchStopWords; }
+                        catch { }
+                    }
                 }
             }
             catch (Exception ex)
@@ -61,7 +72,9 @@ namespace Alquitel.Infrastructure.Services
                     ["OfTemplate"] = OfTemplate,
                     ["OtFolder"] = OtFolder,
                     ["OtTemplate"] = OtTemplate,
-                    ["IsDarkMode"] = IsDarkMode.ToString()
+                    ["IsDarkMode"] = IsDarkMode.ToString(),
+                    ["SmartSearchThreshold"] = SmartSearchThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["SmartSearchStopWords"] = JsonSerializer.Serialize(SmartSearchStopWords)
                 };
                 var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_settingsFilePath, output);

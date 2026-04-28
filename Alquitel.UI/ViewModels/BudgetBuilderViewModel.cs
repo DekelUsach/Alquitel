@@ -21,7 +21,7 @@ using System.Collections.Generic;
 
 namespace Alquitel.UI.ViewModels
 {
-    public partial class BudgetBuilderViewModel : ObservableObject
+    public partial class BudgetBuilderViewModel : ObservableObject, IAsyncInitialization
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
@@ -62,6 +62,15 @@ namespace Alquitel.UI.ViewModels
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
+        private Dictionary<Guid, ProductCacheEntry> _productSearchCache = new();
+
+        private class ProductCacheEntry
+        {
+            public HashSet<string> DescriptionTokens { get; set; } = new();
+            public HashSet<string> CategoryTokens { get; set; } = new();
+            public HashSet<string> DescriptionTrigrams { get; set; } = new();
+        }
+
         public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService)
         {
             _dbContextFactory = dbContextFactory;
@@ -69,20 +78,39 @@ namespace Alquitel.UI.ViewModels
             _appSettings = appSettings;
             _dialogService = dialogService;
 
+            _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
+            _productsView.Filter = FilterProduct;
+
+            SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+        }
+
+        public async Task InitializeAsync()
+        {
+            AvailableProducts.Clear();
+            _productSearchCache.Clear();
+
             try
             {
-                using var db = _dbContextFactory.CreateDbContext();
-                foreach (var p in db.Products.AsNoTracking().ToList()) AvailableProducts.Add(p);
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var products = await db.Products.AsNoTracking().ToListAsync();
+
+                var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var p in products)
+                {
+                    AvailableProducts.Add(p);
+                    _productSearchCache[p.Id] = new ProductCacheEntry
+                    {
+                        DescriptionTokens = ExtractMeaningfulTokens(NormalizeText(p.Description), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                        CategoryTokens = ExtractMeaningfulTokens(NormalizeText(p.Category), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                        DescriptionTrigrams = Trigrams(NormalizeText(p.Description))
+                    };
+                }
             }
             catch (Exception ex)
             {
                 AppLog.Error(ex, "Failed to load products in BudgetBuilder");
             }
-
-            _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
-            _productsView.Filter = FilterProduct;
-
-            SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -502,6 +530,8 @@ namespace Alquitel.UI.ViewModels
         {
             var segments = BuildSmartSegments(paragraph);
             var aggregated = new Dictionary<Guid, SmartMatchResult>();
+            var threshold = _appSettings.SmartSearchThreshold;
+
             foreach (var segment in segments)
             {
                 int quantity = ExtractQuantityFromSegment(segment);
@@ -511,7 +541,7 @@ namespace Alquitel.UI.ViewModels
                 if (!ranked.Any()) continue;
                 var best = ranked[0];
                 var second = ranked.Count > 1 ? ranked[1] : null;
-                if (best.Score < 4.0) continue;
+                if (best.Score < threshold) continue;
                 if (second != null && Math.Abs(best.Score - second.Score) < 0.35) continue;
                 if (aggregated.TryGetValue(best.Product.Id, out var existing))
                     aggregated[best.Product.Id] = existing with { Quantity = existing.Quantity + best.Quantity, Score = Math.Max(existing.Score, best.Score) };
@@ -549,29 +579,36 @@ namespace Alquitel.UI.ViewModels
             return 1;
         }
 
-        private static double ScoreProductAgainstSegment(string segment, Product product)
+        private double ScoreProductAgainstSegment(string segment, Product product)
         {
+            if (!_productSearchCache.TryGetValue(product.Id, out var cache)) return 0;
+
             string ns = NormalizeText(segment);
-            string nd = NormalizeText(product.Description);
-            string nc = NormalizeText(product.Category);
-            var st = ExtractMeaningfulTokens(ns).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var pt = ExtractMeaningfulTokens(nd).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var ct = ExtractMeaningfulTokens(nc).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
+            var st = ExtractMeaningfulTokens(ns, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            
+            var pt = cache.DescriptionTokens;
+            var ct = cache.CategoryTokens;
+
             if (!st.Any() || !pt.Any()) return 0;
+
             int overlap = st.Intersect(pt, StringComparer.OrdinalIgnoreCase).Count();
             int catOverlap = st.Intersect(ct, StringComparer.OrdinalIgnoreCase).Count();
             double coverage = (double)overlap / pt.Count;
             double precision = (double)overlap / Math.Max(1, st.Count);
-            double tri = DiceCoefficient(Trigrams(ns), Trigrams(nd));
+            double tri = DiceCoefficient(Trigrams(ns), cache.DescriptionTrigrams);
+
             double score = overlap * 2.7 + catOverlap * 0.8 + coverage * 3.5 + precision * 1.5 + tri * 4.0;
+            
+            string nd = NormalizeText(product.Description);
             if (ns.Contains(nd, StringComparison.OrdinalIgnoreCase)) score += 3.0;
+            
             return score;
         }
 
-        private static IEnumerable<string> ExtractMeaningfulTokens(string text)
+        private static IEnumerable<string> ExtractMeaningfulTokens(string text, HashSet<string> stopWords)
         {
-            var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "de", "la", "el", "los", "las", "con", "para", "por", "del", "y", "plus", "pro", "edition", "business", "servicio" };
-            return Regex.Split(text, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !stop.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase);
+            return Regex.Split(text, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !stopWords.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase);
         }
 
         private static string NormalizeText(string text)

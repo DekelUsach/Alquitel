@@ -7,7 +7,25 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 {
     public static class ProductRenderer
     {
-        public const string FONT_NAME = "Montserrat";
+        private static readonly string FONT_NAME;
+
+        static ProductRenderer()
+        {
+            FONT_NAME = "Calibri";
+            try
+            {
+                using var fonts = new System.Drawing.Text.InstalledFontCollection();
+                foreach (var f in fonts.Families)
+                {
+                    if (f.Name.Equals("Montserrat", StringComparison.OrdinalIgnoreCase))
+                    {
+                        FONT_NAME = "Montserrat";
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
 
         public static void RenderProduct(dynamic doc, dynamic wordApp, ref dynamic insertRange, OrderItem item, bool isTechnical)
         {
