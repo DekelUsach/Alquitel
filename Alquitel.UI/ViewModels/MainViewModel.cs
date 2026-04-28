@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
 using System;
@@ -19,7 +20,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IDocumentService _documentService;
         private readonly SettingsViewModel _settingsVm;
 
-        private static readonly string SettingsFilePath = Path.Combine(@"C:\Alquitel", "settings.json");
+        private static readonly string SettingsFilePath = AppPaths.SettingsFilePath;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;

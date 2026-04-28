@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,25 +11,25 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class SettingsViewModel : ObservableObject
     {
-        private static readonly string SettingsFilePath = Path.Combine(@"C:\Alquitel", "settings.json");
+        private static readonly string SettingsFilePath = AppPaths.SettingsFilePath;
 
         [ObservableProperty]
-        private string _presupuestosFolder = @"C:\Alquitel\1_PRESUPUESTOS";
+        private string _presupuestosFolder = AppPaths.DefaultPresupuestosFolder;
 
         [ObservableProperty]
-        private string _presupuestosTemplate = @"C:\Alquitel\1_PRESUPUESTOS\template.docx";
+        private string _presupuestosTemplate = AppPaths.DefaultPresupuestosTemplate;
 
         [ObservableProperty]
-        private string _ofFolder = @"C:\Alquitel\2_OF";
+        private string _ofFolder = AppPaths.DefaultOfFolder;
 
         [ObservableProperty]
-        private string _ofTemplate = @"C:\Alquitel\OF  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
+        private string _ofTemplate = AppPaths.DefaultOfTemplate;
 
         [ObservableProperty]
-        private string _otFolder = @"C:\Alquitel\3_OT";
+        private string _otFolder = AppPaths.DefaultOtFolder;
 
         [ObservableProperty]
-        private string _otTemplate = @"C:\Alquitel\OT  9054 - 0326 - B + T - FERIA DEL LIBRO 2026 - SG.docx";
+        private string _otTemplate = AppPaths.DefaultOtTemplate;
 
         [ObservableProperty]
         private string _statusMessage = string.Empty;
