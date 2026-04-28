@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure;
+using Alquitel.Core.Interfaces;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -14,7 +15,9 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class PresupuestosViewModel : ObservableObject, IDisposable
     {
-        private readonly SettingsViewModel _settingsVm;
+        private readonly IAppSettings _appSettings;
+        private readonly IDialogService _dialogService;
+        private readonly IDispatcher _dispatcher;
         private readonly ICollectionView _filesView;
         private FileSystemWatcher? _watcher;
 
@@ -42,9 +45,11 @@ namespace Alquitel.UI.ViewModels
         public ObservableCollection<PresupuestoFile> Files { get; } = new();
         public ICollectionView FilesView => _filesView;
 
-        public PresupuestosViewModel(SettingsViewModel settingsVm)
+        public PresupuestosViewModel(IAppSettings appSettings, IDialogService dialogService, IDispatcher dispatcher)
         {
-            _settingsVm = settingsVm;
+            _appSettings = appSettings;
+            _dialogService = dialogService;
+            _dispatcher = dispatcher;
 
             _filesView = CollectionViewSource.GetDefaultView(Files);
             _filesView.Filter = FilterFile;
@@ -52,8 +57,7 @@ namespace Alquitel.UI.ViewModels
                 new SortDescription(nameof(PresupuestoFile.ModifiedDate), ListSortDirection.Descending));
 
             // Initial folder from settings
-            var paths = _settingsVm.GetCurrentPaths();
-            FolderPath = paths.TryGetValue("PresupuestosFolder", out var p) ? p : string.Empty;
+            FolderPath = _appSettings.PresupuestosFolder;
         }
 
         partial void OnFolderPathChanged(string value)
@@ -154,14 +158,17 @@ namespace Alquitel.UI.ViewModels
 
         private void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            Application.Current?.Dispatcher.BeginInvoke(new Action(LoadFiles));
+            _dispatcher.InvokeAsync(LoadFiles);
         }
 
         private void SyncPathToSettings()
         {
             if (string.IsNullOrWhiteSpace(FolderPath)) return;
-            if (_settingsVm.PresupuestosFolder != FolderPath)
-                _settingsVm.PresupuestosFolder = FolderPath;
+            if (_appSettings.PresupuestosFolder != FolderPath)
+            {
+                _appSettings.PresupuestosFolder = FolderPath;
+                _appSettings.SaveSettings();
+            }
         }
 
         [RelayCommand]
@@ -209,14 +216,12 @@ namespace Alquitel.UI.ViewModels
                 if (!IsAllowedDocxPath(fullPath))
                 {
                     AppLog.Warning("Rejected OpenFile — path outside watch folder: {Path}", fullPath);
-                    MessageBox.Show("Ruta inválida o fuera de la carpeta supervisada.", "Acceso denegado",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _dialogService.ShowWarning("Acceso denegado", "Ruta inválida o fuera de la carpeta supervisada.");
                     return;
                 }
                 if (!File.Exists(fullPath))
                 {
-                    MessageBox.Show("El archivo ya no existe.", "Archivo no encontrado",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _dialogService.ShowWarning("Archivo no encontrado", "El archivo ya no existe.");
                     return;
                 }
                 Process.Start(new ProcessStartInfo(fullPath) { UseShellExecute = true });
@@ -224,8 +229,7 @@ namespace Alquitel.UI.ViewModels
             catch (Exception ex)
             {
                 AppLog.Error(ex, "OpenFileOnDisk failed for {Path}", fullPath);
-                MessageBox.Show($"Error al abrir: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _dialogService.ShowError("Error", $"Error al abrir: {ex.Message}");
             }
         }
 
@@ -266,8 +270,7 @@ namespace Alquitel.UI.ViewModels
             catch (Exception ex)
             {
                 AppLog.Error(ex, "ShowInExplorer failed for {Path}", SelectedFile.FullPath);
-                MessageBox.Show($"Error: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _dialogService.ShowError("Error", $"Error: {ex.Message}");
             }
         }
 
@@ -278,16 +281,15 @@ namespace Alquitel.UI.ViewModels
             if (!IsAllowedDocxPath(SelectedFile.FullPath))
             {
                 AppLog.Warning("Rejected DeleteFile — invalid path: {Path}", SelectedFile.FullPath);
-                MessageBox.Show("Ruta inválida o fuera de la carpeta supervisada.", "Acceso denegado",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                _dialogService.ShowWarning("Acceso denegado", "Ruta inválida o fuera de la carpeta supervisada.");
                 return;
             }
 
-            var result = MessageBox.Show(
-                $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.",
-                "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var result = _dialogService.ShowConfirm(
+                "Confirmar eliminación",
+                $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.");
 
-            if (result != MessageBoxResult.Yes) return;
+            if (!result) return;
 
             var toDelete = SelectedFile;
             try
@@ -302,8 +304,7 @@ namespace Alquitel.UI.ViewModels
             catch (Exception ex)
             {
                 AppLog.Error(ex, "DeleteFile failed for {Path}", toDelete.FullPath);
-                MessageBox.Show($"No se pudo eliminar: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _dialogService.ShowError("Error", $"No se pudo eliminar: {ex.Message}");
             }
         }
 

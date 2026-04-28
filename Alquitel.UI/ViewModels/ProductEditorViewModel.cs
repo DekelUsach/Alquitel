@@ -358,18 +358,20 @@ namespace Alquitel.UI.ViewModels
                 var tracked = db.Products.Find(SelectedProduct.Id);
                 if (tracked != null)
                 {
-                    db.Products.Remove(tracked);
+                    // Soft delete: mark as archived instead of physical removal.
+                    // Global query filter ensures archived products are hidden from UI.
+                    tracked.IsArchived = true;
                     db.SaveChanges();
                 }
                 SelectedProduct = null;
                 IsEditing = false;
                 LoadProducts();
-                StatusMessage = "✓ Producto eliminado.";
+                StatusMessage = "✓ Producto archivado.";
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "DeleteProduct failed");
-                StatusMessage = $"✗ Error al eliminar: {ex.Message}";
+                AppLog.Error(ex, "DeleteProduct (archive) failed");
+                StatusMessage = $"✗ Error al archivar: {ex.Message}";
             }
         }
 

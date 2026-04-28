@@ -92,6 +92,12 @@ namespace Alquitel.Core.Entities
         
         // Serialized List<CustomFieldDefinition>
         public string? CustomFieldsJson { get; set; } 
+
+        /// <summary>
+        /// Immutable snapshot of Product.Description captured at order-creation time.
+        /// Prevents stale rendering when the source product is later edited.
+        /// </summary>
+        public string? DescriptionSnapshot { get; set; }
         
         // Medida solicitada, variable por cliente/presupuesto
         // e.g. "Medida solicitada: 8 x 3"

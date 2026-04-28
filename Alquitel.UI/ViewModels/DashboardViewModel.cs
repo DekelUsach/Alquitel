@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure.Persistence;
+using Alquitel.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
@@ -10,7 +11,7 @@ namespace Alquitel.UI.ViewModels
     public partial class DashboardViewModel : ObservableObject
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
-        private readonly Action _navigateToBuilder;
+        private readonly INavigationService _navigationService;
 
         [ObservableProperty]
         private int _totalProducts;
@@ -24,10 +25,10 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _welcomeMessage = string.Empty;
 
-        public DashboardViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, Action navigateToBuilder)
+        public DashboardViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, INavigationService navigationService)
         {
             _dbContextFactory = dbContextFactory;
-            _navigateToBuilder = navigateToBuilder;
+            _navigationService = navigationService;
             LoadMetrics();
         }
 
@@ -59,7 +60,7 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private void NewBudget() => _navigateToBuilder();
+        private void NewBudget() => _navigationService.NavigateTo<BudgetBuilderViewModel>();
 
         [RelayCommand]
         private void Refresh() => LoadMetrics();

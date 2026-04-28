@@ -15,10 +15,16 @@ namespace Alquitel.Infrastructure.Persistence
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // ── Unique constraints ───────────────────────────────
             modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique();
             modelBuilder.Entity<Order>().HasIndex(o => o.BudgetNumber).IsUnique();
-            
-            // Configure relationships
+
+            // ── Performance indices ──────────────────────────────
+            modelBuilder.Entity<Order>().HasIndex(o => o.CreatedDate);
+            modelBuilder.Entity<Order>().HasIndex(o => o.ClientId);
+            modelBuilder.Entity<OrderItem>().HasIndex(oi => oi.OrderId);
+
+            // ── Relationships ────────────────────────────────────
             modelBuilder.Entity<Order>()
                 .HasOne(o => o.Client)
                 .WithMany()
@@ -28,6 +34,12 @@ namespace Alquitel.Infrastructure.Persistence
                 .HasOne(oi => oi.Product)
                 .WithMany()
                 .HasForeignKey(oi => oi.ProductId);
+
+            // ── Soft-delete global query filters ─────────────────
+            // Archived entities are excluded by default from all queries.
+            // Use .IgnoreQueryFilters() when you need to include them.
+            modelBuilder.Entity<Product>().HasQueryFilter(p => !p.IsArchived);
+            modelBuilder.Entity<Client>().HasQueryFilter(c => !c.IsArchived);
         }
     }
 }

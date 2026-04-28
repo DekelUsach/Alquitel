@@ -8,7 +8,7 @@ using Alquitel.Infrastructure.Persistence;
 using Alquitel.Infrastructure.Services;
 using Alquitel.UI.ViewModels;
 using Alquitel.Core.Interfaces;
-
+using Alquitel.UI.Services;
 namespace Alquitel.UI
 {
     public partial class App : Application
@@ -57,7 +57,21 @@ namespace Alquitel.UI
                 options => options.UseSqlite(AppPaths.DbConnectionString));
             services.AddSingleton<DataInitializationService>();
             services.AddSingleton<IDocumentService, WordDocumentService>();
+            
+            // Core Services
+            services.AddSingleton<IAppSettings>(sp => new AppSettings(AppPaths.SettingsFilePath));
+            services.AddSingleton<IDispatcher, WpfDispatcher>();
+            services.AddSingleton<IDialogService, DialogService>();
+            services.AddSingleton<INavigationService, NavigationService>();
+
+            // ViewModels
             services.AddSingleton<MainViewModel>();
+            services.AddSingleton<SettingsViewModel>();
+            services.AddTransient<DashboardViewModel>();
+            services.AddTransient<BudgetBuilderViewModel>();
+            services.AddTransient<ProductEditorViewModel>();
+            services.AddTransient<PresupuestosViewModel>();
+            
             services.AddSingleton<MainWindow>();
         }
 

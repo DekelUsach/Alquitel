@@ -1,6 +1,7 @@
 using Alquitel.Core.Entities;
 using Alquitel.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -19,8 +20,128 @@ namespace Alquitel.Infrastructure.Services
         public void Initialize()
         {
             using var context = _factory.CreateDbContext();
-            context.Database.EnsureCreated();
 
+            MigrateDatabase(context);
+            SeedData(context);
+        }
+
+        /// <summary>
+        /// Applies EF Migrations. Handles legacy databases created by EnsureCreated() that have
+        /// no __EFMigrationsHistory table — patches missing columns/indices via raw SQL, then
+        /// registers the initial migration as already applied so future Migrate() calls work.
+        /// </summary>
+        private static void MigrateDatabase(AlquitelDbContext context)
+        {
+            bool hasMigrationHistory = HasTable(context, "__EFMigrationsHistory");
+
+            if (hasMigrationHistory)
+            {
+                // Normal path: DB was already managed by migrations.
+                context.Database.Migrate();
+                return;
+            }
+
+            bool hasExistingTables = HasTable(context, "Products");
+
+            if (!hasExistingTables)
+            {
+                // Brand-new DB: Migrate() creates everything from scratch.
+                context.Database.Migrate();
+                return;
+            }
+
+            // ── Legacy DB: tables exist but no migration tracking ────────
+            AppLog.Information("Legacy database detected — applying schema upgrade in-place");
+
+            // 1. Add missing columns (SQLite ALTER TABLE ADD COLUMN is idempotent-safe with IF check)
+            AddColumnIfMissing(context, "Products", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(context, "Clients", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(context, "OrderItems", "DescriptionSnapshot", "TEXT");
+
+            // 2. Create missing indices (IF NOT EXISTS is supported in SQLite)
+            ExecuteSafe(context, "CREATE INDEX IF NOT EXISTS \"IX_Orders_CreatedDate\" ON \"Orders\" (\"CreatedDate\")");
+            ExecuteSafe(context, "CREATE INDEX IF NOT EXISTS \"IX_Orders_ClientId\" ON \"Orders\" (\"ClientId\")");
+            ExecuteSafe(context, "CREATE INDEX IF NOT EXISTS \"IX_OrderItems_OrderId\" ON \"OrderItems\" (\"OrderId\")");
+
+            // 3. Create the __EFMigrationsHistory table and register the initial migration
+            //    so future Migrate() calls don't try to re-create existing tables.
+            ExecuteSafe(context, @"
+                CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                    ""MigrationId"" TEXT NOT NULL PRIMARY KEY,
+                    ""ProductVersion"" TEXT NOT NULL
+                )");
+
+            // Register all known migrations as applied.
+            var pendingMigrations = context.Database.GetPendingMigrations().ToList();
+            foreach (var migrationId in pendingMigrations)
+            {
+                ExecuteSafe(context, $@"
+                    INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                    VALUES ('{migrationId}', '8.0.0')");
+            }
+
+            AppLog.Information("Legacy database upgraded — {Count} migration(s) registered", pendingMigrations.Count);
+
+            // 4. Run Migrate() for any future migrations beyond what we just registered.
+            context.Database.Migrate();
+        }
+
+        private static bool HasTable(AlquitelDbContext context, string tableName)
+        {
+            try
+            {
+                var conn = context.Database.GetDbConnection();
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{tableName}'";
+                var result = cmd.ExecuteScalar();
+                return Convert.ToInt32(result) > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void AddColumnIfMissing(AlquitelDbContext context, string table, string column, string sqlType)
+        {
+            try
+            {
+                var conn = context.Database.GetDbConnection();
+                if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"PRAGMA table_info(\"{table}\")";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                        return; // Column already exists
+                }
+
+                ExecuteSafe(context, $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {sqlType}");
+                AppLog.Information("Added column {Table}.{Column}", table, column);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "AddColumnIfMissing failed for {Table}.{Column}", table, column);
+            }
+        }
+
+        private static void ExecuteSafe(AlquitelDbContext context, string sql)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw(sql);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "ExecuteSafe failed: {Sql}", sql);
+            }
+        }
+
+        // ── Seed data ────────────────────────────────────────────────
+        private static void SeedData(AlquitelDbContext context)
+        {
             if (!context.Products.Any())
             {
                 context.Products.AddRange(new List<Product>

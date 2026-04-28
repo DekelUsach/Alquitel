@@ -26,7 +26,8 @@ namespace Alquitel.UI.ViewModels
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
         private readonly ICollectionView _productsView;
-        private readonly SettingsViewModel _settingsVm;
+        private readonly IAppSettings _appSettings;
+        private readonly IDialogService _dialogService;
 
         [ObservableProperty]
         private string _searchText = string.Empty;
@@ -61,11 +62,12 @@ namespace Alquitel.UI.ViewModels
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
-        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, SettingsViewModel settingsVm)
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService)
         {
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
-            _settingsVm = settingsVm;
+            _appSettings = appSettings;
+            _dialogService = dialogService;
 
             try
             {
@@ -156,6 +158,7 @@ namespace Alquitel.UI.ViewModels
                 // Copy dynamic fields from Product
                 ImagePath = product.ImagePath,
                 CustomFieldsJson = product.CustomFieldsJson,
+                DescriptionSnapshot = product.Description,
                 RequestedMeasure = string.Empty, // Starts off empty, user fills it in for the budget
             };
             SelectedItems.Add(item);
@@ -187,23 +190,23 @@ namespace Alquitel.UI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SmartSearchText))
             {
-                MessageBox.Show("Pegá un texto para analizar primero.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
+                _dialogService.ShowInfo("Búsqueda inteligente", "Pegá un texto para analizar primero.");
                 return;
             }
 
             var matches = FindProductsFromParagraph(SmartSearchText).ToList();
             if (!matches.Any())
             {
-                MessageBox.Show("No detecté productos del catálogo en ese texto.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _dialogService.ShowWarning("Búsqueda inteligente", "No detecté productos del catálogo en ese texto.");
                 return;
             }
 
             if (SelectedItems.Any())
             {
-                var replace = MessageBox.Show(
-                    "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?",
-                    "Confirmar reemplazo", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (replace == MessageBoxResult.Yes) { SelectedItems.Clear(); CurrentOrder.Items.Clear(); }
+                var replace = _dialogService.ShowConfirm(
+                    "Confirmar reemplazo",
+                    "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?");
+                if (replace) { SelectedItems.Clear(); CurrentOrder.Items.Clear(); }
             }
 
             int addedCount = 0;
@@ -219,34 +222,32 @@ namespace Alquitel.UI.ViewModels
                     UnitPrice = result.Product.BasePrice,
                     ImagePath = result.Product.ImagePath,
                     CustomFieldsJson = result.Product.CustomFieldsJson,
+                    DescriptionSnapshot = result.Product.Description,
                     RequestedMeasure = string.Empty
                 };
                 SelectedItems.Add(item);
                 CurrentOrder.Items.Add(item);
                 addedCount++;
             }
-            MessageBox.Show($"Se agregaron {addedCount} producto(s) automáticamente.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
+            _dialogService.ShowInfo("Búsqueda inteligente", $"Se agregaron {addedCount} producto(s) automáticamente.");
         }
 
         [RelayCommand]
         private async Task GenerateBudget()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["PresupuestosFolder"], paths["PresupuestosTemplate"], false);
+            await GenerateDocument(_appSettings.PresupuestosFolder, _appSettings.PresupuestosTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOF()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["OfFolder"], paths["OfTemplate"], false);
+            await GenerateDocument(_appSettings.OfFolder, _appSettings.OfTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOT()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["OtFolder"], paths["OtTemplate"], true);
+            await GenerateDocument(_appSettings.OtFolder, _appSettings.OtTemplate, true);
         }
 
         private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical)
@@ -255,7 +256,7 @@ namespace Alquitel.UI.ViewModels
             {
                 if (!ValidateOrderForGeneration(out string validationMessage))
                 {
-                    MessageBox.Show(validationMessage, "Datos incompletos", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _dialogService.ShowWarning("Datos incompletos", validationMessage);
                     return;
                 }
 
@@ -271,7 +272,7 @@ namespace Alquitel.UI.ViewModels
 
                 if (!File.Exists(templatePath))
                 {
-                    MessageBox.Show($"La plantilla no existe en: {templatePath}", "Error de Plantilla", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _dialogService.ShowError("Error de Plantilla", $"La plantilla no existe en: {templatePath}");
                     return;
                 }
 
@@ -280,21 +281,21 @@ namespace Alquitel.UI.ViewModels
 
                 if (persisted)
                 {
-                    MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                    _dialogService.ShowInfo("Éxito", $"Archivo guardado correctamente en:\n{outputPath}");
                 }
                 else
                 {
-                    MessageBox.Show(
+                    _dialogService.ShowWarning(
+                        "Documento generado, persistencia falló",
                         $"El documento se generó correctamente:\n{outputPath}\n\n" +
                         "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
-                        "Revisá el archivo de log para más detalles.",
-                        "Documento generado, persistencia falló", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "Revisá el archivo de log para más detalles.");
                 }
             }
             catch (Exception ex)
             {
                 AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
-                MessageBox.Show($"Error: {ex.Message}", "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
+                _dialogService.ShowError("Error de Generación", $"Error: {ex.Message}");
             }
         }
 
@@ -303,6 +304,7 @@ namespace Alquitel.UI.ViewModels
             using var db = _dbContextFactory.CreateDbContext();
             var full = db.Orders
                 .AsNoTracking()
+                .IgnoreQueryFilters() // Include archived clients/products in historical orders
                 .Include(o => o.Client)
                 .Include(o => o.Location)
                 .Include(o => o.Items).ThenInclude(i => i.Product)
@@ -339,6 +341,7 @@ namespace Alquitel.UI.ViewModels
                     TechnicalNotes = item.TechnicalNotes,
                     ImagePath = item.ImagePath,
                     CustomFieldsJson = item.CustomFieldsJson,
+                    DescriptionSnapshot = item.DescriptionSnapshot,
                     RequestedMeasure = item.RequestedMeasure,
                 };
                 SelectedItems.Add(oi);
@@ -402,6 +405,7 @@ namespace Alquitel.UI.ViewModels
                             TechnicalNotes = item.TechnicalNotes,
                             ImagePath = item.ImagePath,
                             CustomFieldsJson = item.CustomFieldsJson,
+                            DescriptionSnapshot = item.DescriptionSnapshot,
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }
@@ -437,6 +441,7 @@ namespace Alquitel.UI.ViewModels
                             TechnicalNotes = item.TechnicalNotes,
                             ImagePath = item.ImagePath,
                             CustomFieldsJson = item.CustomFieldsJson,
+                            DescriptionSnapshot = item.DescriptionSnapshot,
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }

@@ -19,9 +19,8 @@ namespace Alquitel.UI.ViewModels
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
-        private readonly SettingsViewModel _settingsVm;
-
-        private static readonly string SettingsFilePath = AppPaths.SettingsFilePath;
+        private readonly INavigationService _navigationService;
+        private readonly IAppSettings _appSettings;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -32,17 +31,25 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _activeSection = "Dashboard";
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings)
         {
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
-            _settingsVm = new SettingsViewModel();
+            _navigationService = navigationService;
+            _appSettings = appSettings;
 
             // Load theme preference from settings
             LoadThemePreference();
             ApplyTheme(IsDarkMode);
 
-            // Start on Dashboard
+            // Navigate to Dashboard initially. We need to run it via dispatcher or just set it manually 
+            // since NavigateTo<T> sets CurrentViewModel. Actually, since we are inside MainViewModel constructor,
+            // we can just let it finish and maybe set the first view model from App.xaml.cs or just resolve it manually here.
+            // But wait, NavigateTo<T> calls _serviceProvider.GetRequiredService<MainViewModel>() which is us!
+        }
+
+        public void Initialize()
+        {
             NavigateToDashboard();
         }
 
@@ -52,35 +59,35 @@ namespace Alquitel.UI.ViewModels
         private void NavigateToDashboard()
         {
             ActiveSection = "Dashboard";
-            CurrentViewModel = new DashboardViewModel(_dbContextFactory, () => NavigateToBuilder());
+            _navigationService.NavigateTo<DashboardViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToBuilder()
         {
             ActiveSection = "Presupuesto";
-            CurrentViewModel = new BudgetBuilderViewModel(_dbContextFactory, _documentService, _settingsVm);
+            _navigationService.NavigateTo<BudgetBuilderViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToSettings()
         {
             ActiveSection = "Configuración";
-            CurrentViewModel = _settingsVm;
+            _navigationService.NavigateTo<SettingsViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToProducts()
         {
             ActiveSection = "Productos";
-            CurrentViewModel = new ProductEditorViewModel(_dbContextFactory);
+            _navigationService.NavigateTo<ProductEditorViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToPresupuestos()
         {
             ActiveSection = "Presupuestos";
-            CurrentViewModel = new PresupuestosViewModel(_settingsVm);
+            _navigationService.NavigateTo<PresupuestosViewModel>();
         }
 
         // ── Theme ────────────────────────────────────────────────────
@@ -112,15 +119,7 @@ namespace Alquitel.UI.ViewModels
 
         private void LoadThemePreference()
         {
-            try
-            {
-                if (!File.Exists(SettingsFilePath)) return;
-                var json = File.ReadAllText(SettingsFilePath);
-                var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                if (settings != null && settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
-                    IsDarkMode = isDark;
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "LoadThemePreference: corrupt settings.json"); }
+            IsDarkMode = _appSettings.IsDarkMode;
         }
 
         /// <summary>
@@ -129,24 +128,8 @@ namespace Alquitel.UI.ViewModels
         /// </summary>
         private void SaveThemePreferenceSilent()
         {
-            try
-            {
-                Dictionary<string, string> settings;
-                if (File.Exists(SettingsFilePath))
-                {
-                    var json = File.ReadAllText(SettingsFilePath);
-                    settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
-                }
-                else
-                {
-                    settings = new();
-                }
-
-                settings["IsDarkMode"] = IsDarkMode.ToString();
-                var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, output);
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "SaveThemePreferenceSilent failed"); }
+            _appSettings.IsDarkMode = IsDarkMode;
+            _appSettings.SaveSettings();
         }
     }
 }

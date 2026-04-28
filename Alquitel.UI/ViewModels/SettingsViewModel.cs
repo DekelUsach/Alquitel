@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure;
+using Alquitel.Core.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,7 +12,7 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class SettingsViewModel : ObservableObject
     {
-        private static readonly string SettingsFilePath = AppPaths.SettingsFilePath;
+        private readonly IAppSettings _appSettings;
 
         [ObservableProperty]
         private string _presupuestosFolder = AppPaths.DefaultPresupuestosFolder;
@@ -34,8 +35,9 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _statusMessage = string.Empty;
 
-        public SettingsViewModel()
+        public SettingsViewModel(IAppSettings appSettings)
         {
+            _appSettings = appSettings;
             LoadSettings();
         }
 
@@ -62,17 +64,13 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
-                var settings = new Dictionary<string, string>
-                {
-                    ["PresupuestosFolder"] = PresupuestosFolder,
-                    ["PresupuestosTemplate"] = PresupuestosTemplate,
-                    ["OfFolder"] = OfFolder,
-                    ["OfTemplate"] = OfTemplate,
-                    ["OtFolder"] = OtFolder,
-                    ["OtTemplate"] = OtTemplate,
-                };
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, json);
+                _appSettings.PresupuestosFolder = PresupuestosFolder;
+                _appSettings.PresupuestosTemplate = PresupuestosTemplate;
+                _appSettings.OfFolder = OfFolder;
+                _appSettings.OfTemplate = OfTemplate;
+                _appSettings.OtFolder = OtFolder;
+                _appSettings.OtTemplate = OtTemplate;
+                _appSettings.SaveSettings();
                 StatusMessage = "✓ Configuración guardada correctamente.";
             }
             catch (Exception ex)
@@ -83,36 +81,13 @@ namespace Alquitel.UI.ViewModels
 
         public void LoadSettings()
         {
-            try
-            {
-                if (!File.Exists(SettingsFilePath)) return;
-                var json = File.ReadAllText(SettingsFilePath);
-                var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                if (settings == null) return;
-
-                if (settings.TryGetValue("PresupuestosFolder", out var pf)) PresupuestosFolder = pf;
-                if (settings.TryGetValue("PresupuestosTemplate", out var pt)) PresupuestosTemplate = pt;
-                if (settings.TryGetValue("OfFolder", out var of)) OfFolder = of;
-                if (settings.TryGetValue("OfTemplate", out var ot2)) OfTemplate = ot2;
-                if (settings.TryGetValue("OtFolder", out var otf)) OtFolder = otf;
-                if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "SettingsViewModel.LoadSettings failed"); }
+            PresupuestosFolder = _appSettings.PresupuestosFolder;
+            PresupuestosTemplate = _appSettings.PresupuestosTemplate;
+            OfFolder = _appSettings.OfFolder;
+            OfTemplate = _appSettings.OfTemplate;
+            OtFolder = _appSettings.OtFolder;
+            OtTemplate = _appSettings.OtTemplate;
         }
-
-        /// <summary>
-        /// Returns the current settings as a dictionary without showing MessageBox.
-        /// Used by BudgetBuilderViewModel for document generation paths.
-        /// </summary>
-        public Dictionary<string, string> GetCurrentPaths() => new()
-        {
-            ["PresupuestosFolder"] = PresupuestosFolder,
-            ["PresupuestosTemplate"] = PresupuestosTemplate,
-            ["OfFolder"] = OfFolder,
-            ["OfTemplate"] = OfTemplate,
-            ["OtFolder"] = OtFolder,
-            ["OtTemplate"] = OtTemplate,
-        };
 
         private void BrowseFolder(Action<string> setter)
         {
