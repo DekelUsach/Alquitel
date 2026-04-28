@@ -97,7 +97,7 @@ namespace Alquitel.UI.ViewModels
                 if (settings.TryGetValue("OtFolder", out var otf)) OtFolder = otf;
                 if (settings.TryGetValue("OtTemplate", out var ott)) OtTemplate = ott;
             }
-            catch { /* Silently fail on corrupt settings */ }
+            catch (Exception ex) { AppLog.Warning(ex, "SettingsViewModel.LoadSettings failed"); }
         }
 
         /// <summary>

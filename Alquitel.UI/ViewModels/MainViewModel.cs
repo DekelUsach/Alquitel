@@ -120,7 +120,7 @@ namespace Alquitel.UI.ViewModels
                 if (settings != null && settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
                     IsDarkMode = isDark;
             }
-            catch { /* Gracefully ignore corrupt settings */ }
+            catch (Exception ex) { AppLog.Warning(ex, "LoadThemePreference: corrupt settings.json"); }
         }
 
         /// <summary>
@@ -146,7 +146,7 @@ namespace Alquitel.UI.ViewModels
                 var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(SettingsFilePath, output);
             }
-            catch { /* Silently fail — theme persistence is non-critical */ }
+            catch (Exception ex) { AppLog.Warning(ex, "SaveThemePreferenceSilent failed"); }
         }
     }
 }

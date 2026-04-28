@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -115,13 +116,14 @@ namespace Alquitel.UI.ViewModels
                 foreach (var p in paths)
                 {
                     try { Files.Add(PresupuestoFile.FromPath(p)); }
-                    catch { /* skip unreadable files */ }
+                    catch (Exception ex) { AppLog.Warning(ex, "Skipping unreadable file {Path}", p); }
                 }
 
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "LoadFiles failed for {Folder}", FolderPath);
                 StatusMessage = $"Error al leer la carpeta: {ex.Message}";
             }
         }
@@ -145,6 +147,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
+                AppLog.Warning(ex, "FileSystemWatcher init failed for {Folder}", FolderPath);
                 StatusMessage = $"No se pudo observar la carpeta: {ex.Message}";
             }
         }
@@ -203,6 +206,13 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
+                if (!IsAllowedDocxPath(fullPath))
+                {
+                    AppLog.Warning("Rejected OpenFile — path outside watch folder: {Path}", fullPath);
+                    MessageBox.Show("Ruta inválida o fuera de la carpeta supervisada.", "Acceso denegado",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
                 if (!File.Exists(fullPath))
                 {
                     MessageBox.Show("El archivo ya no existe.", "Archivo no encontrado",
@@ -213,15 +223,41 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "OpenFileOnDisk failed for {Path}", fullPath);
                 MessageBox.Show($"Error al abrir: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private bool IsAllowedDocxPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath)) return false;
+            if (!fullPath.EndsWith(".docx", StringComparison.OrdinalIgnoreCase)) return false;
+            if (string.IsNullOrWhiteSpace(FolderPath) || !Directory.Exists(FolderPath)) return false;
+
+            string normalizedFile;
+            string normalizedRoot;
+            try
+            {
+                normalizedFile = Path.GetFullPath(fullPath);
+                normalizedRoot = Path.GetFullPath(FolderPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            }
+            catch
+            {
+                return false;
+            }
+            return normalizedFile.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
         }
 
         [RelayCommand]
         private void ShowInExplorer()
         {
             if (SelectedFile == null) return;
+            if (!IsAllowedDocxPath(SelectedFile.FullPath))
+            {
+                AppLog.Warning("Rejected ShowInExplorer — invalid path: {Path}", SelectedFile.FullPath);
+                return;
+            }
             try
             {
                 if (!File.Exists(SelectedFile.FullPath)) return;
@@ -229,6 +265,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "ShowInExplorer failed for {Path}", SelectedFile.FullPath);
                 MessageBox.Show($"Error: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -238,6 +275,13 @@ namespace Alquitel.UI.ViewModels
         private void DeleteFile()
         {
             if (SelectedFile == null) return;
+            if (!IsAllowedDocxPath(SelectedFile.FullPath))
+            {
+                AppLog.Warning("Rejected DeleteFile — invalid path: {Path}", SelectedFile.FullPath);
+                MessageBox.Show("Ruta inválida o fuera de la carpeta supervisada.", "Acceso denegado",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             var result = MessageBox.Show(
                 $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.",
@@ -253,9 +297,11 @@ namespace Alquitel.UI.ViewModels
                 SelectedFile = null;
                 IsDetailPanelOpen = false;
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
+                AppLog.Information("File deleted: {Path}", toDelete.FullPath);
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "DeleteFile failed for {Path}", toDelete.FullPath);
                 MessageBox.Show($"No se pudo eliminar: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
