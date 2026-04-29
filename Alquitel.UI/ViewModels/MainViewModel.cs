@@ -1,7 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.IO;
 using System.Text.Json;
@@ -15,11 +17,10 @@ namespace Alquitel.UI.ViewModels
     /// </summary>
     public partial class MainViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
-        private readonly SettingsViewModel _settingsVm;
-
-        private static readonly string SettingsFilePath = Path.Combine(@"C:\Alquitel", "settings.json");
+        private readonly INavigationService _navigationService;
+        private readonly IAppSettings _appSettings;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -30,17 +31,25 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _activeSection = "Dashboard";
 
-        public MainViewModel(AlquitelDbContext dbContext, IDocumentService documentService)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
             _documentService = documentService;
-            _settingsVm = new SettingsViewModel();
+            _navigationService = navigationService;
+            _appSettings = appSettings;
 
             // Load theme preference from settings
             LoadThemePreference();
             ApplyTheme(IsDarkMode);
 
-            // Start on Dashboard
+            // Navigate to Dashboard initially. We need to run it via dispatcher or just set it manually 
+            // since NavigateTo<T> sets CurrentViewModel. Actually, since we are inside MainViewModel constructor,
+            // we can just let it finish and maybe set the first view model from App.xaml.cs or just resolve it manually here.
+            // But wait, NavigateTo<T> calls _serviceProvider.GetRequiredService<MainViewModel>() which is us!
+        }
+
+        public void Initialize()
+        {
             NavigateToDashboard();
         }
 
@@ -50,35 +59,49 @@ namespace Alquitel.UI.ViewModels
         private void NavigateToDashboard()
         {
             ActiveSection = "Dashboard";
-            CurrentViewModel = new DashboardViewModel(_dbContext, () => NavigateToBuilder());
+            _navigationService.NavigateTo<DashboardViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToBuilder()
         {
             ActiveSection = "Presupuesto";
-            CurrentViewModel = new BudgetBuilderViewModel(_dbContext, _documentService, _settingsVm);
+            _navigationService.NavigateTo<BudgetBuilderViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToSettings()
         {
             ActiveSection = "Configuración";
-            CurrentViewModel = _settingsVm;
+            _navigationService.NavigateTo<SettingsViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToProducts()
         {
             ActiveSection = "Productos";
-            CurrentViewModel = new ProductEditorViewModel(_dbContext);
+            _navigationService.NavigateTo<ProductEditorViewModel>();
         }
 
         [RelayCommand]
         private void NavigateToPresupuestos()
         {
             ActiveSection = "Presupuestos";
-            CurrentViewModel = new PresupuestosViewModel(_settingsVm);
+            _navigationService.NavigateTo<PresupuestosViewModel>();
+        }
+
+        [RelayCommand]
+        private void NavigateToClients()
+        {
+            ActiveSection = "Clientes";
+            _navigationService.NavigateTo<ClientsViewModel>();
+        }
+
+        [RelayCommand]
+        private void NavigateToLocations()
+        {
+            ActiveSection = "Ubicaciones";
+            _navigationService.NavigateTo<LocationsViewModel>();
         }
 
         // ── Theme ────────────────────────────────────────────────────
@@ -110,15 +133,7 @@ namespace Alquitel.UI.ViewModels
 
         private void LoadThemePreference()
         {
-            try
-            {
-                if (!File.Exists(SettingsFilePath)) return;
-                var json = File.ReadAllText(SettingsFilePath);
-                var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                if (settings != null && settings.TryGetValue("IsDarkMode", out var dm) && bool.TryParse(dm, out var isDark))
-                    IsDarkMode = isDark;
-            }
-            catch { /* Gracefully ignore corrupt settings */ }
+            IsDarkMode = _appSettings.IsDarkMode;
         }
 
         /// <summary>
@@ -127,24 +142,8 @@ namespace Alquitel.UI.ViewModels
         /// </summary>
         private void SaveThemePreferenceSilent()
         {
-            try
-            {
-                Dictionary<string, string> settings;
-                if (File.Exists(SettingsFilePath))
-                {
-                    var json = File.ReadAllText(SettingsFilePath);
-                    settings = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
-                }
-                else
-                {
-                    settings = new();
-                }
-
-                settings["IsDarkMode"] = IsDarkMode.ToString();
-                var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, output);
-            }
-            catch { /* Silently fail — theme persistence is non-critical */ }
+            _appSettings.IsDarkMode = IsDarkMode;
+            _appSettings.SaveSettings();
         }
     }
 }

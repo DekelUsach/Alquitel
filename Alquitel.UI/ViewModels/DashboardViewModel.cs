@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure.Persistence;
+using Alquitel.Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 
@@ -8,8 +10,8 @@ namespace Alquitel.UI.ViewModels
 {
     public partial class DashboardViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
-        private readonly Action _navigateToBuilder;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
+        private readonly INavigationService _navigationService;
 
         [ObservableProperty]
         private int _totalProducts;
@@ -23,10 +25,10 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _welcomeMessage = string.Empty;
 
-        public DashboardViewModel(AlquitelDbContext dbContext, Action navigateToBuilder)
+        public DashboardViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, INavigationService navigationService)
         {
-            _dbContext = dbContext;
-            _navigateToBuilder = navigateToBuilder;
+            _dbContextFactory = dbContextFactory;
+            _navigationService = navigationService;
             LoadMetrics();
         }
 
@@ -34,9 +36,10 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
-                TotalProducts = _dbContext.Products.Count();
-                TotalClients = _dbContext.Clients.Count();
-                TotalOrders = _dbContext.Orders.Count();
+                using var db = _dbContextFactory.CreateDbContext();
+                TotalProducts = db.Products.Count();
+                TotalClients = db.Clients.Count();
+                TotalOrders = db.Orders.Count();
 
                 var hour = DateTime.Now.Hour;
                 WelcomeMessage = hour switch
@@ -46,9 +49,9 @@ namespace Alquitel.UI.ViewModels
                     _ => "Buenas noches"
                 };
             }
-            catch
+            catch (Exception ex)
             {
-                // Silently fallback if DB has issues
+                Alquitel.Infrastructure.AppLog.Warning(ex, "Dashboard metrics load failed");
                 TotalProducts = 0;
                 TotalClients = 0;
                 TotalOrders = 0;
@@ -57,7 +60,7 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private void NewBudget() => _navigateToBuilder();
+        private void NewBudget() => _navigationService.NavigateTo<BudgetBuilderViewModel>();
 
         [RelayCommand]
         private void Refresh() => LoadMetrics();

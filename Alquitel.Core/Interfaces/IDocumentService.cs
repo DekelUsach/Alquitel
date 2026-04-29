@@ -13,6 +13,6 @@ namespace Alquitel.Core.Interfaces
         /// <param name="outputPath">Where to save the result.</param>
         /// <param name="isTechnical">If true, omits monetary values (OT).</param>
         /// <returns>Task for completion.</returns>
-        Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical);
+        Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical, bool exportPdf = false);
     }
 }

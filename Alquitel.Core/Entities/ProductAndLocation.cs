@@ -16,7 +16,12 @@ namespace Alquitel.Core.Entities
         public string? ImagePath { get; set; }
         
         // Serialized List<CustomFieldDefinition>
-        public string? CustomFieldsJson { get; set; } 
+        public string? CustomFieldsJson { get; set; }
+
+        /// <summary>
+        /// Soft delete flag. When true the product is hidden from UI but preserved for FK integrity.
+        /// </summary>
+        public bool IsArchived { get; set; } = false;
     }
 
     public class Location

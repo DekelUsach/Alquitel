@@ -22,7 +22,13 @@ namespace Alquitel.UI.Converters
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-            => throw new NotSupportedException();
+        {
+            if (value is Color color)
+            {
+                return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            }
+            return "#000000";
+        }
     }
 
     // bool → FontWeight (Bold / Normal)

@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Alquitel.Infrastructure;
+using Alquitel.Core.Interfaces;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -11,9 +13,11 @@ using System.Windows.Data;
 
 namespace Alquitel.UI.ViewModels
 {
-    public partial class PresupuestosViewModel : ObservableObject, IDisposable
+    public partial class PresupuestosViewModel : ObservableObject, IDisposable, IAsyncInitialization
     {
-        private readonly SettingsViewModel _settingsVm;
+        private readonly IAppSettings _appSettings;
+        private readonly IDialogService _dialogService;
+        private readonly IDispatcher _dispatcher;
         private readonly ICollectionView _filesView;
         private FileSystemWatcher? _watcher;
 
@@ -41,9 +45,11 @@ namespace Alquitel.UI.ViewModels
         public ObservableCollection<PresupuestoFile> Files { get; } = new();
         public ICollectionView FilesView => _filesView;
 
-        public PresupuestosViewModel(SettingsViewModel settingsVm)
+        public PresupuestosViewModel(IAppSettings appSettings, IDialogService dialogService, IDispatcher dispatcher)
         {
-            _settingsVm = settingsVm;
+            _appSettings = appSettings;
+            _dialogService = dialogService;
+            _dispatcher = dispatcher;
 
             _filesView = CollectionViewSource.GetDefaultView(Files);
             _filesView.Filter = FilterFile;
@@ -51,14 +57,12 @@ namespace Alquitel.UI.ViewModels
                 new SortDescription(nameof(PresupuestoFile.ModifiedDate), ListSortDirection.Descending));
 
             // Initial folder from settings
-            var paths = _settingsVm.GetCurrentPaths();
-            FolderPath = paths.TryGetValue("PresupuestosFolder", out var p) ? p : string.Empty;
+            FolderPath = _appSettings.PresupuestosFolder;
         }
 
         partial void OnFolderPathChanged(string value)
         {
-            LoadFiles();
-            StartWatching();
+            _ = InitializeAsync();
             SyncPathToSettings();
         }
 
@@ -95,7 +99,7 @@ namespace Alquitel.UI.ViewModels
             return true;
         }
 
-        private void LoadFiles()
+        public async Task InitializeAsync()
         {
             Files.Clear();
             try
@@ -114,14 +118,16 @@ namespace Alquitel.UI.ViewModels
                 var paths = Directory.GetFiles(FolderPath, "*.docx", SearchOption.TopDirectoryOnly);
                 foreach (var p in paths)
                 {
-                    try { Files.Add(PresupuestoFile.FromPath(p)); }
-                    catch { /* skip unreadable files */ }
+                    try { Files.Add(await Task.Run(() => PresupuestoFile.FromPath(p))); }
+                    catch (Exception ex) { AppLog.Warning(ex, "Skipping unreadable file {Path}", p); }
                 }
 
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
+                StartWatching();
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "InitializeAsync failed for {Folder}", FolderPath);
                 StatusMessage = $"Error al leer la carpeta: {ex.Message}";
             }
         }
@@ -145,27 +151,38 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
+                AppLog.Warning(ex, "FileSystemWatcher init failed for {Folder}", FolderPath);
                 StatusMessage = $"No se pudo observar la carpeta: {ex.Message}";
             }
         }
 
-        private void OnFileChanged(object sender, FileSystemEventArgs e)
+        private DateTime _lastFileSystemEvent = DateTime.MinValue;
+        private readonly TimeSpan _debounceDelay = TimeSpan.FromMilliseconds(300);
+
+        private async void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            Application.Current?.Dispatcher.BeginInvoke(new Action(LoadFiles));
+            var now = DateTime.UtcNow;
+            if (now - _lastFileSystemEvent < _debounceDelay) return;
+            _lastFileSystemEvent = now;
+
+            await Task.Delay(_debounceDelay);
+            _dispatcher.InvokeAsync(() => _ = InitializeAsync());
         }
 
         private void SyncPathToSettings()
         {
             if (string.IsNullOrWhiteSpace(FolderPath)) return;
-            if (_settingsVm.PresupuestosFolder != FolderPath)
-                _settingsVm.PresupuestosFolder = FolderPath;
+            if (_appSettings.PresupuestosFolder != FolderPath)
+            {
+                _appSettings.PresupuestosFolder = FolderPath;
+                _appSettings.SaveSettings();
+            }
         }
 
         [RelayCommand]
         private void Refresh()
         {
-            LoadFiles();
-            StartWatching();
+            _ = InitializeAsync();
         }
 
         [RelayCommand]
@@ -203,34 +220,55 @@ namespace Alquitel.UI.ViewModels
         {
             try
             {
+                if (!IsAllowedDocxPath(fullPath))
+                {
+                    AppLog.Warning("Rejected OpenFile — path outside watch folder: {Path}", fullPath);
+                    _dialogService.ShowWarning("Acceso denegado", "Ruta inválida o fuera de la carpeta supervisada.");
+                    return;
+                }
                 if (!File.Exists(fullPath))
                 {
-                    MessageBox.Show("El archivo ya no existe.", "Archivo no encontrado",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _dialogService.ShowWarning("Archivo no encontrado", "El archivo ya no existe.");
                     return;
                 }
                 Process.Start(new ProcessStartInfo(fullPath) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al abrir: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                AppLog.Error(ex, "OpenFileOnDisk failed for {Path}", fullPath);
+                _dialogService.ShowError("Error", $"Error al abrir: {ex.Message}");
             }
+        }
+
+        private bool IsAllowedDocxPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(FolderPath) || !Directory.Exists(FolderPath)) return false;
+            return PathValidator.IsDocxWithinRoot(fullPath, FolderPath);
         }
 
         [RelayCommand]
         private void ShowInExplorer()
         {
             if (SelectedFile == null) return;
+            if (!IsAllowedDocxPath(SelectedFile.FullPath))
+            {
+                AppLog.Warning("Rejected ShowInExplorer — invalid path: {Path}", SelectedFile.FullPath);
+                return;
+            }
             try
             {
                 if (!File.Exists(SelectedFile.FullPath)) return;
-                Process.Start("explorer.exe", $"/select,\"{SelectedFile.FullPath}\"");
+                var psi = new ProcessStartInfo("explorer.exe")
+                {
+                    Arguments = $"/select,\"{SelectedFile.FullPath}\"",
+                    UseShellExecute = false
+                };
+                Process.Start(psi);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                AppLog.Error(ex, "ShowInExplorer failed for {Path}", SelectedFile.FullPath);
+                _dialogService.ShowError("Error", $"Error: {ex.Message}");
             }
         }
 
@@ -238,12 +276,18 @@ namespace Alquitel.UI.ViewModels
         private void DeleteFile()
         {
             if (SelectedFile == null) return;
+            if (!IsAllowedDocxPath(SelectedFile.FullPath))
+            {
+                AppLog.Warning("Rejected DeleteFile — invalid path: {Path}", SelectedFile.FullPath);
+                _dialogService.ShowWarning("Acceso denegado", "Ruta inválida o fuera de la carpeta supervisada.");
+                return;
+            }
 
-            var result = MessageBox.Show(
-                $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.",
-                "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var result = _dialogService.ShowConfirm(
+                "Confirmar eliminación",
+                $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.");
 
-            if (result != MessageBoxResult.Yes) return;
+            if (!result) return;
 
             var toDelete = SelectedFile;
             try
@@ -253,11 +297,12 @@ namespace Alquitel.UI.ViewModels
                 SelectedFile = null;
                 IsDetailPanelOpen = false;
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
+                AppLog.Information("File deleted: {Path}", toDelete.FullPath);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"No se pudo eliminar: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                AppLog.Error(ex, "DeleteFile failed for {Path}", toDelete.FullPath);
+                _dialogService.ShowError("Error", $"No se pudo eliminar: {ex.Message}");
             }
         }
 

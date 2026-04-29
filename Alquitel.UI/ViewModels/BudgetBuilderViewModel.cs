@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -17,15 +18,17 @@ using System.Globalization;
 using System.Text;
 using System.Collections.Specialized;
 using System.Collections.Generic;
+using Alquitel.Core.Helpers;
 
 namespace Alquitel.UI.ViewModels
 {
-    public partial class BudgetBuilderViewModel : ObservableObject
+    public partial class BudgetBuilderViewModel : ObservableObject, IAsyncInitialization, IDisposable
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDocumentService _documentService;
         private readonly ICollectionView _productsView;
-        private readonly SettingsViewModel _settingsVm;
+        private readonly IAppSettings _appSettings;
+        private readonly IDialogService _dialogService;
 
         [ObservableProperty]
         private string _searchText = string.Empty;
@@ -60,20 +63,104 @@ namespace Alquitel.UI.ViewModels
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
-        public BudgetBuilderViewModel(AlquitelDbContext dbContext, IDocumentService documentService, SettingsViewModel settingsVm)
-        {
-            _dbContext = dbContext;
-            _documentService = documentService;
-            _settingsVm = settingsVm;
+        private Dictionary<Guid, ProductCacheEntry> _productSearchCache = new();
+        private CancellationTokenSource? _autosaveCts;
+        private string _draftsFolder;
 
-            try {
-                foreach(var p in _dbContext.Products.ToList()) AvailableProducts.Add(p);
-            } catch { }
+        private class ProductCacheEntry
+        {
+            public HashSet<string> DescriptionTokens { get; set; } = new();
+            public HashSet<string> CategoryTokens { get; set; } = new();
+            public HashSet<string> DescriptionTrigrams { get; set; } = new();
+        }
+
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService)
+        {
+            _dbContextFactory = dbContextFactory;
+            _documentService = documentService;
+            _appSettings = appSettings;
+            _dialogService = dialogService;
 
             _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
             _productsView.Filter = FilterProduct;
 
             SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
+
+            _draftsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Alquitel", "Drafts");
+            if (!Directory.Exists(_draftsFolder))
+            {
+                Directory.CreateDirectory(_draftsFolder);
+            }
+        }
+
+        public async Task InitializeAsync()
+        {
+            AvailableProducts.Clear();
+            _productSearchCache.Clear();
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var products = await db.Products.AsNoTracking().ToListAsync();
+
+                var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var p in products)
+                {
+                    AvailableProducts.Add(p);
+                    _productSearchCache[p.Id] = new ProductCacheEntry
+                    {
+                        DescriptionTokens = ExtractMeaningfulTokens(NormalizeText(p.Description), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                        CategoryTokens = ExtractMeaningfulTokens(NormalizeText(p.Category), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                        DescriptionTrigrams = Trigrams(NormalizeText(p.Description))
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "Failed to load products in BudgetBuilder");
+            }
+
+            _autosaveCts?.Cancel();
+            _autosaveCts = new CancellationTokenSource();
+            _ = AutosaveLoopAsync(_autosaveCts.Token);
+        }
+
+        private async Task AutosaveLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), token);
+                    if (SelectedItems.Any() && CurrentOrder != null)
+                    {
+                        var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
+                        var path = Path.Combine(_draftsFolder, draftName);
+                        // Convert to DTO to avoid circular references during serialization
+                        var dto = new
+                        {
+                            BudgetNumber = CurrentOrder.BudgetNumber,
+                            ClientName = CurrentOrder.Client?.CompanyName,
+                            EventDate = CurrentOrder.EventDate,
+                            Items = SelectedItems.Select(i => new { i.ProductId, i.Quantity, i.Total, i.RequestedMeasure }).ToList()
+                        };
+                        var json = System.Text.Json.JsonSerializer.Serialize(dto, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                        await File.WriteAllTextAsync(path, json, token);
+                    }
+                }
+                catch (TaskCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Autosave failed");
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _autosaveCts?.Cancel();
+            _autosaveCts?.Dispose();
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -96,11 +183,25 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnCuitInputChanged(string value)
         {
-            var client = _dbContext.Clients.FirstOrDefault(c => c.Cuit == value);
-            if (client != null)
+            if (!string.IsNullOrWhiteSpace(value) && !CuitValidator.IsValid(value))
             {
-                CurrentOrder.Client = client;
-                OnPropertyChanged(nameof(CurrentOrder));
+                // We could show a visual cue, but for now we just log or ignore
+                // We can't block typing, but we can prevent finding a client if invalid
+            }
+
+            try
+            {
+                using var db = _dbContextFactory.CreateDbContext();
+                var client = db.Clients.AsNoTracking().FirstOrDefault(c => c.Cuit == value);
+                if (client != null)
+                {
+                    CurrentOrder.Client = client;
+                    OnPropertyChanged(nameof(CurrentOrder));
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "CUIT lookup failed for {Cuit}", value);
             }
         }
 
@@ -141,6 +242,7 @@ namespace Alquitel.UI.ViewModels
                 // Copy dynamic fields from Product
                 ImagePath = product.ImagePath,
                 CustomFieldsJson = product.CustomFieldsJson,
+                DescriptionSnapshot = product.Description,
                 RequestedMeasure = string.Empty, // Starts off empty, user fills it in for the budget
             };
             SelectedItems.Add(item);
@@ -172,23 +274,23 @@ namespace Alquitel.UI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SmartSearchText))
             {
-                MessageBox.Show("Pegá un texto para analizar primero.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
+                _dialogService.ShowInfo("Búsqueda inteligente", "Pegá un texto para analizar primero.");
                 return;
             }
 
             var matches = FindProductsFromParagraph(SmartSearchText).ToList();
             if (!matches.Any())
             {
-                MessageBox.Show("No detecté productos del catálogo en ese texto.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _dialogService.ShowWarning("Búsqueda inteligente", "No detecté productos del catálogo en ese texto.");
                 return;
             }
 
             if (SelectedItems.Any())
             {
-                var replace = MessageBox.Show(
-                    "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?",
-                    "Confirmar reemplazo", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (replace == MessageBoxResult.Yes) { SelectedItems.Clear(); CurrentOrder.Items.Clear(); }
+                var replace = _dialogService.ShowConfirm(
+                    "Confirmar reemplazo",
+                    "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?");
+                if (replace) { SelectedItems.Clear(); CurrentOrder.Items.Clear(); }
             }
 
             int addedCount = 0;
@@ -204,34 +306,32 @@ namespace Alquitel.UI.ViewModels
                     UnitPrice = result.Product.BasePrice,
                     ImagePath = result.Product.ImagePath,
                     CustomFieldsJson = result.Product.CustomFieldsJson,
+                    DescriptionSnapshot = result.Product.Description,
                     RequestedMeasure = string.Empty
                 };
                 SelectedItems.Add(item);
                 CurrentOrder.Items.Add(item);
                 addedCount++;
             }
-            MessageBox.Show($"Se agregaron {addedCount} producto(s) automáticamente.", "Búsqueda inteligente", MessageBoxButton.OK, MessageBoxImage.Information);
+            _dialogService.ShowInfo("Búsqueda inteligente", $"Se agregaron {addedCount} producto(s) automáticamente.");
         }
 
         [RelayCommand]
         private async Task GenerateBudget()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["PresupuestosFolder"], paths["PresupuestosTemplate"], false);
+            await GenerateDocument(_appSettings.PresupuestosFolder, _appSettings.PresupuestosTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOF()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["OfFolder"], paths["OfTemplate"], false);
+            await GenerateDocument(_appSettings.OfFolder, _appSettings.OfTemplate, false);
         }
 
         [RelayCommand]
         private async Task GenerateOT()
         {
-            var paths = _settingsVm.GetCurrentPaths();
-            await GenerateDocument(paths["OtFolder"], paths["OtTemplate"], true);
+            await GenerateDocument(_appSettings.OtFolder, _appSettings.OtTemplate, true);
         }
 
         private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical)
@@ -240,7 +340,7 @@ namespace Alquitel.UI.ViewModels
             {
                 if (!ValidateOrderForGeneration(out string validationMessage))
                 {
-                    MessageBox.Show(validationMessage, "Datos incompletos", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _dialogService.ShowWarning("Datos incompletos", validationMessage);
                     return;
                 }
 
@@ -256,23 +356,39 @@ namespace Alquitel.UI.ViewModels
 
                 if (!File.Exists(templatePath))
                 {
-                    MessageBox.Show($"La plantilla no existe en: {templatePath}", "Error de Plantilla", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _dialogService.ShowError("Error de Plantilla", $"La plantilla no existe en: {templatePath}");
                     return;
                 }
 
-                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical);
-                await PersistOrderAsync();
-                MessageBox.Show($"Archivo guardado correctamente en:\n{outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical, _appSettings.ExportPdf);
+                bool persisted = await PersistOrderAsync();
+
+                if (persisted)
+                {
+                    _dialogService.ShowInfo("Éxito", $"Archivo guardado correctamente en:\n{outputPath}");
+                }
+                else
+                {
+                    _dialogService.ShowWarning(
+                        "Documento generado, persistencia falló",
+                        $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                        "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
+                        "Revisá el archivo de log para más detalles.");
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}", "Error de Generación", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
+                _dialogService.ShowError("Error de Generación", $"Error: {ex.Message}");
             }
         }
 
         public void LoadOrder(Order order)
         {
-            var full = _dbContext.Orders
+            using var db = _dbContextFactory.CreateDbContext();
+            var full = db.Orders
+                .AsNoTracking()
+                .IgnoreQueryFilters() // Include archived clients/products in historical orders
                 .Include(o => o.Client)
                 .Include(o => o.Location)
                 .Include(o => o.Items).ThenInclude(i => i.Product)
@@ -309,6 +425,7 @@ namespace Alquitel.UI.ViewModels
                     TechnicalNotes = item.TechnicalNotes,
                     ImagePath = item.ImagePath,
                     CustomFieldsJson = item.CustomFieldsJson,
+                    DescriptionSnapshot = item.DescriptionSnapshot,
                     RequestedMeasure = item.RequestedMeasure,
                 };
                 SelectedItems.Add(oi);
@@ -319,17 +436,19 @@ namespace Alquitel.UI.ViewModels
             CuitInput = full.Client?.Cuit ?? string.Empty;
         }
 
-        private async Task PersistOrderAsync()
+        private async Task<bool> PersistOrderAsync()
         {
             try
             {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+
                 var locName = CurrentOrder.Location?.Name ?? string.Empty;
-                var location = _dbContext.Locations.FirstOrDefault(l => l.Name == locName);
+                var location = db.Locations.FirstOrDefault(l => l.Name == locName);
                 if (location == null && !string.IsNullOrWhiteSpace(locName))
                 {
                     location = new Location { Name = locName };
-                    _dbContext.Locations.Add(location);
-                    await _dbContext.SaveChangesAsync();
+                    db.Locations.Add(location);
+                    await db.SaveChangesAsync();
                 }
                 else if (location == null)
                 {
@@ -339,11 +458,7 @@ namespace Alquitel.UI.ViewModels
                 var clientId = CurrentOrder.Client?.Id ?? Guid.Empty;
                 var locationId = location.Id;
 
-                var trackedOrder = _dbContext.ChangeTracker.Entries<Order>()
-                    .FirstOrDefault(e => e.Entity.Id == CurrentOrder.Id);
-                if (trackedOrder != null) trackedOrder.State = EntityState.Detached;
-
-                var orderExists = _dbContext.Orders.Any(o => o.Id == CurrentOrder.Id);
+                var orderExists = db.Orders.Any(o => o.Id == CurrentOrder.Id);
 
                 if (!orderExists)
                 {
@@ -358,12 +473,12 @@ namespace Alquitel.UI.ViewModels
                         EventDate = CurrentOrder.EventDate,
                         Status = CurrentOrder.Status,
                     };
-                    _dbContext.Orders.Add(orderToSave);
-                    await _dbContext.SaveChangesAsync();
+                    db.Orders.Add(orderToSave);
+                    await db.SaveChangesAsync();
 
                     foreach (var item in CurrentOrder.Items)
                     {
-                        _dbContext.OrderItems.Add(new OrderItem
+                        db.OrderItems.Add(new OrderItem
                         {
                             Id = item.Id,
                             OrderId = orderToSave.Id,
@@ -374,14 +489,15 @@ namespace Alquitel.UI.ViewModels
                             TechnicalNotes = item.TechnicalNotes,
                             ImagePath = item.ImagePath,
                             CustomFieldsJson = item.CustomFieldsJson,
+                            DescriptionSnapshot = item.DescriptionSnapshot,
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }
-                    await _dbContext.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
                 else
                 {
-                    var tracked = _dbContext.Orders.Find(CurrentOrder.Id);
+                    var tracked = db.Orders.Find(CurrentOrder.Id);
                     if (tracked != null)
                     {
                         tracked.BudgetNumber = CurrentOrder.BudgetNumber;
@@ -392,13 +508,13 @@ namespace Alquitel.UI.ViewModels
                         tracked.Status = CurrentOrder.Status;
                     }
 
-                    var oldItems = _dbContext.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
-                    _dbContext.OrderItems.RemoveRange(oldItems);
-                    await _dbContext.SaveChangesAsync();
+                    var oldItems = db.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
+                    db.OrderItems.RemoveRange(oldItems);
+                    await db.SaveChangesAsync();
 
                     foreach (var item in CurrentOrder.Items)
                     {
-                        _dbContext.OrderItems.Add(new OrderItem
+                        db.OrderItems.Add(new OrderItem
                         {
                             Id = Guid.NewGuid(),
                             OrderId = CurrentOrder.Id,
@@ -409,15 +525,20 @@ namespace Alquitel.UI.ViewModels
                             TechnicalNotes = item.TechnicalNotes,
                             ImagePath = item.ImagePath,
                             CustomFieldsJson = item.CustomFieldsJson,
+                            DescriptionSnapshot = item.DescriptionSnapshot,
                             RequestedMeasure = item.RequestedMeasure,
                         });
                     }
-                    await _dbContext.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
+
+                AppLog.Information("Order persisted: {OrderId} ({Budget})", CurrentOrder.Id, CurrentOrder.BudgetNumber);
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                // Persistence is non-critical — document was already generated
+                AppLog.Error(ex, "PersistOrderAsync failed for order {OrderId}", CurrentOrder.Id);
+                return false;
             }
         }
 
@@ -433,6 +554,13 @@ namespace Alquitel.UI.ViewModels
         {
             var errors = new List<string>();
             if (string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName)) errors.Add("Cliente: completá Empresa / Cliente.");
+            
+            var cuit = CurrentOrder.Client?.Cuit ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(cuit) && !CuitValidator.IsValid(cuit))
+            {
+                errors.Add("CUIT: el número ingresado no es válido (falló verificación AFIP).");
+            }
+            
             if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber)) errors.Add("N° Presupuesto: ingresá un número.");
             if (!CurrentOrder.EventDate.HasValue) errors.Add("Fecha del evento: seleccioná una fecha.");
             if (EventDays < 1) errors.Add("Días: debe ser mayor o igual a 1.");
@@ -465,6 +593,8 @@ namespace Alquitel.UI.ViewModels
         {
             var segments = BuildSmartSegments(paragraph);
             var aggregated = new Dictionary<Guid, SmartMatchResult>();
+            var threshold = _appSettings.SmartSearchThreshold;
+
             foreach (var segment in segments)
             {
                 int quantity = ExtractQuantityFromSegment(segment);
@@ -474,7 +604,7 @@ namespace Alquitel.UI.ViewModels
                 if (!ranked.Any()) continue;
                 var best = ranked[0];
                 var second = ranked.Count > 1 ? ranked[1] : null;
-                if (best.Score < 4.0) continue;
+                if (best.Score < threshold) continue;
                 if (second != null && Math.Abs(best.Score - second.Score) < 0.35) continue;
                 if (aggregated.TryGetValue(best.Product.Id, out var existing))
                     aggregated[best.Product.Id] = existing with { Quantity = existing.Quantity + best.Quantity, Score = Math.Max(existing.Score, best.Score) };
@@ -512,29 +642,36 @@ namespace Alquitel.UI.ViewModels
             return 1;
         }
 
-        private static double ScoreProductAgainstSegment(string segment, Product product)
+        private double ScoreProductAgainstSegment(string segment, Product product)
         {
+            if (!_productSearchCache.TryGetValue(product.Id, out var cache)) return 0;
+
             string ns = NormalizeText(segment);
-            string nd = NormalizeText(product.Description);
-            string nc = NormalizeText(product.Category);
-            var st = ExtractMeaningfulTokens(ns).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var pt = ExtractMeaningfulTokens(nd).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var ct = ExtractMeaningfulTokens(nc).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
+            var st = ExtractMeaningfulTokens(ns, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            
+            var pt = cache.DescriptionTokens;
+            var ct = cache.CategoryTokens;
+
             if (!st.Any() || !pt.Any()) return 0;
+
             int overlap = st.Intersect(pt, StringComparer.OrdinalIgnoreCase).Count();
             int catOverlap = st.Intersect(ct, StringComparer.OrdinalIgnoreCase).Count();
             double coverage = (double)overlap / pt.Count;
             double precision = (double)overlap / Math.Max(1, st.Count);
-            double tri = DiceCoefficient(Trigrams(ns), Trigrams(nd));
+            double tri = DiceCoefficient(Trigrams(ns), cache.DescriptionTrigrams);
+
             double score = overlap * 2.7 + catOverlap * 0.8 + coverage * 3.5 + precision * 1.5 + tri * 4.0;
+            
+            string nd = NormalizeText(product.Description);
             if (ns.Contains(nd, StringComparison.OrdinalIgnoreCase)) score += 3.0;
+            
             return score;
         }
 
-        private static IEnumerable<string> ExtractMeaningfulTokens(string text)
+        private static IEnumerable<string> ExtractMeaningfulTokens(string text, HashSet<string> stopWords)
         {
-            var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "de", "la", "el", "los", "las", "con", "para", "por", "del", "y", "plus", "pro", "edition", "business", "servicio" };
-            return Regex.Split(text, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !stop.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase);
+            return Regex.Split(text, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !stopWords.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase);
         }
 
         private static string NormalizeText(string text)

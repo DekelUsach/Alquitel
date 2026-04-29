@@ -1,7 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -11,6 +13,9 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
+using System.Windows.Data;
+using System.ComponentModel;
+using Alquitel.Core.Parsing;
 
 namespace Alquitel.UI.ViewModels
 {
@@ -67,7 +72,7 @@ namespace Alquitel.UI.ViewModels
 
     public partial class ProductEditorViewModel : ObservableObject
     {
-        private readonly AlquitelDbContext _dbContext;
+        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
 
         public ObservableCollection<Product> Products { get; } = new();
 
@@ -79,6 +84,11 @@ namespace Alquitel.UI.ViewModels
 
         [ObservableProperty]
         private bool _isEditing;
+
+        [ObservableProperty]
+        private string _searchText = string.Empty;
+
+        private readonly ICollectionView _productsView;
 
         // ── Editable fields (bound to the form) ─────────────────
         [ObservableProperty] private string _editCategory = "General";
@@ -118,63 +128,18 @@ namespace Alquitel.UI.ViewModels
 
         private static List<DescriptionSegmentViewModel> ParseDescriptionSegments(string raw)
         {
-            // Strip tags entirely to get plain-text segments between tags,
-            // but also track which color/bold/italic each plain span had.
+            var parsed = TagParser.Parse(raw, "#000000");
             var result = new List<DescriptionSegmentViewModel>();
-            if (string.IsNullOrEmpty(raw))
+            
+            foreach (var seg in parsed)
             {
-                result.Add(new DescriptionSegmentViewModel());
-                return result;
-            }
-
-            // Simple tokenizer
-            var tagPattern = new Regex(@"\[(/?)([a-zA-Z]+)\]");
-            int pos = 0;
-            string color = "#000000";
-            bool bold = false, italic = false;
-            var stack = new Stack<(string color, bool bold, bool italic)>();
-
-            foreach (Match m in tagPattern.Matches(raw))
-            {
-                // Text before this tag
-                if (m.Index > pos)
-                {
-                    string span = raw.Substring(pos, m.Index - pos);
-                    if (!string.IsNullOrEmpty(span))
-                        result.Add(new DescriptionSegmentViewModel { Text = span, ColorHex = color, IsBold = bold, IsItalic = italic });
-                }
-
-                bool closing = m.Groups[1].Value == "/";
-                string name = m.Groups[2].Value.ToLowerInvariant();
-
-                if (!closing)
-                {
-                    stack.Push((color, bold, italic));
-                    color = name switch
-                    {
-                        "red"     => "#FF0000",
-                        "green"   => "#006600",
-                        "darkred" => "#C00000",
-                        _ => color
-                    };
-                    if (name == "b") bold = true;
-                    if (name == "i") italic = true;
-                }
-                else if (stack.Count > 0)
-                {
-                    var prev = stack.Pop();
-                    color = prev.color; bold = prev.bold; italic = prev.italic;
-                }
-
-                pos = m.Index + m.Length;
-            }
-
-            // Remaining text after last tag
-            if (pos < raw.Length)
-            {
-                string span = raw.Substring(pos);
-                if (!string.IsNullOrEmpty(span))
-                    result.Add(new DescriptionSegmentViewModel { Text = span, ColorHex = color, IsBold = bold, IsItalic = italic });
+                result.Add(new DescriptionSegmentViewModel 
+                { 
+                    Text = seg.Text, 
+                    ColorHex = seg.ColorHex, 
+                    IsBold = seg.Bold, 
+                    IsItalic = seg.Italic 
+                });
             }
 
             if (result.Count == 0)
@@ -183,16 +148,32 @@ namespace Alquitel.UI.ViewModels
             return result;
         }
 
-        public ProductEditorViewModel(AlquitelDbContext dbContext)
+        public ProductEditorViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory)
         {
-            _dbContext = dbContext;
+            _dbContextFactory = dbContextFactory;
+            _productsView = CollectionViewSource.GetDefaultView(Products);
+            _productsView.Filter = FilterProduct;
             LoadProducts();
+        }
+
+        partial void OnSearchTextChanged(string value)
+        {
+            _productsView.Refresh();
+        }
+
+        private bool FilterProduct(object item)
+        {
+            if (item is not Product product) return false;
+            if (string.IsNullOrWhiteSpace(SearchText)) return true;
+            return product.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
+                || product.Category.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
         }
 
         private void LoadProducts()
         {
             Products.Clear();
-            foreach (var p in _dbContext.Products.OrderBy(p => p.Category).ThenBy(p => p.Description).ToList())
+            using var db = _dbContextFactory.CreateDbContext();
+            foreach (var p in db.Products.OrderBy(p => p.Category).ThenBy(p => p.Description).ToList())
                 Products.Add(p);
         }
 
@@ -237,7 +218,10 @@ namespace Alquitel.UI.ViewModels
                         }
                     }
                 }
-                catch { } // Ignore JSON parsing errors for bad data
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Failed to parse CustomFieldsJson for product {ProductId}", p.Id);
+                }
             }
         }
 
@@ -313,26 +297,30 @@ namespace Alquitel.UI.ViewModels
 
             try
             {
+                using var db = _dbContextFactory.CreateDbContext();
                 Product target;
                 if (SelectedProduct != null)
                 {
-                    target = SelectedProduct;
+                    target = db.Products.Find(SelectedProduct.Id) ?? new Product { Id = SelectedProduct.Id };
+                    if (db.Entry(target).State == EntityState.Detached) db.Products.Add(target);
                 }
                 else
                 {
                     target = new Product();
-                    _dbContext.Products.Add(target);
+                    db.Products.Add(target);
                 }
 
                 ApplyFormToProduct(target);
-                _dbContext.SaveChanges();
+                db.SaveChanges();
 
+                Guid savedId = target.Id;
                 LoadProducts();
-                SelectedProduct = Products.FirstOrDefault(p => p.Id == target.Id);
+                SelectedProduct = Products.FirstOrDefault(p => p.Id == savedId);
                 StatusMessage = "✓ Producto guardado correctamente.";
             }
             catch (Exception ex)
             {
+                AppLog.Error(ex, "SaveProduct failed");
                 StatusMessage = $"✗ Error al guardar: {ex.Message}";
             }
         }
@@ -344,16 +332,24 @@ namespace Alquitel.UI.ViewModels
 
             try
             {
-                _dbContext.Products.Remove(SelectedProduct);
-                _dbContext.SaveChanges();
+                using var db = _dbContextFactory.CreateDbContext();
+                var tracked = db.Products.Find(SelectedProduct.Id);
+                if (tracked != null)
+                {
+                    // Soft delete: mark as archived instead of physical removal.
+                    // Global query filter ensures archived products are hidden from UI.
+                    tracked.IsArchived = true;
+                    db.SaveChanges();
+                }
                 SelectedProduct = null;
                 IsEditing = false;
                 LoadProducts();
-                StatusMessage = "✓ Producto eliminado.";
+                StatusMessage = "✓ Producto archivado.";
             }
             catch (Exception ex)
             {
-                StatusMessage = $"✗ Error al eliminar: {ex.Message}";
+                AppLog.Error(ex, "DeleteProduct (archive) failed");
+                StatusMessage = $"✗ Error al archivar: {ex.Message}";
             }
         }
 
