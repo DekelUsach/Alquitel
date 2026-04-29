@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using Alquitel.Core.Entities;
+using Alquitel.Core.Parsing;
 
 namespace Alquitel.Infrastructure.Services.WordInterop
 {
@@ -36,7 +37,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             insertRange.ParagraphFormat.SpaceBefore = 6;
             insertRange.ParagraphFormat.SpaceAfter = 0;
 
-            var titleSegments = TagParser.ParseSegments(item.DescriptionSnapshot ?? item.Product?.Description ?? "Producto", TagParser.WD_BLACK, defaultBold: true);
+            var titleSegments = TagParser.Parse(item.DescriptionSnapshot ?? item.Product?.Description ?? "Producto", "#000000", defaultBold: true);
             AppendSegments(insertRange, titleSegments, 12);
 
             // Insert floating image anchored to the title paragraph (left, wrap tight)
@@ -87,15 +88,15 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                             insertRange.ParagraphFormat.SpaceBefore = 0;
                             insertRange.ParagraphFormat.SpaceAfter = 0;
 
-                            int fieldColor = TagParser.HexToBgr(f.ColorHex, TagParser.WD_BLACK);
+                            string fieldColorHex = string.IsNullOrEmpty(f.ColorHex) ? "#000000" : f.ColorHex;
 
                             if (!string.IsNullOrEmpty(f.Label))
                             {
-                                var labelSegs = new List<Segment>
+                                var labelSegs = new List<TextSegment>
                                 {
-                                    new Segment {
+                                    new TextSegment {
                                         Text = string.IsNullOrEmpty(f.Value) ? f.Label : f.Label + ": ",
-                                        Color = fieldColor, Bold = f.IsBold, Underline = f.IsUnderline
+                                        ColorHex = fieldColorHex, Bold = f.IsBold, Underline = f.IsUnderline
                                     }
                                 };
                                 AppendSegments(insertRange, labelSegs, 9);
@@ -103,7 +104,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
                             if (!string.IsNullOrEmpty(f.Value))
                             {
-                                var valueSegs = TagParser.ParseSegments(f.Value, fieldColor);
+                                var valueSegs = TagParser.Parse(f.Value, fieldColorHex);
                                 AppendSegments(insertRange, valueSegs, 9);
                             }
 
@@ -125,9 +126,9 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 insertRange.ParagraphFormat.SpaceAfter = 0;
 
                 AppendSegments(insertRange, new[] {
-                    new Segment { Text = "Medida solicitada: ", Color = TagParser.WD_BLACK, Bold = true, Underline = true }
+                    new TextSegment { Text = "Medida solicitada: ", ColorHex = "#000000", Bold = true, Underline = true }
                 }, 9);
-                AppendSegments(insertRange, TagParser.ParseSegments(item.RequestedMeasure, TagParser.WD_RED, defaultBold: true), 9);
+                AppendSegments(insertRange, TagParser.Parse(item.RequestedMeasure, "#FF0000", defaultBold: true), 9);
 
                 insertRange.Collapse(0);
                 insertRange.InsertParagraphAfter();
@@ -159,7 +160,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 summaryTable.Borders.OutsideLineStyle = 0; // wdLineStyleNone
                 summaryTable.Borders.InsideLineStyle  = 1; // wdLineStyleSingle
                 summaryTable.Borders.InsideLineWidth  = 4; // 0.5pt
-                summaryTable.Borders.InsideColor      = TagParser.WD_WHITE;
+                summaryTable.Borders.InsideColor      = TagParserInterop.WD_WHITE;
             }
             catch { }
 
@@ -172,14 +173,14 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             for (int c = 1; c <= 4; c++)
             {
                 dynamic cell = summaryTable.Cell(1, c);
-                cell.Shading.BackgroundPatternColor = TagParser.WD_BLUE;
+                cell.Shading.BackgroundPatternColor = TagParserInterop.WD_BLUE;
                 cell.VerticalAlignment = 1; // wdCellAlignVerticalCenter
                 var cr = cell.Range;
                 cr.Text = cells[c - 1];
                 cr.Font.Name = FONT_NAME;
                 cr.Font.Size = 10;
                 cr.Font.Bold = 1;
-                cr.Font.Color = TagParser.WD_WHITE;
+                cr.Font.Color = TagParserInterop.WD_WHITE;
                 cr.ParagraphFormat.Alignment = c == 1 || c == 2 ? 1 : 0;
             }
 
@@ -190,7 +191,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             insertRange.Collapse(0);
         }
 
-        private static void AppendSegments(dynamic range, IEnumerable<Segment> segments, int sizePt)
+        private static void AppendSegments(dynamic range, IEnumerable<TextSegment> segments, int sizePt)
         {
             foreach (var s in segments)
             {
@@ -204,9 +205,9 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 range.Font.Bold = s.Bold ? 1 : 0;
                 range.Font.Italic = s.Italic ? 1 : 0;
                 range.Font.Underline = s.Underline ? 1 : 0;
-                range.Font.Color = s.Color;
+                range.Font.Color = TagParserInterop.HexToBgr(s.ColorHex, TagParserInterop.WD_BLACK);
                 try { range.HighlightColorIndex = 0; } catch { }
-                try { range.Shading.BackgroundPatternColor = TagParser.WD_AUTO; } catch { }
+                try { range.Shading.BackgroundPatternColor = TagParserInterop.WD_AUTO; } catch { }
                 try { range.Shading.Texture = 0; } catch { }
                 try { range.Font.Underline = s.Underline ? 1 : 0; } catch { }
                 range.Collapse(0);
@@ -216,7 +217,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
         private static void ResetParagraphStyle(dynamic doc, dynamic range)
         {
             try { range.set_Style(doc.Styles["Normal"]); } catch { }
-            try { range.ParagraphFormat.Shading.BackgroundPatternColor = TagParser.WD_AUTO; } catch { }
+            try { range.ParagraphFormat.Shading.BackgroundPatternColor = TagParserInterop.WD_AUTO; } catch { }
         }
     }
 }

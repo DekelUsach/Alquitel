@@ -30,7 +30,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             string templateDir  = Path.GetDirectoryName(templatePath)!;
             string templateFile = Path.GetFileName(templatePath);
             string lockFile     = Path.Combine(templateDir, "~$" + templateFile);
-            try { if (File.Exists(lockFile)) File.Delete(lockFile); } catch { }
+            try { if (File.Exists(lockFile)) File.Delete(lockFile); } catch (Exception ex) { AppLog.Warning(ex, "Could not delete lock file {LockFile}", lockFile); }
 
             _tempPath = Path.Combine(Path.GetTempPath(), $"alquitel_tmp_{Guid.NewGuid():N}.docx");
             File.Copy(templatePath, _tempPath, overwrite: true);
@@ -47,7 +47,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 pvOptions.OpenFilesFromInternetInProtectedView = false;
                 pvOptions.OpenFilesInUnsafeLocationsInProtectedView = false;
             }
-            catch { }
+            catch (Exception ex) { AppLog.Warning(ex, "Failed to set Word options/ProtectedViewOptions"); }
 
             Document = WordApp!.Documents.Open(_tempPath, ReadOnly: false, AddToRecentFiles: false, ConfirmConversions: false);
 
@@ -58,7 +58,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                     dynamic pvw = WordApp.ProtectedViewWindows[1];
                     Document = pvw.Edit();
                 }
-                catch { }
+                catch (Exception ex) { AppLog.Warning(ex, "Failed to edit ProtectedViewWindow"); }
             }
 
             try
@@ -66,7 +66,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 if ((int)Document!.ProtectionType != -1) // -1 = wdNoProtection
                     Document.Unprotect(Password: "");
             }
-            catch { }
+            catch (Exception ex) { AppLog.Warning(ex, "Failed to unprotect document"); }
         }
 
         public void SaveAndClose(string outputPath)
@@ -103,17 +103,17 @@ namespace Alquitel.Infrastructure.Services.WordInterop
         {
             if (_tempPath != null)
             {
-                try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch { }
+                try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch (Exception ex) { AppLog.Warning(ex, "Failed to delete temp file {TempPath}", _tempPath); }
             }
 
             if (Document != null)
             {
-                try { Document.Close(false); } catch { }
+                try { Document.Close(false); } catch (Exception ex) { AppLog.Warning(ex, "Failed to close document"); }
                 Marshal.ReleaseComObject(Document);
             }
             if (WordApp != null)
             {
-                try { WordApp.Quit(); } catch { }
+                try { WordApp.Quit(); } catch (Exception ex) { AppLog.Warning(ex, "Failed to quit Word application"); }
                 Marshal.ReleaseComObject(WordApp);
             }
         }

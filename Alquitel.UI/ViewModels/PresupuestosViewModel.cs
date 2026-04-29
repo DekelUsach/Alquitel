@@ -242,22 +242,8 @@ namespace Alquitel.UI.ViewModels
 
         private bool IsAllowedDocxPath(string fullPath)
         {
-            if (string.IsNullOrWhiteSpace(fullPath)) return false;
-            if (!fullPath.EndsWith(".docx", StringComparison.OrdinalIgnoreCase)) return false;
             if (string.IsNullOrWhiteSpace(FolderPath) || !Directory.Exists(FolderPath)) return false;
-
-            string normalizedFile;
-            string normalizedRoot;
-            try
-            {
-                normalizedFile = Path.GetFullPath(fullPath);
-                normalizedRoot = Path.GetFullPath(FolderPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            }
-            catch
-            {
-                return false;
-            }
-            return normalizedFile.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+            return PathValidator.IsDocxWithinRoot(fullPath, FolderPath);
         }
 
         [RelayCommand]
@@ -272,7 +258,12 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 if (!File.Exists(SelectedFile.FullPath)) return;
-                Process.Start("explorer.exe", $"/select,\"{SelectedFile.FullPath}\"");
+                var psi = new ProcessStartInfo("explorer.exe")
+                {
+                    Arguments = $"/select,\"{SelectedFile.FullPath}\"",
+                    UseShellExecute = false
+                };
+                Process.Start(psi);
             }
             catch (Exception ex)
             {

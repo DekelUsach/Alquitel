@@ -1,6 +1,9 @@
 using System;
+using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Alquitel.Infrastructure;
@@ -15,6 +18,19 @@ namespace Alquitel.UI
     {
         public static ServiceProvider? ServiceProvider { get; private set; }
 
+        private static IConfiguration BuildConfiguration()
+        {
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+        .AddEnvironmentVariables("ALQUITEL_");
+
+#if DEBUG
+            builder.AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true);
+#endif
+            return builder.Build();
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             AppLog.Initialize();
@@ -22,13 +38,24 @@ namespace Alquitel.UI
 
             try
             {
+                var configuration = BuildConfiguration();
                 var serviceCollection = new ServiceCollection();
-                ConfigureServices(serviceCollection);
+                ConfigureServices(serviceCollection, configuration);
 
                 ServiceProvider = serviceCollection.BuildServiceProvider();
 
                 var initService = ServiceProvider.GetRequiredService<DataInitializationService>();
                 initService.Initialize();
+
+                var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
+                backupService.Start();
+
+                _ = Task.Run(() => ServiceProvider.GetRequiredService<IUpdateService>()
+                        .CheckAndApplyUpdatesAsync())
+                    .ContinueWith(
+                        t => AppLog.Warning(t.Exception!.Flatten().InnerException!,
+                            "Background update task faulted"),
+                        System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
 
                 var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
                 mainWindow.Show();
@@ -38,7 +65,7 @@ namespace Alquitel.UI
             catch (Exception ex)
             {
                 AppLog.Fatal(ex, "Startup failed");
-                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}\n\nDetalles:\n{ex.StackTrace}",
+                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}",
                     "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
@@ -51,11 +78,17 @@ namespace Alquitel.UI
             base.OnExit(e);
         }
 
-        private void ConfigureServices(IServiceCollection services)
+        private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
         {
+            services.AddSingleton<IConfiguration>(configuration);
+
             services.AddDbContextFactory<AlquitelDbContext>(
                 options => options.UseSqlite(AppPaths.DbConnectionString));
+
+            var updateUrl = configuration["Updates:UpdateUrl"];
+            services.AddSingleton<IUpdateService>(new VelopackUpdateService(updateUrl));
             services.AddSingleton<DataInitializationService>();
+            services.AddSingleton<DatabaseBackupService>();
             services.AddSingleton<IDocumentService, WordDocumentService>();
             
             // Core Services

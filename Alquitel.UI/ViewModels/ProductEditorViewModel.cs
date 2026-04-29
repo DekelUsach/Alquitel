@@ -15,6 +15,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Media;
 using System.Windows.Data;
 using System.ComponentModel;
+using Alquitel.Core.Parsing;
 
 namespace Alquitel.UI.ViewModels
 {
@@ -127,63 +128,18 @@ namespace Alquitel.UI.ViewModels
 
         private static List<DescriptionSegmentViewModel> ParseDescriptionSegments(string raw)
         {
-            // Strip tags entirely to get plain-text segments between tags,
-            // but also track which color/bold/italic each plain span had.
+            var parsed = TagParser.Parse(raw, "#000000");
             var result = new List<DescriptionSegmentViewModel>();
-            if (string.IsNullOrEmpty(raw))
+            
+            foreach (var seg in parsed)
             {
-                result.Add(new DescriptionSegmentViewModel());
-                return result;
-            }
-
-            // Simple tokenizer
-            var tagPattern = new Regex(@"\[(/?)([a-zA-Z]+)\]");
-            int pos = 0;
-            string color = "#000000";
-            bool bold = false, italic = false;
-            var stack = new Stack<(string color, bool bold, bool italic)>();
-
-            foreach (Match m in tagPattern.Matches(raw))
-            {
-                // Text before this tag
-                if (m.Index > pos)
-                {
-                    string span = raw.Substring(pos, m.Index - pos);
-                    if (!string.IsNullOrEmpty(span))
-                        result.Add(new DescriptionSegmentViewModel { Text = span, ColorHex = color, IsBold = bold, IsItalic = italic });
-                }
-
-                bool closing = m.Groups[1].Value == "/";
-                string name = m.Groups[2].Value.ToLowerInvariant();
-
-                if (!closing)
-                {
-                    stack.Push((color, bold, italic));
-                    color = name switch
-                    {
-                        "red"     => "#FF0000",
-                        "green"   => "#006600",
-                        "darkred" => "#C00000",
-                        _ => color
-                    };
-                    if (name == "b") bold = true;
-                    if (name == "i") italic = true;
-                }
-                else if (stack.Count > 0)
-                {
-                    var prev = stack.Pop();
-                    color = prev.color; bold = prev.bold; italic = prev.italic;
-                }
-
-                pos = m.Index + m.Length;
-            }
-
-            // Remaining text after last tag
-            if (pos < raw.Length)
-            {
-                string span = raw.Substring(pos);
-                if (!string.IsNullOrEmpty(span))
-                    result.Add(new DescriptionSegmentViewModel { Text = span, ColorHex = color, IsBold = bold, IsItalic = italic });
+                result.Add(new DescriptionSegmentViewModel 
+                { 
+                    Text = seg.Text, 
+                    ColorHex = seg.ColorHex, 
+                    IsBold = seg.Bold, 
+                    IsItalic = seg.Italic 
+                });
             }
 
             if (result.Count == 0)

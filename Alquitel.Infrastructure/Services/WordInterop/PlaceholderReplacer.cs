@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Alquitel.Core.Entities;
+using Alquitel.Core.Parsing;
 
 namespace Alquitel.Infrastructure.Services.WordInterop
 {
