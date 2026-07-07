@@ -21,6 +21,8 @@ namespace Alquitel.UI.ViewModels
         private readonly IDocumentService _documentService;
         private readonly INavigationService _navigationService;
         private readonly IAppSettings _appSettings;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly IRemoteSyncService _remoteSyncService;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -31,12 +33,32 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _activeSection = "Dashboard";
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings)
+        /// <summary>Versión del ensamblado mostrada en la barra de estado.</summary>
+        public string AppVersion =>
+            $"v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0"}";
+
+        // ── Multi-usuario / roles ────────────────────────────────────
+        /// <summary>Gate de rol: los Vendedores no ven Productos, Reportes ni Configuración.</summary>
+        public bool IsAdmin => _currentUserService.IsAdmin;
+
+        public string CurrentUserName => _currentUserService.Current?.Name ?? string.Empty;
+
+        public string CurrentUserRoleLabel =>
+            _currentUserService.Current?.Role == Alquitel.Core.Entities.UserRole.Admin ? "Admin" : "Vendedor";
+
+        /// <summary>Etiqueta de la barra de estado: base local o servidor compartido.</summary>
+        public string DatabaseModeLabel => _remoteSyncService.IsRemoteConfigured
+            ? "Servidor compartido (Supabase)"
+            : "Base de datos local (SQLite)";
+
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService)
         {
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _navigationService = navigationService;
             _appSettings = appSettings;
+            _currentUserService = currentUserService;
+            _remoteSyncService = remoteSyncService;
 
             // Load theme preference from settings
             LoadThemePreference();
@@ -69,18 +91,25 @@ namespace Alquitel.UI.ViewModels
             _navigationService.NavigateTo<BudgetBuilderViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsAdmin))]
         private void NavigateToSettings()
         {
             ActiveSection = "Configuración";
             _navigationService.NavigateTo<SettingsViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsAdmin))]
         private void NavigateToProducts()
         {
             ActiveSection = "Productos";
             _navigationService.NavigateTo<ProductEditorViewModel>();
+        }
+
+        [RelayCommand(CanExecute = nameof(IsAdmin))]
+        private void NavigateToReports()
+        {
+            ActiveSection = "Reportes";
+            _navigationService.NavigateTo<ReportsViewModel>();
         }
 
         [RelayCommand]

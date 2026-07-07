@@ -21,8 +21,23 @@ namespace Alquitel.Infrastructure.Services
         {
             using var context = _factory.CreateDbContext();
 
-            MigrateDatabase(context);
+            if (context.Database.IsSqlite())
+            {
+                MigrateDatabase(context);
+            }
+            else
+            {
+                // Modo servidor (PostgreSQL/Supabase): el esquema se administra con las
+                // migraciones SQL del proyecto Supabase, no con las migraciones EF locales.
+                // Acá solo verificamos conectividad para fallar rápido con mensaje claro.
+                if (!context.Database.CanConnect())
+                    throw new InvalidOperationException(
+                        "No se pudo conectar a la base de datos del servidor (Supabase). " +
+                        "Verificá la conexión a internet y el ConnectionString en appsettings.json.");
+            }
+
             SeedData(context);
+            SeedUsers(context);
         }
 
         /// <summary>
@@ -71,16 +86,19 @@ namespace Alquitel.Infrastructure.Services
                     ""ProductVersion"" TEXT NOT NULL
                 )");
 
-            // Register all known migrations as applied.
-            var pendingMigrations = context.Database.GetPendingMigrations().ToList();
-            foreach (var migrationId in pendingMigrations)
+            // Register ONLY the initial migration as applied — the legacy patch above
+            // replicates exactly what InitialCreate produces. Later migrations must
+            // still run via Migrate() below, otherwise legacy DBs never receive them.
+            var initialMigration = context.Database.GetPendingMigrations()
+                .OrderBy(m => m, StringComparer.Ordinal)
+                .FirstOrDefault(m => m.EndsWith("_InitialCreate", StringComparison.Ordinal));
+            if (initialMigration != null)
             {
                 ExecuteSafe(context, $@"
                     INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
-                    VALUES ('{migrationId}', '8.0.0')");
+                    VALUES ('{initialMigration}', '8.0.0')");
+                AppLog.Information("Legacy database upgraded — registered {Migration} as applied", initialMigration);
             }
-
-            AppLog.Information("Legacy database upgraded — {Count} migration(s) registered", pendingMigrations.Count);
 
             // 4. Run Migrate() for any future migrations beyond what we just registered.
             context.Database.Migrate();
@@ -142,7 +160,9 @@ namespace Alquitel.Infrastructure.Services
         // ── Seed data ────────────────────────────────────────────────
         private static void SeedData(AlquitelDbContext context)
         {
-            if (!context.Products.Any())
+            // IgnoreQueryFilters: archived (soft-deleted) rows must count as existing,
+            // otherwise archiving the seed data causes it to be re-inserted on every launch.
+            if (!context.Products.IgnoreQueryFilters().Any())
             {
                 context.Products.AddRange(new List<Product>
                 {
@@ -157,7 +177,7 @@ namespace Alquitel.Infrastructure.Services
             }
 
             const string DEMO_NAME = "DEMO - Pantalla de Leds 2 mm";
-            if (!context.Products.Any(p => p.Description.StartsWith("DEMO -")))
+            if (!context.Products.IgnoreQueryFilters().Any(p => p.Description.StartsWith("DEMO -")))
             {
                 var demoFields = new List<CustomFieldDefinition>
                 {
@@ -180,6 +200,29 @@ namespace Alquitel.Infrastructure.Services
                 context.SaveChanges();
             }
 
+            SeedLocations(context);
+        }
+
+        /// <summary>
+        /// Garantiza que siempre exista al menos un usuario Admin para poder entrar al
+        /// sistema. Sin contraseña inicial: el Admin puede setearla desde Configuración.
+        /// </summary>
+        private static void SeedUsers(AlquitelDbContext context)
+        {
+            if (context.Users.Any()) return;
+
+            context.Users.Add(new User
+            {
+                Name = "Admin",
+                Role = UserRole.Admin,
+                PasswordHash = null
+            });
+            context.SaveChanges();
+            AppLog.Information("Usuario Admin inicial creado (sin contraseña)");
+        }
+
+        private static void SeedLocations(AlquitelDbContext context)
+        {
             if (!context.Locations.Any())
             {
                 context.Locations.AddRange(new List<Location>

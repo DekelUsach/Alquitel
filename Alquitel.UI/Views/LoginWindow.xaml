@@ -1,0 +1,58 @@
+<Window x:Class="Alquitel.UI.Views.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Alquitel - Iniciar sesión"
+        Width="420" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="{StaticResource AppFontFamily}"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextBrush}">
+    <Border Padding="32,28">
+        <StackPanel>
+            <!-- Marca -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                <Border Width="44" Height="44" CornerRadius="12"
+                        Background="{DynamicResource SecondaryColorBrush}">
+                    <TextBlock Text="A" FontSize="22" FontWeight="Black" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                    <TextBlock Text="ALQUITEL" FontSize="17" FontWeight="Black"
+                               FontFamily="{StaticResource AppDisplayFontFamily}"
+                               Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock Text="Gestión Corporativa" FontSize="11"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <TextBlock Text="Usuario" Style="{StaticResource FieldLabel}"/>
+            <ComboBox x:Name="UsersCombo" DisplayMemberPath="Name" Margin="0,0,0,14"
+                      SelectionChanged="UsersCombo_SelectionChanged"/>
+
+            <StackPanel x:Name="PasswordPanel" Visibility="Collapsed">
+                <TextBlock Text="Contraseña" Style="{StaticResource FieldLabel}"/>
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="10" Margin="0,0,0,14">
+                    <PasswordBox x:Name="PasswordInput" Padding="14,10" FontSize="14"
+                                 Background="Transparent" BorderThickness="0"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 KeyDown="PasswordInput_KeyDown"/>
+                </Border>
+            </StackPanel>
+
+            <TextBlock x:Name="ErrorText" Foreground="{DynamicResource DangerBrush}"
+                       FontSize="12" TextWrapping="Wrap" Visibility="Collapsed"
+                       Margin="4,0,0,10"/>
+
+            <Button Content="Entrar" Style="{StaticResource PrimaryButton}"
+                    Height="42" Click="Login_Click" IsDefault="True"/>
+
+            <TextBlock x:Name="ModeText" FontSize="11" Margin="0,16,0,0"
+                       Foreground="{DynamicResource MutedTextBrush}"
+                       HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+        </StackPanel>
+    </Border>
+</Window>

@@ -101,20 +101,25 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
         public void Dispose()
         {
-            if (_tempPath != null)
-            {
-                try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch (Exception ex) { AppLog.Warning(ex, "Failed to delete temp file {TempPath}", _tempPath); }
-            }
-
+            // Release COM objects FIRST — Word holds the temp file open, so deleting
+            // it before Close/Quit always fails and temp files pile up in %TEMP%.
             if (Document != null)
             {
                 try { Document.Close(false); } catch (Exception ex) { AppLog.Warning(ex, "Failed to close document"); }
-                Marshal.ReleaseComObject(Document);
+                try { Marshal.ReleaseComObject(Document); } catch (Exception ex) { AppLog.Warning(ex, "Failed to release document COM object"); }
+                Document = null;
             }
             if (WordApp != null)
             {
                 try { WordApp.Quit(); } catch (Exception ex) { AppLog.Warning(ex, "Failed to quit Word application"); }
-                Marshal.ReleaseComObject(WordApp);
+                try { Marshal.ReleaseComObject(WordApp); } catch (Exception ex) { AppLog.Warning(ex, "Failed to release Word COM object"); }
+                WordApp = null;
+            }
+
+            if (_tempPath != null)
+            {
+                try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch (Exception ex) { AppLog.Warning(ex, "Failed to delete temp file {TempPath}", _tempPath); }
+                _tempPath = null;
             }
         }
     }

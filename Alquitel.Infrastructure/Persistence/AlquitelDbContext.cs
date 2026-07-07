@@ -10,14 +10,18 @@ namespace Alquitel.Infrastructure.Persistence
         public DbSet<Location> Locations { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
+        public DbSet<User> Users { get; set; }
 
         public AlquitelDbContext(DbContextOptions<AlquitelDbContext> options) : base(options) { }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // ── Unique constraints ───────────────────────────────
-            modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique();
+            // Partial unique index: CUIT must be unique only when present.
+            // Without the filter, the second client saved without CUIT ('') collides.
+            modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique().HasFilter("\"Cuit\" <> ''");
             modelBuilder.Entity<Order>().HasIndex(o => o.BudgetNumber).IsUnique();
+            modelBuilder.Entity<User>().HasIndex(u => u.Name).IsUnique();
 
             // ── Performance indices ──────────────────────────────
             modelBuilder.Entity<Order>().HasIndex(o => o.CreatedDate);

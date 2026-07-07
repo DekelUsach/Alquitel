@@ -1,0 +1,161 @@
+<UserControl x:Class="Alquitel.UI.Views.ReportsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignHeight="900" d:DesignWidth="1200"
+             Background="{DynamicResource BackgroundBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="32,24">
+        <StackPanel MaxWidth="1200">
+
+            <!-- ── Encabezado ── -->
+            <Grid Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Reportes" Style="{StaticResource PageTitle}"/>
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Facturación por cliente y por mes, y rentabilidad de productos. Excluye presupuestos rechazados."/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="Exportar CSV" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ExportCsvCommand}" Margin="0,0,10,0"/>
+                    <Button Content="Actualizar" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding RefreshCommand}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ── Filtros de rango ── -->
+            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Margin="0,0,16,0">
+                        <TextBlock Text="Desde" Style="{StaticResource FieldLabel}"/>
+                        <DatePicker Width="180" SelectedDate="{Binding FromDate}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Hasta" Style="{StaticResource FieldLabel}"/>
+                        <DatePicker Width="180" SelectedDate="{Binding ToDate}"/>
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,4">
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Totales ── -->
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Style="{StaticResource Card}" Padding="22,18" Margin="0,0,8,0">
+                    <StackPanel>
+                        <TextBlock Text="FACTURACIÓN DEL PERÍODO" Style="{StaticResource SectionLabel}"/>
+                        <TextBlock Text="{Binding TotalRevenue, StringFormat='{}{0:C0}'}"
+                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource Card}" Padding="22,18" Margin="8,0">
+                    <StackPanel>
+                        <TextBlock Text="PRESUPUESTOS" Style="{StaticResource SectionLabel}"/>
+                        <TextBlock Text="{Binding TotalOrders}"
+                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource Card}" Padding="22,18" Margin="8,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="MARGEN (PRODUCTOS CON COSTO)" Style="{StaticResource SectionLabel}"/>
+                        <TextBlock Text="{Binding TotalMargin, StringFormat='{}{0:C0}'}"
+                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ── Facturación por cliente ── -->
+            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Border Style="{StaticResource SectionIconBox}">
+                            <TextBlock Text="&#xE716;" Style="{StaticResource SectionIconGlyph}"/>
+                        </Border>
+                        <TextBlock Text="Facturación por cliente" Style="{StaticResource SectionTitle}"/>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding ClientBilling}" AutoGenerateColumns="False"
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="CLIENTE" Binding="{Binding ClientName}" Width="3*"
+                                                ElementStyle="{StaticResource DataGridCellText}"/>
+                            <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                            <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Facturación por mes ── -->
+            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Border Style="{StaticResource SectionIconBox}">
+                            <TextBlock Text="&#xE787;" Style="{StaticResource SectionIconGlyph}"/>
+                        </Border>
+                        <TextBlock Text="Tendencia mensual" Style="{StaticResource SectionTitle}"/>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding MonthlyBilling}" AutoGenerateColumns="False"
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="MES" Binding="{Binding MonthLabel}" Width="2*"
+                                                ElementStyle="{StaticResource DataGridCellText}"/>
+                            <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                            <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Rentabilidad por producto ── -->
+            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,24">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <Border Style="{StaticResource SectionIconBox}">
+                            <TextBlock Text="&#xE7BF;" Style="{StaticResource SectionIconGlyph}"/>
+                        </Border>
+                        <TextBlock Text="Rentabilidad por producto" Style="{StaticResource SectionTitle}"/>
+                    </StackPanel>
+                    <TextBlock FontSize="11" Foreground="{DynamicResource WarningBrush}" Margin="44,0,0,8"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasProductsWithoutCost, Converter={StaticResource BoolToVisibilityConverter}}"
+                               Text="Algunos productos no tienen costo cargado: su margen queda vacío. Cargá el costo en Productos → Costo interno."/>
+                    <DataGrid ItemsSource="{Binding ProductProfit}" AutoGenerateColumns="False"
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="420" RowHeight="40">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="50"
+                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                            <DataGridTextColumn Header="PRODUCTO" Binding="{Binding Description}" Width="3*"
+                                                ElementStyle="{StaticResource DataGridCellText}"/>
+                            <DataGridTextColumn Header="VECES" Binding="{Binding TimesQuoted}" Width="80"
+                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                            <DataGridTextColumn Header="FACTURACIÓN" Binding="{Binding Revenue, StringFormat='{}{0:C}'}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellText}"/>
+                            <DataGridTextColumn Header="COSTO" Binding="{Binding Cost, StringFormat='{}{0:C}'}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                            <DataGridTextColumn Header="MARGEN" Binding="{Binding Margin, StringFormat='{}{0:C}'}" Width="*"
+                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

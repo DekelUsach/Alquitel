@@ -15,7 +15,7 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
 
             modelBuilder.Entity("Alquitel.Core.Entities.Client", b =>
                 {
@@ -37,6 +37,9 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.Property<string>("Email")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("InternalNotes")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsArchived")
                         .HasColumnType("INTEGER");
 
@@ -46,7 +49,8 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Cuit")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"Cuit\" <> ''");
 
                     b.ToTable("Clients");
                 });
@@ -81,6 +85,9 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ClientId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedDate")
@@ -167,6 +174,9 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal?>("Cost")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CustomFieldsJson")
                         .HasColumnType("TEXT");
 
@@ -180,9 +190,39 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("StockQuantity")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("Alquitel.Core.Entities.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("Alquitel.Core.Entities.Order", b =>

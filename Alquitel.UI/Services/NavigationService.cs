@@ -11,6 +11,20 @@ namespace Alquitel.UI.Services
         private readonly IServiceProvider _serviceProvider;
         private MainViewModel? _mainViewModel;
 
+        // Mantiene la sidebar sincronizada cuando la navegación no parte de sus botones
+        // (accesos rápidos del dashboard, atajos de teclado, "Repetir pedido", etc.).
+        private static readonly System.Collections.Generic.Dictionary<Type, string> SectionByViewModel = new()
+        {
+            [typeof(DashboardViewModel)] = "Dashboard",
+            [typeof(BudgetBuilderViewModel)] = "Presupuesto",
+            [typeof(ProductEditorViewModel)] = "Productos",
+            [typeof(ClientsViewModel)] = "Clientes",
+            [typeof(LocationsViewModel)] = "Ubicaciones",
+            [typeof(PresupuestosViewModel)] = "Presupuestos",
+            [typeof(SettingsViewModel)] = "Configuración",
+            [typeof(ReportsViewModel)] = "Reportes",
+        };
+
         public NavigationService(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
@@ -21,20 +35,40 @@ namespace Alquitel.UI.Services
         public void NavigateTo<T>() where T : ObservableObject
         {
             var viewModel = _serviceProvider.GetRequiredService<T>();
-            MainViewModel.CurrentViewModel = viewModel;
-            if (viewModel is IAsyncInitialization asyncVm)
-            {
-                _ = asyncVm.InitializeAsync();
-            }
+            SetCurrentViewModel(viewModel);
         }
 
         public void NavigateTo<T>(T viewModel) where T : ObservableObject
         {
+            SetCurrentViewModel(viewModel);
+        }
+
+        private void SetCurrentViewModel(ObservableObject viewModel)
+        {
+            var previous = MainViewModel.CurrentViewModel;
             MainViewModel.CurrentViewModel = viewModel;
+
+            if (SectionByViewModel.TryGetValue(viewModel.GetType(), out var section))
+                MainViewModel.ActiveSection = section;
+
+            // Transient ViewModels own resources (FileSystemWatcher, autosave loops).
+            // Without this, every navigation leaks the previous instance.
+            if (!ReferenceEquals(previous, viewModel) && previous is IDisposable disposable)
+            {
+                try { disposable.Dispose(); }
+                catch (Exception ex) { Alquitel.Infrastructure.AppLog.Warning(ex, "Failed to dispose previous ViewModel {Vm}", previous.GetType().Name); }
+            }
+
             if (viewModel is IAsyncInitialization asyncVm)
             {
-                _ = asyncVm.InitializeAsync();
+                _ = InitializeSafeAsync(asyncVm);
             }
+        }
+
+        private static async System.Threading.Tasks.Task InitializeSafeAsync(IAsyncInitialization vm)
+        {
+            try { await vm.InitializeAsync(); }
+            catch (Exception ex) { Alquitel.Infrastructure.AppLog.Error(ex, "ViewModel initialization failed for {Vm}", vm.GetType().Name); }
         }
     }
 }

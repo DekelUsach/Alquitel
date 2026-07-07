@@ -6,383 +6,420 @@
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
     </UserControl.Resources>
 
-    <Grid Margin="30,20">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="320"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+    <Grid Margin="32,28,32,28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-        <!-- ═══════════ LEFT: PRODUCT LIST ═══════════ -->
-        <Border Grid.Column="0" Padding="0,0,16,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="Productos" FontSize="28" FontWeight="Bold"
-                           Foreground="{DynamicResource TextBrush}" Margin="4,8,0,16"/>
-
-                <Button Grid.Row="1" Style="{StaticResource DarkPillButton}" Height="44" Margin="0,0,0,12"
-                        HorizontalAlignment="Stretch"
-                        Command="{Binding NewProductCommand}">
+        <!-- ═══════════ HEADER ═══════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,24">
+            <StackPanel>
+                <TextBlock Text="Productos" Style="{StaticResource PageTitle}"/>
+                <TextBlock Text="Catálogo de equipamiento con descripción segmentada y campos dinámicos."
+                           Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource SecondaryButton}" Command="{Binding ExportCsvCommand}"
+                        ToolTip="Exportar catálogo a CSV (Excel)">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                        <TextBlock Text="&#xEDE1;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Nuevo Producto" FontSize="13" VerticalAlignment="Center"/>
+                        <TextBlock Text="Exportar CSV" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
+                <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
+                        Command="{Binding NewProductCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Nuevo Producto" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
 
-                <!-- SearchBox -->
-                <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="12"
-                        Padding="12,0" Margin="0,0,0,16" Height="40">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="14"
-                                   Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}"
-                                 VerticalAlignment="Center" VerticalContentAlignment="Center" FontSize="13" />
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="350"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ═══════════ IZQUIERDA: LISTA ═══════════ -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="14" Margin="0,0,20,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Buscador -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <TextBox Height="40" Padding="36,10,14,10"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   VerticalAlignment="Center" Margin="14,0,0,0"
+                                   IsHitTestVisible="False"/>
+                        <TextBlock Text="Buscar por descripción o categoría"
+                                   Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="38,0,0,0"
+                                   IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
-                </Border>
 
-                <ListBox Grid.Row="3" ItemsSource="{Binding Products}"
-                         SelectedItem="{Binding SelectedProduct, Mode=TwoWay}"
-                         Background="Transparent" BorderThickness="0"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="Padding" Value="0"/>
-                            <Setter Property="Margin" Value="0,0,0,4"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="itemBorder" Background="Transparent"
-                                                CornerRadius="12" Padding="14,10">
-                                            <ContentPresenter/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="itemBorder" Property="Background"
-                                                        Value="{DynamicResource HoverBrush}"/>
-                                            </Trigger>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="itemBorder" Property="Background"
-                                                        Value="{DynamicResource SelectionBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Products}"
+                             SelectedItem="{Binding SelectedProduct, Mode=TwoWay}"
+                             ItemContainerStyle="{StaticResource NavListItem}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Style="{StaticResource AvatarBadge}" Margin="0,0,12,0">
+                                        <TextBlock Text="&#xE7B8;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                                   Foreground="{DynamicResource SecondaryColorBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Description}" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock Text="{Binding Category}" FontSize="11"
+                                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                                            <TextBlock Text=" · " Foreground="{DynamicResource MutedTextBrush}" FontSize="11"/>
+                                            <TextBlock Text="{Binding BasePrice, StringFormat='{}{0:C}'}" FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryColorBrush}" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- ═══════════ DERECHA: ESTADO VACÍO ═══════════ -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding IsEditing, Converter={StaticResource InvBoolToVis}}">
+                <TextBlock Text="&#xE7B8;" Style="{StaticResource EmptyStateIcon}"/>
+                <TextBlock Text="Seleccioná un producto" Style="{StaticResource EmptyStateTitle}"/>
+                <TextBlock Text="Elegí uno del catálogo para editarlo,&#x0a;o creá uno nuevo con el botón de arriba."
+                           Style="{StaticResource EmptyStateHint}"/>
+            </StackPanel>
+
+            <!-- ═══════════ DERECHA: EDITOR ═══════════ -->
+            <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,0,4,20">
+
+                        <!-- ── Información general ── -->
+                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="{Binding Description}" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                    <TextBlock Text="{Binding Category}" FontSize="11"
-                                               Foreground="{DynamicResource MutedTextBrush}"/>
-                                    <TextBlock Text=" · " Foreground="{DynamicResource MutedTextBrush}" FontSize="11"/>
-                                    <TextBlock Text="{Binding BasePrice, StringFormat='{}{0:C}'}" FontSize="11"
-                                               Foreground="{DynamicResource SecondaryColorBrush}" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE7B8;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <TextBlock Text="Información general" Style="{StaticResource SectionTitle}"/>
                                 </StackPanel>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                        <TextBlock Text="Categoría" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditCategory, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Precio Base" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditBasePrice, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- §2 Stock físico / §3 Costo interno -->
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                        <TextBlock Text="Stock total (vacío = sin control)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditStockQuantity, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Cantidad física total disponible. Dejalo vacío para servicios o ítems sin control de disponibilidad."/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Costo interno x día (vacío = sin costo)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditCost, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Costo por unidad por día. Solo se usa en Reportes para calcular margen; nunca se imprime en documentos."/>
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Grid>
-        </Border>
+                        </Border>
 
-        <!-- ═══════════ RIGHT: EDITOR FORM ═══════════ -->
-        <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,0,0,0">
-                <StackPanel Margin="10,8,10,20">
-
-                    <TextBlock Text="Editar Producto" FontSize="22" FontWeight="Bold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,8,0,20"/>
-
-                    <!-- ── Información General ── -->
-                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
-                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="INFORMACIÓN GENERAL" FontSize="11" FontWeight="Bold"
-                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
-
-                            <Grid Margin="0,0,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                    <TextBlock Text="Categoría" FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
-                                               FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditCategory, UpdateSourceTrigger=PropertyChanged}"/>
+                        <!-- ── Descripción segmentada ── -->
+                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE8D2;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Descripción del producto (título)" Style="{StaticResource SectionTitle}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource MutedTextBrush}"
+                                                   TextWrapping="Wrap" Margin="0,2,0,0"
+                                                   Text="Cada segmento tiene su color y estilo. Se concatenan para formar el título en el presupuesto."/>
+                                    </StackPanel>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Precio Base" FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
-                                               FontWeight="SemiBold" Margin="4,0,0,5"/>
-                                    <TextBox Height="42" Text="{Binding EditBasePrice, UpdateSourceTrigger=PropertyChanged}"/>
-                                </StackPanel>
-                            </Grid>
 
-                            <!-- ── Descripción segmentada ── -->
-                            <TextBlock Text="DESCRIPCIÓN DEL PRODUCTO (título)" FontSize="11" FontWeight="Bold"
-                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,10"/>
-                            <TextBlock FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,12"
-                                       TextWrapping="Wrap"
-                                       Text="Añadí segmentos de texto. Cada uno puede tener su propio color y estilo. Se concatenan para formar el título del producto en el presupuesto."/>
+                                <!-- Vista previa en vivo -->
+                                <TextBlock Text="Vista previa" Style="{StaticResource FieldLabel}" Margin="4,10,0,6"/>
+                                <Border Style="{StaticResource CardInner}" Padding="14,12" Margin="0,0,0,16">
+                                    <ItemsControl ItemsSource="{Binding DescriptionSegments}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Text}"
+                                                           Foreground="{Binding PreviewBrush}"
+                                                           FontWeight="{Binding IsBold, Converter={x:Static local:BoolToFontWeightConverter.Instance}}"
+                                                           FontStyle="{Binding IsItalic, Converter={x:Static local:BoolToFontStyleConverter.Instance}}"
+                                                           FontSize="14"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
 
-                            <!-- Live preview -->
-                            <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="8"
-                                    Padding="12,8" Margin="0,0,0,12">
-                                <ItemsControl ItemsSource="{Binding DescriptionSegments}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel/>
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
+                                <!-- Lista de segmentos -->
+                                <ItemsControl ItemsSource="{Binding DescriptionSegments}" Margin="0,0,0,12">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding Text}"
-                                                       Foreground="{Binding PreviewBrush}"
-                                                       FontWeight="{Binding IsBold, Converter={x:Static local:BoolToFontWeightConverter.Instance}}"
-                                                       FontStyle="{Binding IsItalic, Converter={x:Static local:BoolToFontStyleConverter.Instance}}"
-                                                       FontSize="13" Margin="0,0,0,0"/>
+                                            <Border Style="{StaticResource CardInner}" Padding="14,12" Margin="0,0,0,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="130"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBox Grid.Column="0" Height="36" Margin="0,0,10,0"
+                                                             Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                             Padding="10,0" VerticalAlignment="Center"
+                                                             ToolTip="Texto del segmento"/>
+
+                                                    <xctk:ColorPicker Grid.Column="1" Height="36" Margin="0,0,10,0"
+                                                                      VerticalAlignment="Center"
+                                                                      ToolTip="Color del texto"
+                                                                      SelectedColor="{Binding ColorHex, Converter={x:Static local:HexToColorConverter.Instance}}"/>
+
+                                                    <CheckBox Grid.Column="2" Style="{StaticResource ModernCheckBox}"
+                                                              Margin="0,0,12,0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsBold}" ToolTip="Negrita">
+                                                        <TextBlock Text="N" FontWeight="Bold" FontSize="12"/>
+                                                    </CheckBox>
+
+                                                    <CheckBox Grid.Column="3" Style="{StaticResource ModernCheckBox}"
+                                                              Margin="0,0,8,0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsItalic}" ToolTip="Cursiva">
+                                                        <TextBlock Text="I" FontStyle="Italic" FontSize="12"/>
+                                                    </CheckBox>
+
+                                                    <Button Grid.Column="4" Style="{StaticResource IconButton}"
+                                                            VerticalAlignment="Center"
+                                                            Command="{Binding DataContext.RemoveDescriptionSegmentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Eliminar segmento">
+                                                        <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                                   Foreground="{DynamicResource DangerBrush}"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </Border>
 
-                            <!-- Segments list -->
-                            <ItemsControl ItemsSource="{Binding DescriptionSegments}" Margin="0,0,0,12">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="10"
-                                                Padding="12,10" Margin="0,0,0,8">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="140"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-
-                                                <!-- Texto -->
-                                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                                    <TextBlock Text="Texto" FontSize="10" Foreground="{DynamicResource MutedTextBrush}" Margin="2,0,0,3"/>
-                                                    <TextBox Height="34" Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" Padding="8,0"/>
-                                                </StackPanel>
-
-                                                <!-- Color -->
-                                                <StackPanel Grid.Column="1" Margin="0,0,10,0">
-                                                    <TextBlock Text="Color" FontSize="10" Foreground="{DynamicResource MutedTextBrush}" Margin="2,0,0,3"/>
-                                                    <xctk:ColorPicker Height="34"
-                                                                      SelectedColor="{Binding ColorHex, Converter={x:Static local:HexToColorConverter.Instance}}" />
-                                                </StackPanel>
-
-                                                <!-- Negrita -->
-                                                <StackPanel Grid.Column="2" Margin="0,0,10,0" VerticalAlignment="Bottom" Height="34">
-                                                    <CheckBox Content="N" IsChecked="{Binding IsBold}"
-                                                              Foreground="{DynamicResource TextBrush}"
-                                                              VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Negrita"/>
-                                                </StackPanel>
-
-                                                <!-- Cursiva -->
-                                                <StackPanel Grid.Column="3" Margin="0,0,10,0" VerticalAlignment="Bottom" Height="34">
-                                                    <CheckBox Content="I" IsChecked="{Binding IsItalic}"
-                                                              Foreground="{DynamicResource TextBrush}"
-                                                              FontStyle="Italic"
-                                                              VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Cursiva"/>
-                                                </StackPanel>
-
-                                                <!-- Eliminar -->
-                                                <Button Grid.Column="4" Content="&#xE74D;" FontFamily="Segoe MDL2 Assets"
-                                                        Background="Transparent" BorderThickness="0"
-                                                        Foreground="#E53E3E" Cursor="Hand" FontSize="14"
-                                                        VerticalAlignment="Bottom" Height="34"
-                                                        Command="{Binding DataContext.RemoveDescriptionSegmentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        ToolTip="Eliminar segmento"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Button Style="{StaticResource DarkPillButton}" Height="36" Width="180" HorizontalAlignment="Left"
-                                    Command="{Binding AddDescriptionSegmentCommand}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Añadir Segmento" FontSize="12" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- ── Imagen del Producto ── -->
-                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
-                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="IMAGEN (Opcional)" FontSize="11" FontWeight="Bold"
-                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
-                            
-                            <StackPanel Orientation="Horizontal">
-                                <Button Style="{StaticResource DarkPillButton}" Height="34" Width="120"
-                                        Command="{Binding SelectImageCommand}" Margin="0,0,12,0">
-                                    <TextBlock Text="Seleccionar..." FontSize="12"/>
+                                <Button Style="{StaticResource SecondaryButton}" Height="36" HorizontalAlignment="Left"
+                                        Command="{Binding AddDescriptionSegmentCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Añadir Segmento" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
                                 </Button>
-                                
-                                <TextBlock Text="{Binding EditImagePath}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="0,0,12,0"/>
-                                           
-                                <Button Content="&#xE74D;" FontFamily="Segoe MDL2 Assets"
-                                        Background="Transparent" BorderThickness="0"
-                                        Foreground="#E53E3E" Cursor="Hand" FontSize="14"
-                                        Command="{Binding RemoveImageCommand}"
-                                        ToolTip="Quitar imagen"/>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
-                    
-                    <!-- ── Campos Personalizados ── -->
-                    <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="18" Padding="24,20"
-                            Effect="{StaticResource StandardShadow}" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="CAMPOS PERSONALIZADOS (Aparecerán en el Presupuesto)" FontSize="11" FontWeight="Bold"
-                                       Foreground="{DynamicResource SecondaryColorBrush}" Margin="0,0,0,14"/>
+                        </Border>
 
-                            <ItemsControl ItemsSource="{Binding CustomFields}" Margin="0,0,0,12">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,0,0,12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="1.5*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="100"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Label -->
-                                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                                                <TextBlock Text="Etiqueta" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
-                                                <TextBox Height="34" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" Padding="8,0"/>
-                                            </StackPanel>
-
-                                            <!-- Value -->
-                                            <StackPanel Grid.Column="1" Margin="0,0,8,0">
-                                                <TextBlock Text="Valor" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
-                                                <TextBox Height="34" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Padding="8,0"/>
-                                            </StackPanel>
-
-                                            <!-- Bold -->
-                                            <StackPanel Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Bottom" Height="34" HorizontalAlignment="Center">
-                                                <CheckBox Content="N." IsChecked="{Binding IsBold}" Foreground="{DynamicResource TextBrush}"
-                                                          VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Negrita"/>
-                                            </StackPanel>
-                                            
-                                            <!-- Underline -->
-                                            <StackPanel Grid.Column="3" Margin="0,0,8,0" VerticalAlignment="Bottom" Height="34" HorizontalAlignment="Center">
-                                                <CheckBox Content="S." IsChecked="{Binding IsUnderline}" Foreground="{DynamicResource TextBrush}"
-                                                          VerticalAlignment="Center" Margin="0,8,0,0" ToolTip="Subrayado"/>
-                                            </StackPanel>
-
-                                            <!-- Color -->
-                                            <StackPanel Grid.Column="4" Margin="0,0,8,0">
-                                                <TextBlock Text="Color" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
-                                                <xctk:ColorPicker Height="34"
-                                                                  SelectedColor="{Binding ColorHex, Converter={x:Static local:HexToColorConverter.Instance}}" />
-                                            </StackPanel>
-
-                                            <!-- Remove -->
-                                            <Button Grid.Column="5" Content="&#xE74D;" FontFamily="Segoe MDL2 Assets"
-                                                    Background="Transparent" BorderThickness="0"
-                                                    Foreground="#E53E3E" Cursor="Hand"
-                                                    Command="{Binding DataContext.RemoveCustomFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                    CommandParameter="{Binding}"
-                                                    VerticalAlignment="Bottom" Height="34" ToolTip="Eliminar campo" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Button Style="{StaticResource DarkPillButton}" Height="36" Width="150" HorizontalAlignment="Left"
-                                    Command="{Binding AddCustomFieldCommand}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Añadir Campo" FontSize="12" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- ── Action Buttons ── -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <Button Height="44" Padding="20,0" Margin="0,0,8,0"
-                                Background="{DynamicResource SurfaceAltBrush}"
-                                Foreground="{DynamicResource TextBrush}"
-                                BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                                Cursor="Hand"
-                                Command="{Binding CancelEditCommand}">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border Background="{TemplateBinding Background}"
-                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                            CornerRadius="20" Padding="{TemplateBinding Padding}">
-                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- ── Imagen del producto ── -->
+                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xEB9F;" Style="{StaticResource SectionIconGlyph}"/>
                                     </Border>
-                                </ControlTemplate>
-                            </Button.Template>
-                            <TextBlock Text="Cancelar" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </Button>
+                                    <TextBlock Text="Imagen (opcional)" Style="{StaticResource SectionTitle}"/>
+                                </StackPanel>
 
-                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0" Margin="0,0,8,0"
-                                Background="#D46A6A"
-                                Command="{Binding DeleteProductCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="14"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <TextBlock Text="Eliminar" FontSize="13" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource SecondaryButton}" Height="36"
+                                            Command="{Binding SelectImageCommand}" Margin="0,0,12,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE8E5;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                                       Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Seleccionar..." FontSize="12" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
 
-                        <Button Style="{StaticResource DarkPillButton}" Height="44" Padding="24,0"
-                                Command="{Binding SaveProductCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" FontSize="14"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <TextBlock Text="Guardar Producto" FontSize="13" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding EditImagePath}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="0,0,12,0"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+
+                                    <Button Style="{StaticResource IconButton}" VerticalAlignment="Center"
+                                            Command="{Binding RemoveImageCommand}" ToolTip="Quitar imagen">
+                                        <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                   Foreground="{DynamicResource DangerBrush}"/>
+                                    </Button>
+                                </StackPanel>
                             </StackPanel>
-                        </Button>
+                        </Border>
+
+                        <!-- ── Campos personalizados ── -->
+                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE8FD;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Campos personalizados" Style="{StaticResource SectionTitle}"/>
+                                        <TextBlock Text="Aparecerán como especificaciones en el presupuesto."
+                                                   FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <ItemsControl ItemsSource="{Binding CustomFields}" Margin="0,0,0,12">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CardInner}" Padding="14,12" Margin="0,0,0,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="1.4*"/>
+                                                        <ColumnDefinition Width="2*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="110"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBox Grid.Column="0" Height="36" Margin="0,0,10,0"
+                                                             Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}"
+                                                             Padding="10,0" VerticalAlignment="Center"
+                                                             ToolTip="Etiqueta (ej. Resolución)"/>
+
+                                                    <TextBox Grid.Column="1" Height="36" Margin="0,0,10,0"
+                                                             Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                             Padding="10,0" VerticalAlignment="Center"
+                                                             ToolTip="Valor (ej. 1920x1080)"/>
+
+                                                    <CheckBox Grid.Column="2" Style="{StaticResource ModernCheckBox}"
+                                                              Margin="0,0,12,0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsBold}" ToolTip="Negrita">
+                                                        <TextBlock Text="N" FontWeight="Bold" FontSize="12"/>
+                                                    </CheckBox>
+
+                                                    <CheckBox Grid.Column="3" Style="{StaticResource ModernCheckBox}"
+                                                              Margin="0,0,12,0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsUnderline}" ToolTip="Subrayado">
+                                                        <TextBlock Text="S" FontSize="12">
+                                                            <TextBlock.TextDecorations>
+                                                                <TextDecorationCollection>Underline</TextDecorationCollection>
+                                                            </TextBlock.TextDecorations>
+                                                        </TextBlock>
+                                                    </CheckBox>
+
+                                                    <xctk:ColorPicker Grid.Column="4" Height="36" Margin="0,0,8,0"
+                                                                      VerticalAlignment="Center"
+                                                                      ToolTip="Color del texto"
+                                                                      SelectedColor="{Binding ColorHex, Converter={x:Static local:HexToColorConverter.Instance}}"/>
+
+                                                    <Button Grid.Column="5" Style="{StaticResource IconButton}"
+                                                            VerticalAlignment="Center"
+                                                            Command="{Binding DataContext.RemoveCustomFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Eliminar campo">
+                                                        <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                                   Foreground="{DynamicResource DangerBrush}"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Button Style="{StaticResource SecondaryButton}" Height="36" HorizontalAlignment="Left"
+                                        Command="{Binding AddCustomFieldCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Añadir Campo" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ── Acciones ── -->
+                        <Grid Margin="0,4,0,0">
+                            <Button Style="{StaticResource GhostDangerButton}" Height="42" HorizontalAlignment="Left"
+                                    Command="{Binding DeleteProductCommand}" Content="Eliminar"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
+                                        Command="{Binding CancelEditCommand}" Content="Cancelar"/>
+                                <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
+                                        Command="{Binding DuplicateProductCommand}"
+                                        ToolTip="Crear una copia de este producto">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Duplicar" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource PrimaryButton}" Height="42"
+                                        Command="{Binding SaveProductCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Guardar Producto" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Estado -->
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="13" Margin="0,12,0,0"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource SecondaryColorBrush}"/>
                     </StackPanel>
-
-                    <!-- Status -->
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" Margin="0,12,0,0"
-                               HorizontalAlignment="Right"
-                               Foreground="{DynamicResource SecondaryColorBrush}"/>
-                </StackPanel>
-            </ScrollViewer>
-        </Border>
-
-        <!-- Empty state when not editing -->
-        <Border Grid.Column="1"
-                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}, ConverterParameter=inverse}"
-                HorizontalAlignment="Center" VerticalAlignment="Center">
-            <!-- Only show when IsEditing is false — WPF BoolToVis doesn't support inverse natively,
-                 so we layer this behind the editor which covers it when visible -->
-        </Border>
+                </ScrollViewer>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

@@ -19,10 +19,13 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             ReplaceText(doc, "[LUGAR]",        order.Location?.Name ?? "N/A");
             ReplaceText(doc, "{{LUGAR}}",      order.Location?.Name ?? "N/A");
 
-            ReplaceText(doc, "(fecha actual)", order.CreatedDate.ToString("dd/MM/yyyy"));
-            ReplaceText(doc, "(fecha)",        order.EventDate?.ToString("dd/MM/yyyy") ?? order.CreatedDate.ToString("dd/MM/yyyy"));
-            ReplaceText(doc, "[FECHA]",        order.CreatedDate.ToString("dd/MM/yyyy"));
-            ReplaceText(doc, "{{FECHA}}",      order.CreatedDate.ToString("dd/MM/yyyy"));
+            // CreatedDate is stored in UTC — render it in local time or documents
+            // generated at night carry tomorrow's date (Argentina is UTC-3).
+            string createdLocal = order.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy");
+            ReplaceText(doc, "(fecha actual)", createdLocal);
+            ReplaceText(doc, "(fecha)",        order.EventDate?.ToString("dd/MM/yyyy") ?? createdLocal);
+            ReplaceText(doc, "[FECHA]",        createdLocal);
+            ReplaceText(doc, "{{FECHA}}",      createdLocal);
 
             ReplaceText(doc, "(nro presupuesto)", order.BudgetNumber);
             ReplaceText(doc, "[NUMERO]",       order.BudgetNumber);
@@ -30,7 +33,9 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             ReplaceText(doc, "[PRESUPUESTO]",  order.BudgetNumber);
 
             ReplaceText(doc, "(nombre cliente)", order.Client?.CompanyName ?? "N/A");
-            ReplaceText(doc, "(servicio contratado)", TagParser.StripTags(order.Items.FirstOrDefault()?.DescriptionSnapshot ?? order.Items.FirstOrDefault()?.Product?.Description) ?? "N/A");
+            // Frase institucional fija: el encabezado del presupuesto siempre dice
+            // "...solicitado por, alquiler y servicio de equipamiento audiovisual...".
+            ReplaceText(doc, "(servicio contratado)", "alquiler y servicio de equipamiento audiovisual");
             ReplaceText(doc, "(lugar del evento)", order.Location?.Name ?? "N/A");
 
             ReplaceText(doc, "(Empleado que hizo el presupuesto)", order.AdminName);
@@ -41,7 +46,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             ReplaceBookmark(doc, "BK_CLIENT_NAME",  order.Client?.CompanyName ?? "N/A");
             ReplaceBookmark(doc, "BK_CUIT",         order.Client?.Cuit ?? "N/A");
             ReplaceBookmark(doc, "BK_LOCATION",     order.Location?.Name ?? "N/A");
-            ReplaceBookmark(doc, "BK_DATE",         order.CreatedDate.ToString("dd/MM/yyyy"));
+            ReplaceBookmark(doc, "BK_DATE",         createdLocal);
             ReplaceBookmark(doc, "BK_BUDGET_NUM",   order.BudgetNumber);
 
             string descriptionProducts = string.Join("\n", order.Items.Select(i =>
@@ -88,7 +93,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
             foreach (dynamic storyRange in doc.StoryRanges)
             {
-                dynamic currentRange = storyRange;
+                dynamic? currentRange = storyRange;
                 while (currentRange != null)
                 {
                     try
@@ -99,7 +104,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                             Type.Missing, Type.Missing, 1 /*wdFindContinue*/, Type.Missing,
                             safeReplace, 2 /*wdReplaceAll*/);
                     }
-                    catch { }
+                    catch (Exception ex) { AppLog.Warning(ex, "Find/Replace failed for placeholder {Placeholder}", findText); }
 
                     try { currentRange = currentRange.NextStoryRange; }
                     catch { currentRange = null; }

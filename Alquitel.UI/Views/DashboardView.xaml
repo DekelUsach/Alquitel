@@ -2,131 +2,288 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid Margin="40,30">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="32,26,32,26">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <!-- HEADER -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,40">
-            <TextBlock Text="{Binding WelcomeMessage}" FontSize="16"
-                       Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
-            <TextBlock Text="Panel de Control" FontSize="34" FontWeight="Bold"
-                       Foreground="{DynamicResource TextBrush}"/>
-        </StackPanel>
-
-        <!-- METRIC CARDS -->
-        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,40">
-
-            <!-- Card: Productos -->
-            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
-                    Margin="0,0,16,0"
-                    Effect="{StaticResource StandardShadow}">
+            <!-- HEADER -->
+            <Grid Grid.Row="0" Margin="0,0,0,28">
                 <StackPanel>
-                    <Grid Margin="0,0,0,18">
-                        <Border Width="48" Height="48" CornerRadius="14"
-                                Background="{DynamicResource SecondaryColorBrush}"
-                                HorizontalAlignment="Left">
-                            <TextBlock Text="&#xE7BF;" FontFamily="Segoe MDL2 Assets" FontSize="22"
-                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </Grid>
-                    <TextBlock Text="{Binding TotalProducts}" FontSize="38" FontWeight="Bold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
-                    <TextBlock Text="Productos en catálogo" FontSize="14"
-                               Foreground="{DynamicResource MutedTextBrush}"/>
+                    <TextBlock Text="{Binding WelcomeMessage}" FontSize="15"
+                               Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,2"/>
+                    <TextBlock Text="Panel de Control" Style="{StaticResource PageTitle}" FontSize="30"/>
+                    <TextBlock Text="{Binding TodayLabel}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
                 </StackPanel>
-            </Border>
-
-            <!-- Card: Clientes -->
-            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
-                    Margin="8,0,8,0"
-                    Effect="{StaticResource StandardShadow}">
-                <StackPanel>
-                    <Grid Margin="0,0,0,18">
-                        <Border Width="48" Height="48" CornerRadius="14"
-                                Background="{DynamicResource PrimaryBrush}"
-                                HorizontalAlignment="Left">
-                            <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="22"
-                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </Grid>
-                    <TextBlock Text="{Binding TotalClients}" FontSize="38" FontWeight="Bold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
-                    <TextBlock Text="Clientes registrados" FontSize="14"
-                               Foreground="{DynamicResource MutedTextBrush}"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Card: Órdenes -->
-            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="28,24"
-                    Margin="16,0,0,0"
-                    Effect="{StaticResource StandardShadow}">
-                <StackPanel>
-                    <Grid Margin="0,0,0,18">
-                        <Border Width="48" Height="48" CornerRadius="14"
-                                Background="#27AE60"
-                                HorizontalAlignment="Left">
-                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="22"
-                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </Grid>
-                    <TextBlock Text="{Binding TotalOrders}" FontSize="38" FontWeight="Bold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
-                    <TextBlock Text="Presupuestos generados" FontSize="14"
-                               Foreground="{DynamicResource MutedTextBrush}"/>
-                </StackPanel>
-            </Border>
-        </UniformGrid>
-
-        <!-- QUICK ACTIONS -->
-        <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="20" Padding="32,28"
-                Effect="{StaticResource StandardShadow}" VerticalAlignment="Top">
-            <StackPanel>
-                <TextBlock Text="Acciones Rápidas" FontSize="18" FontWeight="Bold"
-                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,20"/>
-
-                <WrapPanel>
-                    <!-- New Budget -->
-                    <Button Style="{StaticResource DarkPillButton}" Height="52" Padding="24,0"
-                            Margin="0,0,12,12"
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshCommand}"
+                            ToolTip="Actualizar métricas">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Actualizar" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
                             Command="{Binding NewBudgetCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBlock Text="Nuevo Presupuesto" FontSize="14" FontWeight="SemiBold"
-                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Nuevo Presupuesto" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                </StackPanel>
+            </Grid>
 
-                    <!-- Refresh -->
-                    <Button Height="52" Padding="24,0" Margin="0,0,12,12"
-                            Background="{DynamicResource SurfaceAltBrush}"
-                            Foreground="{DynamicResource TextBrush}"
-                            BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                            Cursor="Hand"
-                            Command="{Binding RefreshCommand}">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="20" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBlock Text="Actualizar Métricas" FontSize="14" FontWeight="SemiBold"
-                                       VerticalAlignment="Center"/>
+            <!-- METRIC CARDS -->
+            <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,0,20">
+
+                <!-- Card: Productos -->
+                <Border Style="{StaticResource Card}" Padding="22,18" Margin="0,0,14,0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <Border Width="40" Height="40" CornerRadius="12"
+                                    Background="{DynamicResource SecondaryColorBrush}"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="&#xE7BF;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                           Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding TotalProducts}" FontSize="30" FontWeight="Bold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                        <TextBlock Text="Productos en catálogo" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card: Clientes -->
+                <Border Style="{StaticResource Card}" Padding="22,18" Margin="0,0,14,0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <Border Width="40" Height="40" CornerRadius="12"
+                                    Background="{DynamicResource PrimaryBrush}"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="&#xE77B;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                           Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding TotalClients}" FontSize="30" FontWeight="Bold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                        <TextBlock Text="Clientes registrados" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card: Presupuestos -->
+                <Border Style="{StaticResource Card}" Padding="22,18" Margin="0,0,14,0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <Border Width="40" Height="40" CornerRadius="12"
+                                    Background="{DynamicResource SuccessBrush}"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                           Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding TotalOrders}" FontSize="30" FontWeight="Bold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                        <TextBlock Text="Presupuestos generados" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card: Facturación 30 días -->
+                <Border Style="{StaticResource Card}" Padding="22,18">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <Border Width="40" Height="40" CornerRadius="12"
+                                    Background="{DynamicResource WarningBrush}"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="&#xE825;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                           Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding RevenueLast30Days, StringFormat='{}{0:C0}'}" FontSize="30" FontWeight="Bold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                        <TextBlock Text="{Binding OrdersLast30Days, StringFormat='Presupuestado últimos 30 días ({0} pedidos)'}"
+                                   FontSize="12" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- SEGUNDA FILA: actividad + laterales -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="1.2*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Actividad reciente -->
+                <Border Grid.Column="0" Style="{StaticResource Card}" Padding="24,20" Margin="0,0,14,0"
+                        VerticalAlignment="Top">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <TextBlock Text="Actividad Reciente" FontSize="16" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <Button Style="{StaticResource IconButton}" HorizontalAlignment="Right"
+                                    ToolTip="Ver todos los presupuestos"
+                                    Command="{Binding GoToPresupuestosCommand}">
+                                <TextBlock Text="&#xE8A7;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                            </Button>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding RecentOrders}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderBrush}"
+                                            Padding="0,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="10"
+                                                    Background="{DynamicResource AccentSoftBrush}" Margin="0,0,12,0">
+                                                <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}">
+                                                    <Run Text="N° "/><Run Text="{Binding BudgetNumber, Mode=OneWay}"/>
+                                                    <Run Text=" — "/><Run Text="{Binding ClientName, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding CreatedDate, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}"
+                                                           FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
+                                            </StackPanel>
+                                            <Border Grid.Column="2" Style="{StaticResource CardInner}"
+                                                    Padding="8,3" Margin="8,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding StatusLabel}" FontSize="10" FontWeight="Bold"
+                                                           Foreground="{DynamicResource MutedTextBrush}"/>
+                                            </Border>
+                                            <TextBlock Grid.Column="3" Text="{Binding Total, StringFormat='{}{0:C0}'}"
+                                                       FontSize="13" FontWeight="Bold"
+                                                       Foreground="{DynamicResource SecondaryColorBrush}"
+                                                       VerticalAlignment="Center"/>
+                                            <Button Grid.Column="4" Style="{StaticResource IconButton}"
+                                                    Width="32" Height="32" Margin="8,0,0,0"
+                                                    ToolTip="Repetir pedido: abre el armador con una copia de este presupuesto"
+                                                    Command="{Binding DataContext.RepeatOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <TextBlock Text="&#xE8EE;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Todavía no hay presupuestos registrados."
+                                   FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                                   Margin="0,10,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RecentOrders.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Lateral: top productos + accesos -->
+                <StackPanel Grid.Column="1">
+                    <Border Style="{StaticResource Card}" Padding="24,20" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="Productos Más Presupuestados" FontSize="16" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,14"/>
+                            <ItemsControl ItemsSource="{Binding TopProducts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="24" Height="24" CornerRadius="8"
+                                                    Background="{DynamicResource SurfaceAltBrush}"
+                                                    BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                                    Margin="0,0,10,0">
+                                                <TextBlock Text="{Binding Rank}" FontSize="11" FontWeight="Bold"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="12"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding TimesQuoted, StringFormat='{}{0}×'}"
+                                                       FontSize="12" FontWeight="Bold"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="Sin datos suficientes todavía."
+                                       FontSize="12" Foreground="{DynamicResource MutedTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding TopProducts.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
-                    </Button>
-                </WrapPanel>
-            </StackPanel>
-        </Border>
-    </Grid>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Padding="24,20">
+                        <StackPanel>
+                            <TextBlock Text="Accesos Rápidos" FontSize="16" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,14"/>
+                            <Button Style="{StaticResource SecondaryButton}" HorizontalContentAlignment="Left"
+                                    Margin="0,0,0,8" Command="{Binding GoToProductsCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE7BF;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Gestionar catálogo de productos" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource SecondaryButton}" HorizontalContentAlignment="Left"
+                                    Margin="0,0,0,8" Command="{Binding GoToClientsCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE716;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Directorio de clientes" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource SecondaryButton}" HorizontalContentAlignment="Left"
+                                    Command="{Binding GoToPresupuestosCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE9F9;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Historial de presupuestos" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
 </UserControl>

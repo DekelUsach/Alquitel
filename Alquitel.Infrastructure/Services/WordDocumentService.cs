@@ -50,16 +50,38 @@ namespace Alquitel.Infrastructure.Services
                         session.Initialize();
                         session.OpenTemplate(templatePath);
 
+                        if (session.Document == null)
+                            throw new InvalidOperationException("Word no pudo abrir la plantilla (documento nulo).");
+
                         PlaceholderReplacer.ReplaceAll(session.Document, order, isTechnical);
 
                         var searchRange = session.Document.Content;
                         if (searchRange.Find.Execute("{{PRODUCTOS_AQUI}}"))
                         {
                             searchRange.Text = "";
+
+                            // Guarda de fin de zona: el párrafo siguiente al tag ancla la
+                            // línea divisoria celeste. Un bookmark lo marca para que el
+                            // renderer nunca inserte productos dentro/después de él.
+                            try
+                            {
+                                int guardPos = (int)searchRange.Paragraphs[1].Range.End;
+                                session.Document.Bookmarks.Add(ProductRenderer.EndGuardBookmark,
+                                    session.Document.Range(guardPos, guardPos));
+                            }
+                            catch (Exception ex) { AppLog.Warning(ex, "Could not place product end-guard bookmark"); }
+
                             foreach (var item in order.Items)
                             {
                                 ProductRenderer.RenderProduct(session.Document, session.WordApp, ref searchRange, item, isTechnical);
                             }
+
+                            try
+                            {
+                                if (session.Document.Bookmarks.Exists(ProductRenderer.EndGuardBookmark))
+                                    session.Document.Bookmarks(ProductRenderer.EndGuardBookmark).Delete();
+                            }
+                            catch (Exception ex) { AppLog.Warning(ex, "Could not remove product end-guard bookmark"); }
                         }
 
                         session.SaveAndClose(outputPath);

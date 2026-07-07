@@ -56,7 +56,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading locations: {ex.Message}";
+                StatusMessage = $"Error al cargar ubicaciones: {ex.Message}";
             }
         }
 

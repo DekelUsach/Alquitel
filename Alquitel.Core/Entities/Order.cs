@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -13,7 +14,9 @@ namespace Alquitel.Core.Entities
         Approved,
         SentToOF,
         SentToOT,
-        Archived
+        Archived,
+        // Agregado al final para no alterar los valores numéricos ya persistidos.
+        Rejected
     }
 
     public class Order
@@ -23,6 +26,12 @@ namespace Alquitel.Core.Entities
         [Required]
         public string BudgetNumber { get; set; } = string.Empty;
         public string AdminName { get; set; } = string.Empty; // La persona que armó el presupuesto
+
+        /// <summary>
+        /// Usuario que creó la orden (FK a Users). Convive con AdminName (texto libre
+        /// legado): las órdenes históricas solo tienen AdminName; las nuevas llevan ambos.
+        /// </summary>
+        public Guid? CreatedByUserId { get; set; }
 
         public Guid ClientId { get; set; }
         public Client? Client { get; set; }
@@ -99,6 +108,24 @@ namespace Alquitel.Core.Entities
         /// </summary>
         public string? DescriptionSnapshot { get; set; }
         
+        /// <summary>
+        /// Flag de UI (no persistido): true cuando la cantidad pedida más lo comprometido
+        /// en otras órdenes activas supera el stock del producto para la fecha del evento.
+        /// Lo calcula BudgetBuilderViewModel; la grilla muestra ⚠ en la fila.
+        /// </summary>
+        private bool _hasStockConflict;
+        [NotMapped]
+        public bool HasStockConflict
+        {
+            get => _hasStockConflict;
+            set
+            {
+                if (_hasStockConflict == value) return;
+                _hasStockConflict = value;
+                OnPropertyChanged();
+            }
+        }
+
         // Medida solicitada, variable por cliente/presupuesto
         // e.g. "Medida solicitada: 8 x 3"
         private string? _requestedMeasure;

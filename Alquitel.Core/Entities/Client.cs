@@ -19,5 +19,11 @@ namespace Alquitel.Core.Entities
         /// Soft delete flag. When true the client is hidden from UI but preserved for FK integrity.
         /// </summary>
         public bool IsArchived { get; set; } = false;
+
+        /// <summary>
+        /// Notas internas del equipo sobre el cliente (condiciones de pago, trato, etc.).
+        /// Nunca se imprimen en documentos generados.
+        /// </summary>
+        public string? InternalNotes { get; set; }
     }
 }

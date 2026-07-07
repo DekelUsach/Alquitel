@@ -22,6 +22,9 @@ using Alquitel.Core.Helpers;
 
 namespace Alquitel.UI.ViewModels
 {
+    /// <summary>Opción de estado de presupuesto con etiqueta en español para la UI.</summary>
+    public sealed record StatusOption(OrderStatus Value, string Label);
+
     public partial class BudgetBuilderViewModel : ObservableObject, IAsyncInitialization, IDisposable
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
@@ -29,6 +32,9 @@ namespace Alquitel.UI.ViewModels
         private readonly ICollectionView _productsView;
         private readonly IAppSettings _appSettings;
         private readonly IDialogService _dialogService;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly Alquitel.Core.Interfaces.Repositories.IOrderRepository _orderRepository;
+        private readonly ITemplateStorageService _templateStorage;
 
         [ObservableProperty]
         private string _searchText = string.Empty;
@@ -59,6 +65,20 @@ namespace Alquitel.UI.ViewModels
 
         public ObservableCollection<Product> AvailableProducts { get; } = new();
         public ObservableCollection<OrderItem> SelectedItems { get; } = new();
+
+        /// <summary>Directorio de clientes para el buscador por nombre del encabezado.</summary>
+        public ObservableCollection<Client> KnownClients { get; } = new();
+
+        /// <summary>Estados disponibles del presupuesto (combo del encabezado).</summary>
+        public IReadOnlyList<StatusOption> StatusOptions { get; } = new[]
+        {
+            new StatusOption(OrderStatus.Draft, "Borrador"),
+            new StatusOption(OrderStatus.Approved, "Aprobado"),
+            new StatusOption(OrderStatus.SentToOF, "Enviado a OF"),
+            new StatusOption(OrderStatus.SentToOT, "Enviado a OT"),
+            new StatusOption(OrderStatus.Rejected, "Rechazado"),
+            new StatusOption(OrderStatus.Archived, "Archivado"),
+        };
         public decimal FinalBudget => SelectedItems.Sum(i => i.Total);
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
@@ -67,19 +87,28 @@ namespace Alquitel.UI.ViewModels
         private CancellationTokenSource? _autosaveCts;
         private string _draftsFolder;
 
+        // ── Undo del carrito: snapshots de items antes de cada mutación ──
+        private readonly List<List<OrderItem>> _undoSnapshots = new();
+        private const int MaxUndoSnapshots = 20;
+        private bool _isRestoringUndo;
+
         private class ProductCacheEntry
         {
             public HashSet<string> DescriptionTokens { get; set; } = new();
             public HashSet<string> CategoryTokens { get; set; } = new();
             public HashSet<string> DescriptionTrigrams { get; set; } = new();
+            public string NormalizedDescription { get; set; } = string.Empty;
         }
 
-        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService)
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService, ICurrentUserService currentUserService, Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository, ITemplateStorageService templateStorage)
         {
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _appSettings = appSettings;
             _dialogService = dialogService;
+            _currentUserService = currentUserService;
+            _orderRepository = orderRepository;
+            _templateStorage = templateStorage;
 
             _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
             _productsView.Filter = FilterProduct;
@@ -95,6 +124,17 @@ namespace Alquitel.UI.ViewModels
 
         public async Task InitializeAsync()
         {
+            // Multi-usuario: el presupuesto nuevo queda firmado por quien está logueado.
+            if (string.IsNullOrWhiteSpace(CurrentOrder.AdminName) && _currentUserService.Current != null)
+            {
+                CurrentOrder.AdminName = _currentUserService.Current.Name;
+                OnPropertyChanged(nameof(CurrentOrder));
+            }
+
+            // Numeración en serie: el presupuesto nuevo toma el número siguiente al
+            // mayor existente en la base (compartida por todo el equipo).
+            await AssignNextSerialIfEmptyAsync();
+
             AvailableProducts.Clear();
             _productSearchCache.Clear();
 
@@ -108,13 +148,20 @@ namespace Alquitel.UI.ViewModels
                 foreach (var p in products)
                 {
                     AvailableProducts.Add(p);
+                    string nd = NormalizeText(p.Description);
                     _productSearchCache[p.Id] = new ProductCacheEntry
                     {
-                        DescriptionTokens = ExtractMeaningfulTokens(NormalizeText(p.Description), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                        DescriptionTokens = ExtractMeaningfulTokens(nd, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
                         CategoryTokens = ExtractMeaningfulTokens(NormalizeText(p.Category), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
-                        DescriptionTrigrams = Trigrams(NormalizeText(p.Description))
+                        DescriptionTrigrams = Trigrams(nd),
+                        NormalizedDescription = nd
                     };
                 }
+
+                // Directorio de clientes para el buscador por nombre.
+                var clients = await db.Clients.AsNoTracking().OrderBy(c => c.CompanyName).ToListAsync();
+                KnownClients.Clear();
+                foreach (var c in clients) KnownClients.Add(c);
             }
             catch (Exception ex)
             {
@@ -137,13 +184,26 @@ namespace Alquitel.UI.ViewModels
                     {
                         var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
                         var path = Path.Combine(_draftsFolder, draftName);
-                        // Convert to DTO to avoid circular references during serialization
+                        // Convert to DTO to avoid circular references during serialization.
+                        // Must mirror every user-editable field of Order/OrderItem or the draft loses data.
                         var dto = new
                         {
-                            BudgetNumber = CurrentOrder.BudgetNumber,
+                            CurrentOrder.Id,
+                            CurrentOrder.BudgetNumber,
+                            CurrentOrder.AdminName,
+                            CurrentOrder.CreatedByUserId,
                             ClientName = CurrentOrder.Client?.CompanyName,
-                            EventDate = CurrentOrder.EventDate,
-                            Items = SelectedItems.Select(i => new { i.ProductId, i.Quantity, i.Total, i.RequestedMeasure }).ToList()
+                            ClientCuit = CurrentOrder.Client?.Cuit,
+                            LocationName = CurrentOrder.Location?.Name,
+                            CurrentOrder.EventDate,
+                            CurrentOrder.CreatedDate,
+                            Status = CurrentOrder.Status.ToString(),
+                            Items = SelectedItems.Select(i => new
+                            {
+                                i.ProductId, i.Quantity, i.Dias, i.UnitPrice, i.Total,
+                                i.TechnicalNotes, i.ImagePath, i.CustomFieldsJson,
+                                i.DescriptionSnapshot, i.RequestedMeasure
+                            }).ToList()
                         };
                         var json = System.Text.Json.JsonSerializer.Serialize(dto, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                         await File.WriteAllTextAsync(path, json, token);
@@ -161,6 +221,24 @@ namespace Alquitel.UI.ViewModels
         {
             _autosaveCts?.Cancel();
             _autosaveCts?.Dispose();
+        }
+
+        /// <summary>
+        /// Removes the autosave draft once the order was persisted to the database,
+        /// so stale drafts don't accumulate in %AppData%\Alquitel\Drafts.
+        /// </summary>
+        private void TryDeleteDraft()
+        {
+            try
+            {
+                var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
+                var path = Path.Combine(_draftsFolder, draftName);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "Could not delete draft for order {OrderId}", CurrentOrder.Id);
+            }
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -183,17 +261,20 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnCuitInputChanged(string value)
         {
-            if (!string.IsNullOrWhiteSpace(value) && !CuitValidator.IsValid(value))
-            {
-                // We could show a visual cue, but for now we just log or ignore
-                // We can't block typing, but we can prevent finding a client if invalid
-            }
+            // Only hit the DB once the input is a complete, checksum-valid CUIT.
+            // A synchronous query per keystroke blocked the UI thread while typing.
+            if (!CuitValidator.IsValid(value)) return;
+            _ = LookupClientByCuitAsync(value);
+        }
 
+        private async Task LookupClientByCuitAsync(string cuit)
+        {
             try
             {
-                using var db = _dbContextFactory.CreateDbContext();
-                var client = db.Clients.AsNoTracking().FirstOrDefault(c => c.Cuit == value);
-                if (client != null)
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var client = await db.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Cuit == cuit);
+                // Guard against stale results if the user kept typing meanwhile
+                if (client != null && CuitInput == cuit)
                 {
                     CurrentOrder.Client = client;
                     OnPropertyChanged(nameof(CurrentOrder));
@@ -201,8 +282,28 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "CUIT lookup failed for {Cuit}", value);
+                AppLog.Warning(ex, "CUIT lookup failed for {Cuit}", cuit);
             }
+        }
+
+        partial void OnSelectedClientChanged(Client? value)
+        {
+            if (value == null) return;
+
+            // Clon: el TextBox de "Empresa / Cliente" es editable y no debe mutar la
+            // instancia compartida de la lista KnownClients.
+            CurrentOrder.Client = new Client
+            {
+                Id = value.Id,
+                CompanyName = value.CompanyName,
+                Cuit = value.Cuit,
+                ContactName = value.ContactName,
+                Phone = value.Phone,
+                Email = value.Email,
+                InternalNotes = value.InternalNotes,
+            };
+            OnPropertyChanged(nameof(CurrentOrder));
+            CuitInput = value.Cuit ?? string.Empty;
         }
 
         partial void OnEventDaysChanged(int value)
@@ -222,9 +323,64 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void SetTechnicalView() => IsTechnicalView = true;
 
+        // ── Undo del carrito ─────────────────────────────────────────
+
+        private static OrderItem CloneItem(OrderItem i) => new OrderItem
+        {
+            Id = i.Id,
+            OrderId = i.OrderId,
+            ProductId = i.ProductId,
+            Product = i.Product,
+            Quantity = i.Quantity,
+            UnitPrice = i.UnitPrice,
+            Dias = i.Dias,
+            TechnicalNotes = i.TechnicalNotes,
+            ImagePath = i.ImagePath,
+            CustomFieldsJson = i.CustomFieldsJson,
+            DescriptionSnapshot = i.DescriptionSnapshot,
+            RequestedMeasure = i.RequestedMeasure,
+        };
+
+        /// <summary>Guarda el estado actual del carrito antes de una mutación (agregar/quitar/reemplazar).</summary>
+        private void PushUndoSnapshot()
+        {
+            if (_isRestoringUndo) return;
+            _undoSnapshots.Add(SelectedItems.Select(CloneItem).ToList());
+            if (_undoSnapshots.Count > MaxUndoSnapshots) _undoSnapshots.RemoveAt(0);
+            UndoCartCommand.NotifyCanExecuteChanged();
+        }
+
+        private bool CanUndoCart() => _undoSnapshots.Count > 0;
+
+        [RelayCommand(CanExecute = nameof(CanUndoCart))]
+        private void UndoCart()
+        {
+            if (_undoSnapshots.Count == 0) return;
+            var snapshot = _undoSnapshots[^1];
+            _undoSnapshots.RemoveAt(_undoSnapshots.Count - 1);
+
+            _isRestoringUndo = true;
+            try
+            {
+                SelectedItems.Clear();
+                CurrentOrder.Items.Clear();
+                foreach (var item in snapshot)
+                {
+                    SelectedItems.Add(item);
+                    CurrentOrder.Items.Add(item);
+                }
+            }
+            finally
+            {
+                _isRestoringUndo = false;
+            }
+            UndoCartCommand.NotifyCanExecuteChanged();
+        }
+
         [RelayCommand]
         private void AddProduct(Product product)
         {
+            PushUndoSnapshot();
             var existingItem = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
             if (existingItem != null)
             {
@@ -252,6 +408,7 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void RemoveItem(OrderItem item)
         {
+            PushUndoSnapshot();
             SelectedItems.Remove(item);
             CurrentOrder.Items.Remove(item);
         }
@@ -261,6 +418,7 @@ namespace Alquitel.UI.ViewModels
         {
             var existingItem = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
             if (existingItem == null) return;
+            PushUndoSnapshot();
             if (existingItem.Quantity > 1) { existingItem.Quantity -= 1; return; }
             SelectedItems.Remove(existingItem);
             CurrentOrder.Items.Remove(existingItem);
@@ -285,6 +443,7 @@ namespace Alquitel.UI.ViewModels
                 return;
             }
 
+            PushUndoSnapshot();
             if (SelectedItems.Any())
             {
                 var replace = _dialogService.ShowConfirm(
@@ -319,22 +478,22 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task GenerateBudget()
         {
-            await GenerateDocument(_appSettings.PresupuestosFolder, _appSettings.PresupuestosTemplate, false);
+            await GenerateDocument(_appSettings.PresupuestosFolder, _appSettings.PresupuestosTemplate, false, TemplateKind.Presupuesto);
         }
 
         [RelayCommand]
         private async Task GenerateOF()
         {
-            await GenerateDocument(_appSettings.OfFolder, _appSettings.OfTemplate, false);
+            await GenerateDocument(_appSettings.OfFolder, _appSettings.OfTemplate, false, TemplateKind.OF);
         }
 
         [RelayCommand]
         private async Task GenerateOT()
         {
-            await GenerateDocument(_appSettings.OtFolder, _appSettings.OtTemplate, true);
+            await GenerateDocument(_appSettings.OtFolder, _appSettings.OtTemplate, true, TemplateKind.OT);
         }
 
-        private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical)
+        private async Task GenerateDocument(string targetDir, string templatePath, bool isTechnical, TemplateKind templateKind)
         {
             try
             {
@@ -344,27 +503,59 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
+                // §2 Disponibilidad: advierte si el pedido supera el stock ya comprometido
+                // en otras órdenes activas para la misma fecha. Advierte, no bloquea.
+                var stockWarnings = await RefreshStockConflictsAsync();
+                if (stockWarnings.Count > 0)
+                {
+                    var proceed = _dialogService.ShowConfirm(
+                        "Posible conflicto de stock",
+                        "Estos productos superan el stock disponible para la fecha del evento:\n\n- " +
+                        string.Join("\n- ", stockWarnings) +
+                        "\n\n¿Generar el documento de todos modos?");
+                    if (!proceed) return;
+                }
+
                 if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
 
-                string datePart = CurrentOrder.CreatedDate.ToString("MMdd");
+                // El documento lo firma quien está logueado (recuadro celeste del final),
+                // aunque el presupuesto cargado sea histórico de otro empleado.
+                if (_currentUserService.Current != null)
+                    CurrentOrder.AdminName = _currentUserService.Current.Name;
+
+                // CreatedDate is UTC; use local time so evening budgets don't get tomorrow's date
+                string datePart = CurrentOrder.CreatedDate.ToLocalTime().ToString("MMdd");
                 string empresaPart = string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName) ? "CLIENTE" : CurrentOrder.Client.CompanyName;
                 string lugarPart = string.IsNullOrWhiteSpace(CurrentOrder.Location?.Name) ? "LUGAR" : CurrentOrder.Location.Name;
                 string inicialesPart = GetInitials(CurrentOrder.AdminName);
-                string fileName = $"{CurrentOrder.BudgetNumber}- {datePart}- {empresaPart}- {lugarPart}- {inicialesPart}.docx";
+                string numeroPart = BudgetNumberHelper.ToFileNameForm(CurrentOrder.BudgetNumber); // "31294/2" → "31294(2)"
+                string fileName = $"{numeroPart}- {datePart}- {empresaPart}- {lugarPart}- {inicialesPart}.docx";
                 foreach (char c in Path.GetInvalidFileNameChars()) { fileName = fileName.Replace(c, '_'); }
                 string outputPath = Path.Combine(targetDir, fileName);
 
-                if (!File.Exists(templatePath))
+                // Plantilla centralizada: la versión publicada en Supabase Storage tiene
+                // prioridad (descarga con cache offline). Si no hay plantilla en la nube,
+                // se usa la ruta local configurada en Configuración.
+                string effectiveTemplate = templatePath;
+                var cloudTemplate = await _templateStorage.ResolveTemplateAsync(templateKind);
+                if (!string.IsNullOrEmpty(cloudTemplate))
+                    effectiveTemplate = cloudTemplate;
+
+                if (!File.Exists(effectiveTemplate))
                 {
-                    _dialogService.ShowError("Error de Plantilla", $"La plantilla no existe en: {templatePath}");
+                    _dialogService.ShowError("Error de Plantilla",
+                        "No hay plantilla disponible.\n\n" +
+                        $"No se encontró plantilla publicada en el servidor ni en la ruta local: {templatePath}\n" +
+                        "Un Admin puede publicarla desde Configuración → Plantillas en la nube.");
                     return;
                 }
 
-                await _documentService.GenerateDocumentAsync(CurrentOrder, templatePath, outputPath, isTechnical, _appSettings.ExportPdf);
+                await _documentService.GenerateDocumentAsync(CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
                 bool persisted = await PersistOrderAsync();
 
                 if (persisted)
                 {
+                    TryDeleteDraft();
                     _dialogService.ShowInfo("Éxito", $"Archivo guardado correctamente en:\n{outputPath}");
                 }
                 else
@@ -383,8 +574,145 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Crea una nueva VERSIÓN (rama) del presupuesto actual: misma serie con sufijo
+        /// incremental ("31294" → "31294/2" → "31294/3"). La rama es una orden nueva e
+        /// independiente: se puede modificar completa sin tocar la versión anterior.
+        /// </summary>
+        private async Task AssignNextSerialIfEmptyAsync()
+        {
+            if (!string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber)) return;
+            try
+            {
+                var numbers = await _orderRepository.GetAllBudgetNumbersAsync();
+                CurrentOrder.BudgetNumber = BudgetNumberHelper.NextSerial(numbers);
+                OnPropertyChanged(nameof(CurrentOrder));
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "No se pudo calcular el próximo número de presupuesto");
+            }
+        }
+
+        [RelayCommand]
+        private async Task CreateNewVersionAsync()
+        {
+            if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber))
+            {
+                _dialogService.ShowWarning("Nueva versión",
+                    "El presupuesto actual no tiene número: asignale un número antes de crear una versión.");
+                return;
+            }
+
+            try
+            {
+                var numbers = await _orderRepository.GetAllBudgetNumbersAsync();
+                string newNumber = BudgetNumberHelper.NextVersion(CurrentOrder.BudgetNumber, numbers);
+
+                if (!_dialogService.ShowConfirm("Nueva versión",
+                    $"Se creará la versión {newNumber} como copia editable del presupuesto " +
+                    $"{CurrentOrder.BudgetNumber}. La versión anterior no se modifica. ¿Continuar?"))
+                    return;
+
+                PushUndoSnapshot();
+
+                // Identidad nueva, contenido idéntico: misma mecánica que "Repetir pedido"
+                // pero conservando cliente, lugar, fecha de evento y la serie del número.
+                CurrentOrder.Id = Guid.NewGuid();
+                CurrentOrder.BudgetNumber = newNumber;
+                CurrentOrder.CreatedDate = DateTime.UtcNow;
+                CurrentOrder.Status = OrderStatus.Draft;
+                if (_currentUserService.Current != null)
+                {
+                    CurrentOrder.AdminName = _currentUserService.Current.Name;
+                    CurrentOrder.CreatedByUserId = _currentUserService.Current.Id;
+                }
+
+                foreach (var item in SelectedItems)
+                {
+                    item.Id = Guid.NewGuid();
+                    item.OrderId = CurrentOrder.Id;
+                }
+
+                OnPropertyChanged(nameof(CurrentOrder));
+                _dialogService.ShowInfo("Nueva versión",
+                    $"Estás editando la versión {newNumber}. Los cambios se guardan como presupuesto aparte al generar.");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "CreateNewVersionAsync failed");
+                _dialogService.ShowError("Error al crear versión", ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Carga una orden existente como COPIA: mismos productos, cantidades y cliente,
+        /// pero con identidad nueva (Id/N° presupuesto/fechas en blanco). Es la base del
+        /// botón "Repetir pedido" del dashboard.
+        /// </summary>
+        public void LoadOrderCopyById(Guid orderId)
+        {
+            LoadOrder(new Order { Id = orderId });
+            if (CurrentOrder.Id != orderId) return; // la orden original no existe
+
+            CurrentOrder.Id = Guid.NewGuid();
+            CurrentOrder.BudgetNumber = string.Empty;
+            CurrentOrder.CreatedDate = DateTime.UtcNow;
+            CurrentOrder.EventDate = null; // el evento nuevo tendrá otra fecha; forzar selección
+            CurrentOrder.Status = OrderStatus.Draft;
+
+            // La copia es un pedido nuevo: lo firma quien está logueado, no el autor original.
+            if (_currentUserService.Current != null)
+            {
+                CurrentOrder.AdminName = _currentUserService.Current.Name;
+                CurrentOrder.CreatedByUserId = _currentUserService.Current.Id;
+            }
+
+            foreach (var item in SelectedItems)
+            {
+                item.Id = Guid.NewGuid();
+                item.OrderId = CurrentOrder.Id;
+            }
+
+            // Order no implementa INotifyPropertyChanged: re-notificar la raíz refresca los bindings.
+            OnPropertyChanged(nameof(CurrentOrder));
+
+            // La copia arranca con el próximo número de la serie.
+            _ = AssignNextSerialIfEmptyAsync();
+        }
+
+        /// <summary>
+        /// Carga una orden ya armada en memoria (la rama creada por el editor de
+        /// versiones de la sección Presupuestos). A diferencia de LoadOrder, no lee
+        /// de la base: la orden viene lista con su número de versión e items editados.
+        /// </summary>
+        public void LoadBranchOrder(Order branch)
+        {
+            _undoSnapshots.Clear();
+            UndoCartCommand.NotifyCanExecuteChanged();
+
+            var items = branch.Items.ToList();
+            branch.Items = new List<OrderItem>();
+            CurrentOrder = branch;
+
+            SelectedItems.Clear();
+            foreach (var item in items)
+            {
+                SelectedItems.Add(item);
+                CurrentOrder.Items.Add(item);
+            }
+
+            EventDays = items.FirstOrDefault()?.Dias ?? 1;
+            CuitInput = branch.Client?.Cuit ?? string.Empty;
+            OnPropertyChanged(nameof(CurrentOrder));
+        }
+
         public void LoadOrder(Order order)
         {
+            // El historial que se carga reemplaza al carrito actual: los snapshots viejos ya no aplican.
+            _undoSnapshots.Clear();
+            UndoCartCommand.NotifyCanExecuteChanged();
+
             using var db = _dbContextFactory.CreateDbContext();
             var full = db.Orders
                 .AsNoTracking()
@@ -401,6 +729,7 @@ namespace Alquitel.UI.ViewModels
                 Id = full.Id,
                 BudgetNumber = full.BudgetNumber,
                 AdminName = full.AdminName,
+                CreatedByUserId = full.CreatedByUserId,
                 CreatedDate = full.CreatedDate,
                 EventDate = full.EventDate,
                 Status = full.Status,
@@ -436,26 +765,84 @@ namespace Alquitel.UI.ViewModels
             CuitInput = full.Client?.Cuit ?? string.Empty;
         }
 
+        /// <summary>
+        /// Recalcula el flag <see cref="OrderItem.HasStockConflict"/> de cada ítem del
+        /// carrito contra el stock comprometido en otras órdenes activas y devuelve la
+        /// lista de advertencias legibles (vacía si no hay conflictos).
+        /// </summary>
+        private async Task<List<string>> RefreshStockConflictsAsync()
+        {
+            var warnings = new List<string>();
+
+            if (!CurrentOrder.EventDate.HasValue)
+            {
+                foreach (var i in SelectedItems) i.HasStockConflict = false;
+                return warnings;
+            }
+
+            var start = CurrentOrder.EventDate.Value.Date;
+
+            foreach (var group in SelectedItems.GroupBy(i => i.ProductId).ToList())
+            {
+                var product = group.First().Product;
+                if (product?.StockQuantity is not int stock)
+                {
+                    foreach (var i in group) i.HasStockConflict = false;
+                    continue;
+                }
+
+                var end = start.AddDays(Math.Max(1, group.Max(i => i.Dias)));
+                int committed;
+                try
+                {
+                    committed = await _orderRepository.GetCommittedQuantityAsync(
+                        group.Key, start, end, CurrentOrder.Id);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Chequeo de stock falló para producto {ProductId}", group.Key);
+                    continue;
+                }
+
+                var requested = group.Sum(i => i.Quantity);
+                bool conflict = requested + committed > stock;
+                foreach (var i in group) i.HasStockConflict = conflict;
+
+                if (conflict)
+                {
+                    warnings.Add(
+                        $"{product.Description}: pedidos {requested} + comprometidos {committed} " +
+                        $"en otras órdenes > stock total {stock}.");
+                }
+            }
+
+            return warnings;
+        }
+
         private async Task<bool> PersistOrderAsync()
         {
             try
             {
-                using var db = await _dbContextFactory.CreateDbContextAsync();
+                // Firma multi-usuario: la primera persistencia registra quién creó la orden.
+                CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
 
-                var locName = CurrentOrder.Location?.Name ?? string.Empty;
-                var location = db.Locations.FirstOrDefault(l => l.Name == locName);
-                if (location == null && !string.IsNullOrWhiteSpace(locName))
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                await using var tx = await db.Database.BeginTransactionAsync();
+
+                // ── Location: find-or-create so Order.LocationId always references a real row.
+                // A Guid.Empty FK violated the constraint and silently failed the whole persist. ──
+                var locName = (CurrentOrder.Location?.Name ?? string.Empty).Trim();
+                var location = await db.Locations.FirstOrDefaultAsync(l => l.Name == locName);
+                if (location == null)
                 {
                     location = new Location { Name = locName };
                     db.Locations.Add(location);
                     await db.SaveChangesAsync();
                 }
-                else if (location == null)
-                {
-                    location = new Location { Id = Guid.Empty, Name = string.Empty };
-                }
 
-                var clientId = CurrentOrder.Client?.Id ?? Guid.Empty;
+                // ── Client: reuse existing (by Id, then by CUIT) or create it.
+                // A client typed manually never existed in the DB and broke the FK. ──
+                var clientId = await ResolveClientIdAsync(db);
                 var locationId = location.Id;
 
                 var orderExists = db.Orders.Any(o => o.Id == CurrentOrder.Id);
@@ -467,6 +854,7 @@ namespace Alquitel.UI.ViewModels
                         Id = CurrentOrder.Id,
                         BudgetNumber = CurrentOrder.BudgetNumber,
                         AdminName = CurrentOrder.AdminName,
+                        CreatedByUserId = CurrentOrder.CreatedByUserId,
                         ClientId = clientId,
                         LocationId = locationId,
                         CreatedDate = CurrentOrder.CreatedDate,
@@ -502,6 +890,8 @@ namespace Alquitel.UI.ViewModels
                     {
                         tracked.BudgetNumber = CurrentOrder.BudgetNumber;
                         tracked.AdminName = CurrentOrder.AdminName;
+                        // No pisar al creador original al editar una orden ajena.
+                        tracked.CreatedByUserId ??= CurrentOrder.CreatedByUserId;
                         tracked.ClientId = clientId;
                         tracked.LocationId = locationId;
                         tracked.EventDate = CurrentOrder.EventDate;
@@ -532,6 +922,7 @@ namespace Alquitel.UI.ViewModels
                     await db.SaveChangesAsync();
                 }
 
+                await tx.CommitAsync();
                 AppLog.Information("Order persisted: {OrderId} ({Budget})", CurrentOrder.Id, CurrentOrder.BudgetNumber);
                 return true;
             }
@@ -540,6 +931,41 @@ namespace Alquitel.UI.ViewModels
                 AppLog.Error(ex, "PersistOrderAsync failed for order {OrderId}", CurrentOrder.Id);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Returns the Id of a Client row guaranteed to exist in the DB for the current order:
+        /// the tracked client if already persisted, an existing client with the same CUIT,
+        /// or a newly inserted row built from the manually typed data.
+        /// </summary>
+        private async Task<Guid> ResolveClientIdAsync(AlquitelDbContext db)
+        {
+            var client = CurrentOrder.Client ?? new Client();
+
+            if (client.Id != Guid.Empty &&
+                await db.Clients.IgnoreQueryFilters().AnyAsync(c => c.Id == client.Id))
+                return client.Id;
+
+            if (!string.IsNullOrWhiteSpace(client.Cuit))
+            {
+                var cuit = client.Cuit.Trim();
+                var byCuit = await db.Clients.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Cuit == cuit);
+                if (byCuit != null) return byCuit.Id;
+            }
+
+            var newClient = new Client
+            {
+                Id = client.Id == Guid.Empty ? Guid.NewGuid() : client.Id,
+                CompanyName = client.CompanyName?.Trim() ?? string.Empty,
+                Cuit = client.Cuit?.Trim() ?? string.Empty,
+                ContactName = client.ContactName,
+                Phone = client.Phone,
+                Email = client.Email,
+            };
+            db.Clients.Add(newClient);
+            await db.SaveChangesAsync();
+            AppLog.Information("Client auto-created from budget: {Company} ({Cuit})", newClient.CompanyName, newClient.Cuit);
+            return newClient.Id;
         }
 
         private string GetInitials(string name)
@@ -576,6 +1002,7 @@ namespace Alquitel.UI.ViewModels
             if (e.NewItems != null) foreach (OrderItem item in e.NewItems) item.PropertyChanged += OnSelectedItemPropertyChanged;
             SelectionVersion++;
             OnPropertyChanged(nameof(FinalBudget));
+            _ = RefreshStockConflictsAsync();
         }
 
         private void OnSelectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -584,6 +1011,8 @@ namespace Alquitel.UI.ViewModels
             {
                 SelectionVersion++;
                 OnPropertyChanged(nameof(FinalBudget));
+                if (e.PropertyName is nameof(OrderItem.Quantity) or nameof(OrderItem.Dias))
+                    _ = RefreshStockConflictsAsync();
             }
         }
 
@@ -594,18 +1023,28 @@ namespace Alquitel.UI.ViewModels
             var segments = BuildSmartSegments(paragraph);
             var aggregated = new Dictionary<Guid, SmartMatchResult>();
             var threshold = _appSettings.SmartSearchThreshold;
+            var margin = _appSettings.SmartSearchMargin;
+            var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
 
             foreach (var segment in segments)
             {
                 int quantity = ExtractQuantityFromSegment(segment);
+
+                // Normalize the segment once — previously tokens, trigrams and the
+                // stop-word set were rebuilt for every product on every segment.
+                string ns = NormalizeText(segment);
+                var st = ExtractMeaningfulTokens(ns, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (!st.Any()) continue;
+                var sTri = Trigrams(ns);
+
                 var ranked = AvailableProducts
-                    .Select(product => new SmartMatchResult(product, quantity, ScoreProductAgainstSegment(segment, product)))
+                    .Select(product => new SmartMatchResult(product, quantity, ScoreProductAgainstSegment(ns, st, sTri, product)))
                     .OrderByDescending(x => x.Score).ToList();
                 if (!ranked.Any()) continue;
                 var best = ranked[0];
                 var second = ranked.Count > 1 ? ranked[1] : null;
                 if (best.Score < threshold) continue;
-                if (second != null && Math.Abs(best.Score - second.Score) < 0.35) continue;
+                if (second != null && Math.Abs(best.Score - second.Score) < margin) continue;
                 if (aggregated.TryGetValue(best.Product.Id, out var existing))
                     aggregated[best.Product.Id] = existing with { Quantity = existing.Quantity + best.Quantity, Score = Math.Max(existing.Score, best.Score) };
                 else
@@ -642,30 +1081,25 @@ namespace Alquitel.UI.ViewModels
             return 1;
         }
 
-        private double ScoreProductAgainstSegment(string segment, Product product)
+        private double ScoreProductAgainstSegment(string normalizedSegment, HashSet<string> segmentTokens, HashSet<string> segmentTrigrams, Product product)
         {
             if (!_productSearchCache.TryGetValue(product.Id, out var cache)) return 0;
 
-            string ns = NormalizeText(segment);
-            var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
-            var st = ExtractMeaningfulTokens(ns, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            
             var pt = cache.DescriptionTokens;
             var ct = cache.CategoryTokens;
 
-            if (!st.Any() || !pt.Any()) return 0;
+            if (!pt.Any()) return 0;
 
-            int overlap = st.Intersect(pt, StringComparer.OrdinalIgnoreCase).Count();
-            int catOverlap = st.Intersect(ct, StringComparer.OrdinalIgnoreCase).Count();
+            int overlap = segmentTokens.Intersect(pt, StringComparer.OrdinalIgnoreCase).Count();
+            int catOverlap = segmentTokens.Intersect(ct, StringComparer.OrdinalIgnoreCase).Count();
             double coverage = (double)overlap / pt.Count;
-            double precision = (double)overlap / Math.Max(1, st.Count);
-            double tri = DiceCoefficient(Trigrams(ns), cache.DescriptionTrigrams);
+            double precision = (double)overlap / Math.Max(1, segmentTokens.Count);
+            double tri = DiceCoefficient(segmentTrigrams, cache.DescriptionTrigrams);
 
             double score = overlap * 2.7 + catOverlap * 0.8 + coverage * 3.5 + precision * 1.5 + tri * 4.0;
-            
-            string nd = NormalizeText(product.Description);
-            if (ns.Contains(nd, StringComparison.OrdinalIgnoreCase)) score += 3.0;
-            
+
+            if (normalizedSegment.Contains(cache.NormalizedDescription, StringComparison.OrdinalIgnoreCase)) score += 3.0;
+
             return score;
         }
 

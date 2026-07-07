@@ -10,16 +10,19 @@ namespace Alquitel.Infrastructure.Services
     {
         private readonly string _settingsFilePath;
 
-        public string PresupuestosFolder { get; set; } = @"C:\Alquitel\1_PRESUPUESTOS";
-        public string PresupuestosTemplate { get; set; } = @"C:\Alquitel\template.docx";
-        public string OfFolder { get; set; } = @"C:\Alquitel\2_OF";
-        public string OfTemplate { get; set; } = @"C:\Alquitel\template_of.docx";
-        public string OtFolder { get; set; } = @"C:\Alquitel\3_OT";
-        public string OtTemplate { get; set; } = @"C:\Alquitel\template_ot.docx";
+        public string PresupuestosFolder { get; set; } = AppPaths.DefaultPresupuestosFolder;
+        public string PresupuestosTemplate { get; set; } = AppPaths.DefaultPresupuestosTemplate;
+        public string OfFolder { get; set; } = AppPaths.DefaultOfFolder;
+        public string OfTemplate { get; set; } = AppPaths.DefaultOfTemplate;
+        public string OtFolder { get; set; } = AppPaths.DefaultOtFolder;
+        public string OtTemplate { get; set; } = AppPaths.DefaultOtTemplate;
         public bool IsDarkMode { get; set; }
         public bool ExportPdf { get; set; } = true;
         public List<string> SmartSearchStopWords { get; set; } = new List<string> { "de", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "plus", "pro", "edition", "business", "servicio" };
         public double SmartSearchThreshold { get; set; } = 4.0;
+        // Minimum score gap between the best and second-best candidate before a
+        // match is considered unambiguous.
+        public double SmartSearchMargin { get; set; } = 0.35;
 
         public AppSettings(string settingsFilePath)
         {
@@ -50,6 +53,9 @@ namespace Alquitel.Infrastructure.Services
                     if (settings.TryGetValue("SmartSearchThreshold", out var thresh) && double.TryParse(thresh, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var th))
                         SmartSearchThreshold = th;
 
+                    if (settings.TryGetValue("SmartSearchMargin", out var marginRaw) && double.TryParse(marginRaw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var mg))
+                        SmartSearchMargin = mg;
+
                     if (settings.TryGetValue("SmartSearchStopWords", out var stopWordsJson))
                     {
                         try { SmartSearchStopWords = JsonSerializer.Deserialize<List<string>>(stopWordsJson) ?? SmartSearchStopWords; }
@@ -78,6 +84,7 @@ namespace Alquitel.Infrastructure.Services
                     ["IsDarkMode"] = IsDarkMode.ToString(),
                     ["ExportPdf"] = ExportPdf.ToString(),
                     ["SmartSearchThreshold"] = SmartSearchThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["SmartSearchMargin"] = SmartSearchMargin.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     ["SmartSearchStopWords"] = JsonSerializer.Serialize(SmartSearchStopWords)
                 };
                 var output = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });

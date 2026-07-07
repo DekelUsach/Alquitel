@@ -9,7 +9,7 @@
     <Grid ClipToBounds="True">
 
         <!-- ══════════════════ MAIN CONTENT ══════════════════ -->
-        <Grid Margin="30,24,30,24">
+        <Grid Margin="32,26,32,26">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -26,13 +26,10 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Presupuestos"
-                           FontSize="26" FontWeight="Bold"
-                           Foreground="{DynamicResource TextBrush}"
+                           Style="{StaticResource PageTitle}"
                            VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Style="{StaticResource DarkPillButton}"
+                <Button Grid.Column="1" Style="{StaticResource SecondaryButton}"
                         Height="42" Padding="16,0" Margin="0,0,8,0"
-                        Background="{DynamicResource SurfaceAltBrush}"
-                        Foreground="{DynamicResource TextBrush}"
                         Command="{Binding RefreshCommand}"
                         ToolTip="Recargar lista">
                     <StackPanel Orientation="Horizontal">
@@ -42,10 +39,8 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="2" Style="{StaticResource DarkPillButton}"
+                <Button Grid.Column="2" Style="{StaticResource SecondaryButton}"
                         Height="42" Padding="16,0" Margin="0"
-                        Background="{DynamicResource SurfaceAltBrush}"
-                        Foreground="{DynamicResource TextBrush}"
                         Command="{Binding ClearFiltersCommand}"
                         ToolTip="Limpiar filtros">
                     <StackPanel Orientation="Horizontal">
@@ -58,9 +53,7 @@
             </Grid>
 
             <!-- Folder Path Bar -->
-            <Border Grid.Row="1" Background="{DynamicResource SurfaceBrush}"
-                    CornerRadius="16" Padding="20,14"
-                    Effect="{StaticResource StandardShadow}"
+            <Border Grid.Row="1" Style="{StaticResource Card}" Padding="20,14"
                     Margin="0,0,0,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -84,7 +77,7 @@
                              VerticalContentAlignment="Center"
                              FontFamily="Consolas" FontSize="13"/>
 
-                    <Button Grid.Column="2" Style="{StaticResource DarkPillButton}"
+                    <Button Grid.Column="2" Style="{StaticResource PrimaryButton}"
                             Height="40" Padding="16,0" Margin="8,0,0,0"
                             Command="{Binding BrowseFolderCommand}"
                             ToolTip="Elegir carpeta">
@@ -99,9 +92,7 @@
             </Border>
 
             <!-- Filter Bar -->
-            <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}"
-                    CornerRadius="16" Padding="20,14"
-                    Effect="{StaticResource StandardShadow}"
+            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="20,14"
                     Margin="0,0,0,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -160,9 +151,7 @@
                        Margin="4,0,0,10"/>
 
             <!-- DataGrid -->
-            <Border Grid.Row="4" CornerRadius="16"
-                    Background="{DynamicResource SurfaceBrush}"
-                    Effect="{StaticResource StandardShadow}">
+            <Border Grid.Row="4" Style="{StaticResource Card}">
                 <DataGrid x:Name="FilesGrid"
                           ItemsSource="{Binding FilesView}"
                           SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
@@ -364,9 +353,8 @@
 
                 <!-- Action buttons -->
                 <StackPanel Grid.Row="2" Margin="0,20,0,0">
-                    <Button Style="{StaticResource DarkPillButton}"
+                    <Button Style="{StaticResource PrimaryButton}"
                             Height="46" Margin="0,0,0,8" Padding="0"
-                            Background="{DynamicResource SecondaryColorBrush}"
                             Command="{Binding OpenFileCommand}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
@@ -375,10 +363,23 @@
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource DarkPillButton}"
+                    <Button Style="{StaticResource SecondaryButton}"
                             Height="42" Margin="0,0,0,8" Padding="0"
-                            Background="{DynamicResource SurfaceAltBrush}"
-                            Foreground="{DynamicResource TextBrush}"
+                            Command="{Binding CreateVersionCommand}"
+                            ToolTip="Crea una rama de este presupuesto (31294 → 31294/2) con un editor rápido de ítems. La versión original no se modifica.">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8F4;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock Text="Crear nueva versión" FontWeight="SemiBold" FontSize="13"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                    </Button>
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,8"
+                                 Visibility="{Binding IsCreatingVersion, Converter={StaticResource BoolToVis}}"/>
+                    <Button Style="{StaticResource SecondaryButton}"
+                            Height="42" Margin="0,0,0,8" Padding="0"
                             Command="{Binding ShowInExplorerCommand}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE838;" FontFamily="Segoe MDL2 Assets" FontSize="13"
@@ -389,9 +390,8 @@
                                        Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource DarkPillButton}"
+                    <Button Style="{StaticResource DangerButton}"
                             Height="42" Padding="0"
-                            Background="#D46A6A"
                             Command="{Binding DeleteFileCommand}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="13"

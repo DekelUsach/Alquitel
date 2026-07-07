@@ -70,7 +70,7 @@ namespace Alquitel.UI.ViewModels
         };
     }
 
-    public partial class ProductEditorViewModel : ObservableObject
+    public partial class ProductEditorViewModel : ObservableObject, Alquitel.Core.Interfaces.IAsyncInitialization
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
 
@@ -94,6 +94,10 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty] private string _editCategory = "General";
         [ObservableProperty] private decimal _editBasePrice;
         [ObservableProperty] private string? _editImagePath;
+
+        // §2/§3: stock físico total y costo interno. Vacío = sin control / sin costo.
+        [ObservableProperty] private string _editStockQuantity = string.Empty;
+        [ObservableProperty] private string _editCost = string.Empty;
 
         // Segments that compose the product title (serialized to tagged string)
         public ObservableCollection<DescriptionSegmentViewModel> DescriptionSegments { get; } = new();
@@ -153,8 +157,11 @@ namespace Alquitel.UI.ViewModels
             _dbContextFactory = dbContextFactory;
             _productsView = CollectionViewSource.GetDefaultView(Products);
             _productsView.Filter = FilterProduct;
-            LoadProducts();
         }
+
+        // Loading happens here (invoked by NavigationService) instead of the constructor,
+        // so the DB hit no longer blocks the UI thread during navigation.
+        public async System.Threading.Tasks.Task InitializeAsync() => await LoadProductsAsync();
 
         partial void OnSearchTextChanged(string value)
         {
@@ -169,12 +176,22 @@ namespace Alquitel.UI.ViewModels
                 || product.Category.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
         }
 
-        private void LoadProducts()
+        private async System.Threading.Tasks.Task LoadProductsAsync()
         {
-            Products.Clear();
-            using var db = _dbContextFactory.CreateDbContext();
-            foreach (var p in db.Products.OrderBy(p => p.Category).ThenBy(p => p.Description).ToList())
-                Products.Add(p);
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var products = await db.Products.AsNoTracking()
+                    .OrderBy(p => p.Category).ThenBy(p => p.Description)
+                    .ToListAsync();
+                Products.Clear();
+                foreach (var p in products) Products.Add(p);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "LoadProductsAsync failed");
+                StatusMessage = $"✗ Error al cargar productos: {ex.Message}";
+            }
         }
 
         partial void OnSelectedProductChanged(Product? value)
@@ -196,6 +213,8 @@ namespace Alquitel.UI.ViewModels
             EditCategory = p.Category;
             EditBasePrice = p.BasePrice;
             EditImagePath = p.ImagePath;
+            EditStockQuantity = p.StockQuantity?.ToString() ?? string.Empty;
+            EditCost = p.Cost?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
 
             CustomFields.Clear();
             if (!string.IsNullOrWhiteSpace(p.CustomFieldsJson))
@@ -246,6 +265,8 @@ namespace Alquitel.UI.ViewModels
             EditCategory = "General";
             EditBasePrice = 0;
             EditImagePath = null;
+            EditStockQuantity = string.Empty;
+            EditCost = string.Empty;
             CustomFields.Clear();
 
             IsEditing = true;
@@ -287,7 +308,7 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private void SaveProduct()
+        private async System.Threading.Tasks.Task SaveProductAsync()
         {
             if (!DescriptionSegments.Any(s => !string.IsNullOrWhiteSpace(s.Text)))
             {
@@ -297,11 +318,11 @@ namespace Alquitel.UI.ViewModels
 
             try
             {
-                using var db = _dbContextFactory.CreateDbContext();
+                using var db = await _dbContextFactory.CreateDbContextAsync();
                 Product target;
                 if (SelectedProduct != null)
                 {
-                    target = db.Products.Find(SelectedProduct.Id) ?? new Product { Id = SelectedProduct.Id };
+                    target = await db.Products.FindAsync(SelectedProduct.Id) ?? new Product { Id = SelectedProduct.Id };
                     if (db.Entry(target).State == EntityState.Detached) db.Products.Add(target);
                 }
                 else
@@ -311,10 +332,10 @@ namespace Alquitel.UI.ViewModels
                 }
 
                 ApplyFormToProduct(target);
-                db.SaveChanges();
+                await db.SaveChangesAsync();
 
                 Guid savedId = target.Id;
-                LoadProducts();
+                await LoadProductsAsync();
                 SelectedProduct = Products.FirstOrDefault(p => p.Id == savedId);
                 StatusMessage = "✓ Producto guardado correctamente.";
             }
@@ -326,24 +347,24 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private void DeleteProduct()
+        private async System.Threading.Tasks.Task DeleteProductAsync()
         {
             if (SelectedProduct == null) return;
 
             try
             {
-                using var db = _dbContextFactory.CreateDbContext();
-                var tracked = db.Products.Find(SelectedProduct.Id);
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var tracked = await db.Products.FindAsync(SelectedProduct.Id);
                 if (tracked != null)
                 {
                     // Soft delete: mark as archived instead of physical removal.
                     // Global query filter ensures archived products are hidden from UI.
                     tracked.IsArchived = true;
-                    db.SaveChanges();
+                    await db.SaveChangesAsync();
                 }
                 SelectedProduct = null;
                 IsEditing = false;
-                LoadProducts();
+                await LoadProductsAsync();
                 StatusMessage = "✓ Producto archivado.";
             }
             catch (Exception ex)
@@ -363,12 +384,101 @@ namespace Alquitel.UI.ViewModels
             StatusMessage = string.Empty;
         }
 
+        /// <summary>
+        /// Crea una copia del producto seleccionado (descripción + " (copia)") y la
+        /// guarda directamente. Útil para variantes de un mismo equipo.
+        /// </summary>
+        [RelayCommand]
+        private async System.Threading.Tasks.Task DuplicateProductAsync()
+        {
+            if (SelectedProduct == null) return;
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var copy = new Product
+                {
+                    Description = SelectedProduct.Description + " (copia)",
+                    Category = SelectedProduct.Category,
+                    BasePrice = SelectedProduct.BasePrice,
+                    ImagePath = SelectedProduct.ImagePath,
+                    CustomFieldsJson = SelectedProduct.CustomFieldsJson
+                };
+                db.Products.Add(copy);
+                await db.SaveChangesAsync();
+
+                await LoadProductsAsync();
+                SelectedProduct = Products.FirstOrDefault(p => p.Id == copy.Id);
+                StatusMessage = "✓ Producto duplicado. Editá la copia y guardala.";
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "DuplicateProduct failed");
+                StatusMessage = $"✗ Error al duplicar: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Exporta el catálogo completo a CSV (separador ';' + BOM UTF-8 para Excel).
+        /// La descripción se exporta sin tags de estilo.
+        /// </summary>
+        [RelayCommand]
+        private void ExportCsv()
+        {
+            if (Products.Count == 0)
+            {
+                StatusMessage = "No hay productos para exportar.";
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "Archivo CSV (*.csv)|*.csv",
+                FileName = $"Catalogo_Alquitel_{DateTime.Now:yyyyMMdd}.csv"
+            };
+            if (dialog.ShowDialog() != true) return;
+
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Descripción;Categoría;Precio Base");
+                foreach (var p in Products)
+                {
+                    var plainDescription = TagParser.StripTags(p.Description);
+                    sb.AppendLine(string.Join(";",
+                        CsvField(plainDescription), CsvField(p.Category),
+                        p.BasePrice.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                }
+
+                System.IO.File.WriteAllText(dialog.FileName, sb.ToString(), new UTF8Encoding(true));
+                StatusMessage = $"✓ Se exportaron {Products.Count} productos.";
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "ExportCsv (products) failed");
+                StatusMessage = $"✗ Error al exportar: {ex.Message}";
+            }
+        }
+
+        private static string CsvField(string? value)
+        {
+            var v = value ?? string.Empty;
+            if (v.Contains(';') || v.Contains('"') || v.Contains('\n'))
+                v = $"\"{v.Replace("\"", "\"\"")}\"";
+            return v;
+        }
+
         private void ApplyFormToProduct(Product p)
         {
             p.Description = SerializeDescriptionSegments(DescriptionSegments);
             p.Category = EditCategory.Trim();
             p.BasePrice = EditBasePrice;
             p.ImagePath = EditImagePath;
+            p.StockQuantity = int.TryParse(EditStockQuantity.Trim(), out var stock) && stock >= 0
+                ? stock : null;
+            p.Cost = decimal.TryParse(EditCost.Trim(), System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.CurrentCulture, out var cost) && cost >= 0
+                ? cost : null;
 
             var definitions = CustomFields.Select(cf => new CustomFieldDefinition
             {

@@ -31,7 +31,16 @@ namespace Alquitel.Infrastructure.Services
                 var backupFileName = $"Alquitel_Backup_{DateTime.Now:yyyyMMdd_HHmmss}.db";
                 var backupPath = Path.Combine(AppPaths.BackupsFolder, backupFileName);
 
-                File.Copy(sourceDb, backupPath, overwrite: true);
+                // VACUUM INTO uses SQLite's own locking: the copy is always a consistent
+                // snapshot even while the app is writing (File.Copy could capture a torn state).
+                using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppPaths.DbConnectionString))
+                {
+                    conn.Open();
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = "VACUUM INTO $path";
+                    cmd.Parameters.AddWithValue("$path", backupPath);
+                    cmd.ExecuteNonQuery();
+                }
                 AppLog.Information("Database successfully backed up to {BackupPath}", backupPath);
                 
                 CleanupOldBackups();

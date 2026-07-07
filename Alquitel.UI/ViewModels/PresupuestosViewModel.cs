@@ -1,7 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Infrastructure;
+using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
+using Alquitel.Core.Interfaces.Repositories;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -18,6 +21,11 @@ namespace Alquitel.UI.ViewModels
         private readonly IAppSettings _appSettings;
         private readonly IDialogService _dialogService;
         private readonly IDispatcher _dispatcher;
+        private readonly IOrderRepository _orderRepository;
+        private readonly IProductRepository _productRepository;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly INavigationService _navigationService;
+        private readonly IServiceProvider _serviceProvider;
         private readonly ICollectionView _filesView;
         private FileSystemWatcher? _watcher;
 
@@ -42,22 +50,35 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _statusMessage = string.Empty;
 
+        [ObservableProperty]
+        private bool _isCreatingVersion;
+
         public ObservableCollection<PresupuestoFile> Files { get; } = new();
         public ICollectionView FilesView => _filesView;
 
-        public PresupuestosViewModel(IAppSettings appSettings, IDialogService dialogService, IDispatcher dispatcher)
+        public PresupuestosViewModel(IAppSettings appSettings, IDialogService dialogService, IDispatcher dispatcher,
+            IOrderRepository orderRepository, IProductRepository productRepository,
+            ICurrentUserService currentUserService,
+            INavigationService navigationService, IServiceProvider serviceProvider)
         {
             _appSettings = appSettings;
             _dialogService = dialogService;
             _dispatcher = dispatcher;
+            _orderRepository = orderRepository;
+            _productRepository = productRepository;
+            _currentUserService = currentUserService;
+            _navigationService = navigationService;
+            _serviceProvider = serviceProvider;
 
             _filesView = CollectionViewSource.GetDefaultView(Files);
             _filesView.Filter = FilterFile;
             _filesView.SortDescriptions.Add(
                 new SortDescription(nameof(PresupuestoFile.ModifiedDate), ListSortDirection.Descending));
 
-            // Initial folder from settings
-            FolderPath = _appSettings.PresupuestosFolder;
+            // Initial folder from settings. Write the backing field directly:
+            // setting the property would fire OnFolderPathChanged → InitializeAsync,
+            // duplicating the scan the NavigationService triggers right after.
+            _folderPath = _appSettings.PresupuestosFolder;
         }
 
         partial void OnFolderPathChanged(string value)
@@ -115,12 +136,21 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                var paths = Directory.GetFiles(FolderPath, "*.docx", SearchOption.TopDirectoryOnly);
-                foreach (var p in paths)
+                // Single background hop for the whole scan — one Task.Run per file
+                // serialized the I/O and thrashed the thread pool on large folders.
+                var folder = FolderPath;
+                var parsed = await Task.Run(() =>
                 {
-                    try { Files.Add(await Task.Run(() => PresupuestoFile.FromPath(p))); }
-                    catch (Exception ex) { AppLog.Warning(ex, "Skipping unreadable file {Path}", p); }
-                }
+                    var list = new List<PresupuestoFile>();
+                    foreach (var p in Directory.GetFiles(folder, "*.docx", SearchOption.TopDirectoryOnly))
+                    {
+                        try { list.Add(PresupuestoFile.FromPath(p)); }
+                        catch (Exception ex) { AppLog.Warning(ex, "Skipping unreadable file {Path}", p); }
+                    }
+                    return list;
+                });
+
+                foreach (var f in parsed) Files.Add(f);
 
                 StatusMessage = $"{Files.Count} archivo(s) — {FolderPath}";
                 StartWatching();
@@ -134,6 +164,11 @@ namespace Alquitel.UI.ViewModels
 
         private void StartWatching()
         {
+            // Reuse the live watcher when the folder didn't change — recreating it on
+            // every refresh caused watcher churn on each file event.
+            if (_watcher != null && string.Equals(_watcher.Path, FolderPath, StringComparison.OrdinalIgnoreCase))
+                return;
+
             DisposeWatcher();
             if (string.IsNullOrWhiteSpace(FolderPath) || !Directory.Exists(FolderPath)) return;
 
@@ -156,17 +191,24 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
-        private DateTime _lastFileSystemEvent = DateTime.MinValue;
-        private readonly TimeSpan _debounceDelay = TimeSpan.FromMilliseconds(300);
+        private System.Threading.Timer? _debounceTimer;
+        private const int DebounceMs = 300;
 
-        private async void OnFileChanged(object sender, FileSystemEventArgs e)
+        private void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            var now = DateTime.UtcNow;
-            if (now - _lastFileSystemEvent < _debounceDelay) return;
-            _lastFileSystemEvent = now;
+            // Trailing-edge debounce: every event pushes the reload 300ms into the
+            // future, so a burst of writes triggers exactly one refresh at the end.
+            // (The previous leading-edge version dropped events inside the window.)
+            var timer = _debounceTimer;
+            if (timer != null)
+            {
+                timer.Change(DebounceMs, System.Threading.Timeout.Infinite);
+                return;
+            }
 
-            await Task.Delay(_debounceDelay);
-            _dispatcher.InvokeAsync(() => _ = InitializeAsync());
+            _debounceTimer = new System.Threading.Timer(
+                _ => _dispatcher.InvokeAsync(() => _ = InitializeAsync()),
+                null, DebounceMs, System.Threading.Timeout.Infinite);
         }
 
         private void SyncPathToSettings()
@@ -246,6 +288,70 @@ namespace Alquitel.UI.ViewModels
             return PathValidator.IsDocxWithinRoot(fullPath, FolderPath);
         }
 
+        /// <summary>
+        /// Ramificación desde el historial: busca la orden del archivo seleccionado en la
+        /// base, abre el editor de versiones (BranchEditorWindow) y, al confirmar, genera
+        /// el documento de la rama nueva directamente.
+        /// </summary>
+        [RelayCommand]
+        private async Task CreateVersionAsync()
+        {
+            if (SelectedFile == null) return;
+
+            try
+            {
+                // El nombre de archivo guarda "31294(2)"; la base guarda "31294/2".
+                string dbNumber = BudgetNumberHelper.FromFileNameForm(SelectedFile.BudgetNumber);
+                var order = await _orderRepository.GetByBudgetNumberAsync(dbNumber)
+                         ?? await _orderRepository.GetByBudgetNumberAsync(SelectedFile.BudgetNumber);
+
+                if (order == null)
+                {
+                    _dialogService.ShowWarning("Nueva versión",
+                        $"El presupuesto {SelectedFile.BudgetNumber} no está registrado en la base de datos " +
+                        "(probablemente el archivo se generó fuera de la app o con otro número). " +
+                        "Solo se pueden ramificar presupuestos registrados.");
+                    return;
+                }
+
+                var numbers = await _orderRepository.GetAllBudgetNumbersAsync();
+                string newNumber = BudgetNumberHelper.NextVersion(order.BudgetNumber, numbers);
+
+                // Catálogo activo para poder agregar productos nuevos a la versión.
+                var catalog = await _productRepository.GetAllAsync();
+
+                var editorVm = new BranchEditorViewModel(order, newNumber, catalog);
+                var editor = new Views.BranchEditorWindow(editorVm)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+
+                if (editor.ShowDialog() != true) return;
+
+                var branch = editorVm.BuildBranchOrder(_currentUserService.Current);
+
+                // Genera el documento de la nueva versión directamente, sin pasar por
+                // la pantalla del armador de presupuestos.
+                IsCreatingVersion = true;
+                try
+                {
+                    var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+                    builder.LoadBranchOrder(branch);
+                    await builder.GenerateBudgetCommand.ExecuteAsync(null);
+                }
+                finally
+                {
+                    IsCreatingVersion = false;
+                }
+                IsDetailPanelOpen = false;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "CreateVersionAsync failed for {File}", SelectedFile?.FileName);
+                _dialogService.ShowError("Error al crear versión", ex.Message);
+            }
+        }
+
         [RelayCommand]
         private void ShowInExplorer()
         {
@@ -318,7 +424,12 @@ namespace Alquitel.UI.ViewModels
             _watcher = null;
         }
 
-        public void Dispose() => DisposeWatcher();
+        public void Dispose()
+        {
+            DisposeWatcher();
+            _debounceTimer?.Dispose();
+            _debounceTimer = null;
+        }
     }
 
     public class PresupuestoFile

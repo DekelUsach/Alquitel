@@ -4,11 +4,28 @@
         xmlns:vm="clr-namespace:Alquitel.UI.ViewModels"
         xmlns:views="clr-namespace:Alquitel.UI.Views"
         Title="Grupo Alquitel - Sistema Administrativo" Height="900" Width="1440"
+        MinHeight="600" MinWidth="1000"
+        ResizeMode="CanResize"
+        FontFamily="{StaticResource AppFontFamily}"
         Background="{DynamicResource BackgroundBrush}"
         Foreground="{DynamicResource TextBrush}"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="Manual">
+
+    <!-- Atajos de teclado para navegación rápida -->
+    <Window.InputBindings>
+        <KeyBinding Modifiers="Control" Key="D1" Command="{Binding NavigateToDashboardCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D2" Command="{Binding NavigateToBuilderCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D3" Command="{Binding NavigateToProductsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D4" Command="{Binding NavigateToClientsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D5" Command="{Binding NavigateToLocationsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D6" Command="{Binding NavigateToPresupuestosCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D7" Command="{Binding NavigateToSettingsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D8" Command="{Binding NavigateToReportsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="T" Command="{Binding ToggleThemeCommand}"/>
+    </Window.InputBindings>
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- ViewModel → View mapping -->
         <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
             <views:DashboardView/>
@@ -31,16 +48,73 @@
         <DataTemplate DataType="{x:Type vm:LocationsViewModel}">
             <views:LocationsView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ReportsViewModel}">
+            <views:ReportsView/>
+        </DataTemplate>
+
+        <!-- Ítem de navegación: ícono (Tag) + etiqueta (Content) + indicador (BorderBrush) -->
+        <Style x:Key="NavItemButton" TargetType="Button">
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Margin" Value="12,2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="3" Height="18" CornerRadius="2"
+                                        Background="{TemplateBinding BorderBrush}" Margin="4,0,0,0"/>
+                                <TextBlock Grid.Column="1" Text="{TemplateBinding Tag}"
+                                           FontFamily="{StaticResource IconFont}" FontSize="16"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{TemplateBinding Content}"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Encabezado de grupo del menú -->
+        <Style x:Key="NavGroupLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="Opacity" Value="0.7"/>
+            <Setter Property="Margin" Value="24,18,0,6"/>
+        </Style>
     </Window.Resources>
 
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="72"/>   <!-- Sidebar -->
+            <ColumnDefinition Width="236"/>  <!-- Sidebar -->
             <ColumnDefinition Width="*"/>    <!-- Content -->
         </Grid.ColumnDefinitions>
 
         <!-- ═══════════════ SIDEBAR ═══════════════ -->
-        <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}"
+        <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource SidebarBrush}"
                 BorderThickness="0,0,1,0" BorderBrush="{DynamicResource BorderBrush}">
             <Grid>
                 <Grid.RowDefinitions>
@@ -49,309 +123,204 @@
                     <RowDefinition Height="Auto"/>  <!-- Theme Toggle -->
                 </Grid.RowDefinitions>
 
-                <!-- Logo -->
-                <Border Grid.Row="0" Margin="0,20,0,30" HorizontalAlignment="Center">
-                    <Border Width="44" Height="44" CornerRadius="12"
+                <!-- Marca -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="20,22,0,10">
+                    <Border Width="40" Height="40" CornerRadius="12"
                             Background="{DynamicResource SecondaryColorBrush}">
-                        <TextBlock Text="A" FontSize="22" FontWeight="Black" Foreground="White"
+                        <TextBlock Text="A" FontSize="20" FontWeight="Black" Foreground="White"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                </Border>
+                    <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                        <TextBlock Text="ALQUITEL" FontSize="15" FontWeight="Black"
+                                   FontFamily="{StaticResource AppDisplayFontFamily}"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                        <TextBlock Text="Gestión Corporativa" FontSize="10"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                </StackPanel>
 
-                <!-- Nav Buttons -->
-                <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                    <!-- Dashboard -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Dashboard"
-                            Command="{Binding NavigateToDashboardCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                           x:Name="navIcon"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Dashboard">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                <!-- Menú -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="GENERAL" Style="{StaticResource NavGroupLabel}"/>
 
-                    <!-- Budget Builder -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Crear Presupuesto"
-                            Command="{Binding NavigateToBuilderCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuesto">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <Button Tag="&#xE80F;" Content="Dashboard" ToolTip="Panel de control (Ctrl+1)"
+                                Command="{Binding NavigateToDashboardCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Dashboard">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
 
-                    <!-- Products -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Gestión de Productos"
-                            Command="{Binding NavigateToProductsCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE7BF;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Productos">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <Button Tag="&#xE8A5;" Content="Crear Presupuesto" ToolTip="Armar presupuesto / OT (Ctrl+2)"
+                                Command="{Binding NavigateToBuilderCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuesto">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
 
-                    <!-- Clients -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Directorio de Clientes"
-                            Command="{Binding NavigateToClientsCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE716;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Clientes">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <Button Tag="&#xE9F9;" Content="Presupuestos" ToolTip="Listado de documentos generados (Ctrl+6)"
+                                Command="{Binding NavigateToPresupuestosCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuestos">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
 
-                    <!-- Locations -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Gestión de Ubicaciones"
-                            Command="{Binding NavigateToLocationsCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE707;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Ubicaciones">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <Button Tag="&#xE9D9;" Content="Reportes" ToolTip="Facturación y rentabilidad (Ctrl+8)"
+                                Command="{Binding NavigateToReportsCommand}"
+                                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Reportes">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
 
-                    <!-- Presupuestos List -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Listado de Presupuestos"
-                            Command="{Binding NavigateToPresupuestosCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE9F9;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuestos">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <TextBlock Text="CATÁLOGO" Style="{StaticResource NavGroupLabel}"/>
 
-                    <!-- Settings -->
-                    <Button Width="48" Height="48" Margin="0,4" Cursor="Hand"
-                            ToolTip="Configuración"
-                            Command="{Binding NavigateToSettingsCommand}">
+                        <Button Tag="&#xE7BF;" Content="Productos" ToolTip="Gestión de productos (Ctrl+3)"
+                                Command="{Binding NavigateToProductsCommand}"
+                                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Productos">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Tag="&#xE716;" Content="Clientes" ToolTip="Directorio de clientes (Ctrl+4)"
+                                Command="{Binding NavigateToClientsCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Clientes">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Tag="&#xE707;" Content="Ubicaciones" ToolTip="Gestión de ubicaciones (Ctrl+5)"
+                                Command="{Binding NavigateToLocationsCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Ubicaciones">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <TextBlock Text="SISTEMA" Style="{StaticResource NavGroupLabel}"
+                                   Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
+
+                        <Button Tag="&#xE713;" Content="Configuración" ToolTip="Rutas y plantillas (Ctrl+7)"
+                                Command="{Binding NavigateToSettingsCommand}"
+                                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Configuración">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Tema + versión -->
+                <StackPanel Grid.Row="2" Margin="0,0,0,14">
+                    <Separator Background="{DynamicResource BorderBrush}" Margin="16,0,16,10" Height="1"/>
+                    <Button ToolTip="Cambiar tema claro/oscuro (Ctrl+T)"
+                            Command="{Binding ToggleThemeCommand}">
                         <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="navBg" Background="{TemplateBinding Background}"
-                                                    CornerRadius="14" Padding="0">
-                                                <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="navBg" Property="Background"
-                                                            Value="{DynamicResource HoverBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                <Setter Property="Tag" Value="&#xE708;"/>
+                                <Setter Property="Content" Value="Modo oscuro"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveSection}" Value="Configuración">
-                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                    <DataTrigger Binding="{Binding IsDarkMode}" Value="True">
+                                        <Setter Property="Tag" Value="&#xE706;"/>
+                                        <Setter Property="Content" Value="Modo claro"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
                     </Button>
                 </StackPanel>
-
-                <!-- Theme Toggle (bottom of sidebar) -->
-                <Button Grid.Row="2" Width="48" Height="48" Margin="0,0,0,20" Cursor="Hand"
-                        ToolTip="Cambiar tema claro/oscuro"
-                        Command="{Binding ToggleThemeCommand}">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border x:Name="themeBg" Background="{TemplateBinding Background}"
-                                                CornerRadius="14">
-                                            <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                       Foreground="{DynamicResource MutedTextBrush}"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                       x:Name="themeIcon">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="&#xE708;"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsDarkMode}" Value="True">
-                                                                <Setter Property="Text" Value="&#xE706;"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="themeBg" Property="Background"
-                                                        Value="{DynamicResource HoverBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </Button.Style>
-                </Button>
             </Grid>
         </Border>
 
         <!-- ═══════════════ CONTENT AREA ═══════════════ -->
-        <ContentControl Grid.Column="1" Content="{Binding CurrentViewModel}"/>
+        <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding CurrentViewModel}"/>
+
+        <!-- ═══════════════ STATUS BAR ═══════════════ -->
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{DynamicResource SurfaceBrush}"
+                BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrush}" Height="28">
+            <Grid Margin="16,0">
+                <TextBlock Text="Grupo Alquitel · Sistema de Gestión Interna"
+                           FontSize="11" Foreground="{DynamicResource MutedTextBrush}"
+                           VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE77B;" FontFamily="{StaticResource IconFont}" FontSize="11"
+                               Foreground="{DynamicResource SecondaryColorBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock FontSize="11" Foreground="{DynamicResource MutedTextBrush}"
+                               VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Run Text="{Binding CurrentUserName, Mode=OneWay}" FontWeight="SemiBold"/><Run Text=" · "/><Run Text="{Binding CurrentUserRoleLabel, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Text="&#xEDA2;" FontFamily="{StaticResource IconFont}" FontSize="11"
+                               Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding DatabaseModeLabel, Mode=OneWay}" FontSize="11"
+                               Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <TextBlock Text="{Binding AppVersion}" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

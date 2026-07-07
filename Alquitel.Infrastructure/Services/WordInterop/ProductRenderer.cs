@@ -8,32 +8,46 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 {
     public static class ProductRenderer
     {
-        private static readonly string FONT_NAME;
+        // Siempre Montserrat, como el presupuesto corporativo de referencia. Si la fuente
+        // no está instalada en el puesto que genera, Word muestra un sustituto pero el
+        // documento conserva "Montserrat" y se ve correcto en cualquier máquina que la tenga.
+        private const string FONT_NAME = "Montserrat";
 
-        static ProductRenderer()
-        {
-            FONT_NAME = "Calibri";
-            try
-            {
-                using var fonts = new System.Drawing.Text.InstalledFontCollection();
-                foreach (var f in fonts.Families)
-                {
-                    if (f.Name.Equals("Montserrat", StringComparison.OrdinalIgnoreCase))
-                    {
-                        FONT_NAME = "Montserrat";
-                        break;
-                    }
-                }
-            }
-            catch { }
-        }
+        /// <summary>
+        /// Bookmark colocado por WordDocumentService al inicio del párrafo que sigue a
+        /// {{PRODUCTOS_AQUI}} (el que ancla la línea divisoria celeste y el bloque
+        /// "Incluye en todos los casos"). El renderizado nunca escribe dentro de ese
+        /// párrafo: sin esta guarda, la línea terminaba flotando entre los productos.
+        /// </summary>
+        public const string EndGuardBookmark = "__ALQ_FIN_PRODUCTOS";
 
         public static void RenderProduct(dynamic doc, dynamic wordApp, ref dynamic insertRange, OrderItem item, bool isTechnical)
         {
+            // Si el punto de inserción alcanzó (o pasó) el párrafo de cierre, crear un
+            // párrafo nuevo ANTES de él y seguir ahí: el contenido del producto jamás
+            // debe entrar al párrafo que ancla la línea divisoria.
+            try
+            {
+                if (doc.Bookmarks.Exists(EndGuardBookmark))
+                {
+                    int guardPos = (int)doc.Bookmarks(EndGuardBookmark).Range.Start;
+                    if ((int)insertRange.End >= guardPos)
+                    {
+                        var guardRange = doc.Range(guardPos, guardPos);
+                        guardRange.InsertParagraphBefore();
+                        insertRange = doc.Range(guardRange.Start, guardRange.Start);
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Warning(ex, "End-guard repositioning failed"); }
+
             // ── 1. TITLE PARAGRAPH ──
             insertRange.Collapse(0);
             ResetParagraphStyle(doc, insertRange);
             insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
+            insertRange.ParagraphFormat.FirstLineIndent = 0;
+            insertRange.ParagraphFormat.RightIndent = 0;
+            insertRange.ParagraphFormat.Alignment = 0; // wdAlignParagraphLeft
             insertRange.ParagraphFormat.SpaceBefore = 6;
             insertRange.ParagraphFormat.SpaceAfter = 0;
 
@@ -49,24 +63,27 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                     int titleEnd   = (int)insertRange.Paragraphs[1].Range.End;
                     var anchorRange = doc.Range(titleStart, titleStart);
 
+                    // El presupuesto de referencia usa miniaturas de ~1.6 cm ancladas detrás
+                    // del texto, en el margen que deja la sangría de 1.9 cm del título.
                     dynamic shape = doc.Shapes.AddPicture(
                         FileName: item.ImagePath,
                         LinkToFile: false,
                         SaveWithDocument: true,
                         Left: 0f,
                         Top: 0f,
-                        Width: wordApp.CentimetersToPoints(2.5f),
-                        Height: wordApp.CentimetersToPoints(2.5f),
+                        Width: wordApp.CentimetersToPoints(1.6f),
+                        Height: wordApp.CentimetersToPoints(1.6f),
                         Anchor: anchorRange);
 
-                    shape.WrapFormat.Type = 3; // wdWrapTight
-                    shape.WrapFormat.Side = 2; // wdWrapRight
+                    try { shape.WrapFormat.Type = 5; /* wdWrapBehind */ }
+                    catch { shape.WrapFormat.Type = 3; /* wdWrapNone */ }
+                    try { shape.ZOrder(5); /* msoSendBehindText */ } catch { }
                     shape.RelativeHorizontalPosition = 2; // wdRelativeHorizontalPositionColumn
                     shape.RelativeVerticalPosition   = 3; // wdRelativeVerticalPositionParagraph
                     shape.Left = wordApp.CentimetersToPoints(0f);
                     shape.Top  = wordApp.CentimetersToPoints(0f);
                 }
-                catch { /* image insert is best-effort */ }
+                catch (Exception ex) { AppLog.Warning(ex, "Best-effort image insert failed for {ImagePath}", item.ImagePath); }
             }
 
             insertRange.Collapse(0);
@@ -84,9 +101,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                         foreach (var f in fields)
                         {
                             ResetParagraphStyle(doc, insertRange);
-                            insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
-                            insertRange.ParagraphFormat.SpaceBefore = 0;
-                            insertRange.ParagraphFormat.SpaceAfter = 0;
+                            ApplyDetailParagraphFormat(wordApp, insertRange);
 
                             string fieldColorHex = string.IsNullOrEmpty(f.ColorHex) ? "#000000" : f.ColorHex;
 
@@ -114,16 +129,14 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { AppLog.Warning(ex, "Rendering custom fields failed for item {ItemId}", item.Id); }
             }
 
             // ── 3. REQUESTED MEASURE ──
             if (!string.IsNullOrWhiteSpace(item.RequestedMeasure))
             {
                 ResetParagraphStyle(doc, insertRange);
-                insertRange.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(1.9f);
-                insertRange.ParagraphFormat.SpaceBefore = 0;
-                insertRange.ParagraphFormat.SpaceAfter = 0;
+                ApplyDetailParagraphFormat(wordApp, insertRange);
 
                 AppendSegments(insertRange, new[] {
                     new TextSegment { Text = "Medida solicitada: ", ColorHex = "#000000", Bold = true, Underline = true }
@@ -136,24 +149,30 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             }
 
             insertRange.ParagraphFormat.LeftIndent = 0;
+            insertRange.ParagraphFormat.FirstLineIndent = 0;
+            insertRange.ParagraphFormat.RightIndent = 0;
+            insertRange.ParagraphFormat.Alignment = 0; // wdAlignParagraphLeft
             insertRange.InsertParagraphAfter();
             insertRange.Collapse(0);
 
             // ── 4. SUMMARY TABLE 1×4 ──
+            // Geometría calcada del presupuesto de referencia: 12 cm de ancho total
+            // (2.0/1.75/3.44/4.81) con sangría izquierda de 5.25 cm desde el margen.
             var summaryTable = doc.Tables.Add(insertRange, 1, 4);
             summaryTable.AllowAutoFit = false;
             try
             {
-                summaryTable.Rows.Alignment = 1; // wdAlignRowCenter
+                summaryTable.Rows.Alignment = 0; // wdAlignRowLeft
+                summaryTable.Rows.SetLeftIndent(wordApp.CentimetersToPoints(5.25f), 0 /*wdAdjustNone*/);
                 summaryTable.Rows.HeightRule = 2; // wdRowHeightExact
-                summaryTable.Rows.Height = wordApp.CentimetersToPoints(0.65f);
+                summaryTable.Rows.Height = wordApp.CentimetersToPoints(0.63f);
             }
             catch { }
 
-            summaryTable.Cell(1, 1).Width = wordApp.CentimetersToPoints(2.2f);
-            summaryTable.Cell(1, 2).Width = wordApp.CentimetersToPoints(2.0f);
-            summaryTable.Cell(1, 3).Width = wordApp.CentimetersToPoints(4.0f);
-            summaryTable.Cell(1, 4).Width = wordApp.CentimetersToPoints(5.0f);
+            summaryTable.Cell(1, 1).Width = wordApp.CentimetersToPoints(2.0f);
+            summaryTable.Cell(1, 2).Width = wordApp.CentimetersToPoints(1.75f);
+            summaryTable.Cell(1, 3).Width = wordApp.CentimetersToPoints(3.44f);
+            summaryTable.Cell(1, 4).Width = wordApp.CentimetersToPoints(4.81f);
 
             try
             {
@@ -164,10 +183,10 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             }
             catch { }
 
-            string c1 = $"Cant.: {item.Quantity}";
-            string c2 = $"Días: {item.Dias}";
-            string c3 = isTechnical ? "Costo U.: -----" : $"Costo U.: {(item.UnitPrice == 0 ? "-----" : item.UnitPrice.ToString("N0", new System.Globalization.CultureInfo("es-AR")))}";
-            string c4 = isTechnical ? "Total: -----" : $"Total: $ {item.Total.ToString("N0", new System.Globalization.CultureInfo("es-AR"))}";
+            string c1 = $"Cant.:  {item.Quantity}";
+            string c2 = $"Días:  {item.Dias}";
+            string c3 = isTechnical ? "Costo U.:     -----" : $"Costo U.:  {(item.UnitPrice == 0 ? "   -----" : item.UnitPrice.ToString("N0", new System.Globalization.CultureInfo("es-AR")))}";
+            string c4 = isTechnical ? "Total: -----" : $"Total: $   {item.Total.ToString("N0", new System.Globalization.CultureInfo("es-AR"))}";
 
             string[] cells = { c1, c2, c3, c4 };
             for (int c = 1; c <= 4; c++)
@@ -178,17 +197,35 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 var cr = cell.Range;
                 cr.Text = cells[c - 1];
                 cr.Font.Name = FONT_NAME;
-                cr.Font.Size = 10;
+                cr.Font.Size = c == 4 ? 12 : 10; // el "Total" va en 12pt como en el modelo
                 cr.Font.Bold = 1;
                 cr.Font.Color = TagParserInterop.WD_WHITE;
-                cr.ParagraphFormat.Alignment = c == 1 || c == 2 ? 1 : 0;
+                cr.ParagraphFormat.Alignment = 0; // wdAlignParagraphLeft
             }
 
             int after = (int)summaryTable.Range.End;
-            insertRange = doc.Range(after, after);
-            insertRange.InsertParagraphAfter();
-            insertRange.InsertParagraphAfter();
-            insertRange.Collapse(0);
+            int guardStart = int.MaxValue;
+            try
+            {
+                if (doc.Bookmarks.Exists(EndGuardBookmark))
+                    guardStart = (int)doc.Bookmarks(EndGuardBookmark).Range.Start;
+            }
+            catch { }
+
+            if (after >= guardStart)
+            {
+                // La tabla quedó pegada al párrafo de cierre: no insertar separadores acá
+                // (entrarían al párrafo que ancla la línea divisoria). El próximo producto
+                // crea su propio párrafo antes del cierre vía la guarda inicial.
+                insertRange = doc.Range(guardStart, guardStart);
+            }
+            else
+            {
+                insertRange = doc.Range(after, after);
+                insertRange.InsertParagraphAfter();
+                insertRange.InsertParagraphAfter();
+                insertRange.Collapse(0);
+            }
         }
 
         private static void AppendSegments(dynamic range, IEnumerable<TextSegment> segments, int sizePt)
@@ -212,6 +249,22 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 try { range.Font.Underline = s.Underline ? 1 : 0; } catch { }
                 range.Collapse(0);
             }
+        }
+
+        /// <summary>
+        /// Formato de párrafo de las líneas de especificaciones, calcado del presupuesto
+        /// de referencia: sangría izquierda 0.66 cm + primera línea 1.25 cm (arranca a
+        /// 1.9 cm, las líneas envueltas vuelven a 0.66), sangría derecha 0.81 cm,
+        /// justificado.
+        /// </summary>
+        private static void ApplyDetailParagraphFormat(dynamic wordApp, dynamic range)
+        {
+            range.ParagraphFormat.LeftIndent = wordApp.CentimetersToPoints(0.66f);
+            range.ParagraphFormat.FirstLineIndent = wordApp.CentimetersToPoints(1.25f);
+            range.ParagraphFormat.RightIndent = wordApp.CentimetersToPoints(0.81f);
+            range.ParagraphFormat.Alignment = 3; // wdAlignParagraphJustify
+            range.ParagraphFormat.SpaceBefore = 0;
+            range.ParagraphFormat.SpaceAfter = 0;
         }
 
         private static void ResetParagraphStyle(dynamic doc, dynamic range)
