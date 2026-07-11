@@ -13,8 +13,17 @@ namespace Alquitel.Infrastructure.Services
 {
     /// <summary>
     /// Implementación de <see cref="ITemplateStorageService"/> contra Supabase Storage
-    /// (bucket privado "templates", API REST /storage/v1). Usa la anon key del proyecto;
-    /// el bucket tiene policies propias y el resto del storage queda inaccesible.
+    /// (bucket privado "templates", API REST /storage/v1).
+    ///
+    /// Modelo de credenciales (dos llaves):
+    ///  - <b>anon key</b>: viaja en cada binario. Solo LECTURA del bucket (policy
+    ///    templates_read_anon). Sirve para que cada puesto descargue la plantilla vigente.
+    ///  - <b>service key</b>: solo presente en la máquina del Admin (variable de entorno
+    ///    ALQUITEL_Database__Supabase__ServiceKey o appsettings.local.json). Requerida para
+    ///    PUBLICAR/actualizar plantillas. No se commitea ni se distribuye en el binario.
+    ///
+    /// Así un atacante que extrae la anon key del ejecutable no puede sobrescribir las
+    /// plantillas .docx (vector de RCE vía macros): solo puede leerlas.
     /// Cada descarga exitosa se cachea en %LocalAppData%\Alquitel\templates_cache para
     /// que la generación de documentos funcione sin internet con la última versión.
     /// </summary>
@@ -26,15 +35,21 @@ namespace Alquitel.Infrastructure.Services
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
         private readonly string _url;
-        private readonly string _apiKey;
+        private readonly string _anonKey;
+        private readonly string _serviceKey;
 
-        public SupabaseTemplateStorageService(string? url, string? apiKey)
+        public SupabaseTemplateStorageService(string? url, string? anonKey, string? serviceKey)
         {
             _url = (url ?? string.Empty).TrimEnd('/');
-            _apiKey = apiKey ?? string.Empty;
+            _anonKey = anonKey ?? string.Empty;
+            _serviceKey = serviceKey ?? string.Empty;
         }
 
-        public bool IsConfigured => !string.IsNullOrWhiteSpace(_url) && !string.IsNullOrWhiteSpace(_apiKey);
+        /// <summary>True cuando hay Url + anon key: permite descargar/consultar plantillas.</summary>
+        public bool IsConfigured => !string.IsNullOrWhiteSpace(_url) && !string.IsNullOrWhiteSpace(_anonKey);
+
+        /// <summary>True solo en la máquina que tiene la service key: permite publicar.</summary>
+        public bool CanPublish => !string.IsNullOrWhiteSpace(_url) && !string.IsNullOrWhiteSpace(_serviceKey);
 
         private static string ObjectName(TemplateKind kind) => kind switch
         {
@@ -47,24 +62,28 @@ namespace Alquitel.Infrastructure.Services
         private static string CachePath(TemplateKind kind) =>
             Path.Combine(AppPaths.TemplatesCacheFolder, ObjectName(kind));
 
-        private HttpRequestMessage NewRequest(HttpMethod method, string relativePath)
+        private HttpRequestMessage NewRequest(HttpMethod method, string relativePath, string key)
         {
             var req = new HttpRequestMessage(method, $"{_url}/storage/v1/{relativePath}");
-            req.Headers.Add("apikey", _apiKey);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            req.Headers.Add("apikey", key);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             return req;
         }
 
         public async Task PublishTemplateAsync(TemplateKind kind, string localFilePath)
         {
-            if (!IsConfigured)
-                throw new InvalidOperationException("El almacenamiento de plantillas en la nube no está configurado (falta Url/AnonKey de Supabase).");
+            if (!CanPublish)
+                throw new InvalidOperationException(
+                    "Esta máquina no puede publicar plantillas: falta la service key de Supabase. " +
+                    "Configurá la variable de entorno ALQUITEL_Database__Supabase__ServiceKey " +
+                    "(o Database:Supabase:ServiceKey en appsettings.local.json) solo en el equipo del Admin. " +
+                    "La anon key incluida en la app es de solo lectura.");
             if (!File.Exists(localFilePath))
                 throw new FileNotFoundException("No se encontró el archivo de plantilla a publicar.", localFilePath);
 
             byte[] bytes = await File.ReadAllBytesAsync(localFilePath);
 
-            using var req = NewRequest(HttpMethod.Post, $"object/{Bucket}/{ObjectName(kind)}");
+            using var req = NewRequest(HttpMethod.Post, $"object/{Bucket}/{ObjectName(kind)}", _serviceKey);
             req.Headers.Add("x-upsert", "true");
             req.Content = new ByteArrayContent(bytes);
             req.Content.Headers.ContentType = new MediaTypeHeaderValue(DocxMime);
@@ -95,7 +114,7 @@ namespace Alquitel.Infrastructure.Services
 
             try
             {
-                using var req = NewRequest(HttpMethod.Get, $"object/{Bucket}/{ObjectName(kind)}");
+                using var req = NewRequest(HttpMethod.Get, $"object/{Bucket}/{ObjectName(kind)}", _anonKey);
                 using var resp = await _http.SendAsync(req);
 
                 if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -125,7 +144,7 @@ namespace Alquitel.Infrastructure.Services
 
             try
             {
-                using var req = NewRequest(HttpMethod.Post, $"object/list/{Bucket}");
+                using var req = NewRequest(HttpMethod.Post, $"object/list/{Bucket}", _anonKey);
                 req.Content = new StringContent(
                     JsonSerializer.Serialize(new { prefix = "", limit = 100 }),
                     Encoding.UTF8, "application/json");

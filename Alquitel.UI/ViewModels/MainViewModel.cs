@@ -41,10 +41,24 @@ namespace Alquitel.UI.ViewModels
         /// <summary>Gate de rol: los Vendedores no ven Productos, Reportes ni Configuración.</summary>
         public bool IsAdmin => _currentUserService.IsAdmin;
 
+        /// <summary>Rol de depósito: solo ve las Órdenes de Trabajo.</summary>
+        public bool IsArmador =>
+            _currentUserService.Current?.Role == Alquitel.Core.Entities.UserRole.Armador;
+
+        /// <summary>Gate de las secciones comerciales (todo menos OT). Falso para el Armador.</summary>
+        public bool IsCommercial => !IsArmador;
+
+        /// <summary>La sección de OT la ven el Admin y el Armador.</summary>
+        public bool CanSeeWorkOrders => IsAdmin || IsArmador;
+
         public string CurrentUserName => _currentUserService.Current?.Name ?? string.Empty;
 
-        public string CurrentUserRoleLabel =>
-            _currentUserService.Current?.Role == Alquitel.Core.Entities.UserRole.Admin ? "Admin" : "Vendedor";
+        public string CurrentUserRoleLabel => _currentUserService.Current?.Role switch
+        {
+            Alquitel.Core.Entities.UserRole.Admin => "Admin",
+            Alquitel.Core.Entities.UserRole.Armador => "Armador",
+            _ => "Vendedor"
+        };
 
         /// <summary>Etiqueta de la barra de estado: base local o servidor compartido.</summary>
         public string DatabaseModeLabel => _remoteSyncService.IsRemoteConfigured
@@ -72,19 +86,23 @@ namespace Alquitel.UI.ViewModels
 
         public void Initialize()
         {
-            NavigateToDashboard();
+            // El Armador entra directo a su única pantalla: las Órdenes de Trabajo.
+            if (IsArmador)
+                NavigateToWorkOrders();
+            else
+                NavigateToDashboard();
         }
 
         // ── Navigation Commands ──────────────────────────────────────
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
         private void NavigateToDashboard()
         {
             ActiveSection = "Dashboard";
             _navigationService.NavigateTo<DashboardViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
         private void NavigateToBuilder()
         {
             ActiveSection = "Presupuesto";
@@ -112,21 +130,35 @@ namespace Alquitel.UI.ViewModels
             _navigationService.NavigateTo<ReportsViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
         private void NavigateToPresupuestos()
         {
             ActiveSection = "Presupuestos";
             _navigationService.NavigateTo<PresupuestosViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
+        private void NavigateToOrderPool()
+        {
+            ActiveSection = "Seguimiento";
+            _navigationService.NavigateTo<OrderPoolViewModel>();
+        }
+
+        [RelayCommand(CanExecute = nameof(CanSeeWorkOrders))]
+        private void NavigateToWorkOrders()
+        {
+            ActiveSection = "OrdenesTrabajo";
+            _navigationService.NavigateTo<WorkOrdersViewModel>();
+        }
+
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
         private void NavigateToClients()
         {
             ActiveSection = "Clientes";
             _navigationService.NavigateTo<ClientsViewModel>();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsCommercial))]
         private void NavigateToLocations()
         {
             ActiveSection = "Ubicaciones";

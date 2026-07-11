@@ -41,6 +41,9 @@ namespace Alquitel.UI.ViewModels
             await LoadLocationsAsync();
         }
 
+        [RelayCommand]
+        private async Task RefreshAsync() => await LoadLocationsAsync();
+
         private async Task LoadLocationsAsync()
         {
             try

@@ -88,6 +88,30 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                 .Sum(c => c.Quantity);
         }
 
+        public async Task<UserOrderStats> GetUserStatsAsync(Guid userId, string userName)
+        {
+            using var db = await _factory.CreateDbContextAsync();
+
+            var orders = db.Orders.IgnoreQueryFilters().AsNoTracking()
+                .Where(o => o.CreatedByUserId == userId || o.AdminName == userName);
+
+            var count = await orders.CountAsync();
+            if (count == 0)
+                return new UserOrderStats(0, 0m, null, null);
+
+            var last = await orders
+                .OrderByDescending(o => o.CreatedDate)
+                .Select(o => new { o.CreatedDate, o.BudgetNumber })
+                .FirstAsync();
+
+            var total = await db.OrderItems.IgnoreQueryFilters().AsNoTracking()
+                .Where(i => db.Orders.IgnoreQueryFilters().Any(o =>
+                    o.Id == i.OrderId && (o.CreatedByUserId == userId || o.AdminName == userName)))
+                .SumAsync(i => (decimal?)(i.Quantity * i.UnitPrice * i.Dias)) ?? 0m;
+
+            return new UserOrderStats(count, total, last.CreatedDate, last.BudgetNumber);
+        }
+
         public async Task UpsertAsync(Order order)
         {
             using var db = await _factory.CreateDbContextAsync();

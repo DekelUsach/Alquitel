@@ -59,3 +59,7 @@ youtube-screenshot.png
 
 # Configuración de usuario (paths locales, no committear)
 /settings.json
+
+# Secretos por máquina (connection string real, service key de Supabase).
+# NUNCA committear: sobreescriben appsettings.json solo en el equipo desplegado.
+appsettings.local.json

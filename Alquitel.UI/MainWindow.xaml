@@ -21,6 +21,7 @@
         <KeyBinding Modifiers="Control" Key="D6" Command="{Binding NavigateToPresupuestosCommand}"/>
         <KeyBinding Modifiers="Control" Key="D7" Command="{Binding NavigateToSettingsCommand}"/>
         <KeyBinding Modifiers="Control" Key="D8" Command="{Binding NavigateToReportsCommand}"/>
+        <KeyBinding Modifiers="Control" Key="D9" Command="{Binding NavigateToOrderPoolCommand}"/>
         <KeyBinding Modifiers="Control" Key="T" Command="{Binding ToggleThemeCommand}"/>
     </Window.InputBindings>
 
@@ -50,6 +51,12 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type vm:ReportsViewModel}">
             <views:ReportsView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:WorkOrdersViewModel}">
+            <views:WorkOrdersView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:OrderPoolViewModel}">
+            <views:OrderPoolView/>
         </DataTemplate>
 
         <!-- Ítem de navegación: ícono (Tag) + etiqueta (Content) + indicador (BorderBrush) -->
@@ -145,7 +152,8 @@
                         <TextBlock Text="GENERAL" Style="{StaticResource NavGroupLabel}"/>
 
                         <Button Tag="&#xE80F;" Content="Dashboard" ToolTip="Panel de control (Ctrl+1)"
-                                Command="{Binding NavigateToDashboardCommand}">
+                                Command="{Binding NavigateToDashboardCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>
@@ -160,7 +168,8 @@
                         </Button>
 
                         <Button Tag="&#xE8A5;" Content="Crear Presupuesto" ToolTip="Armar presupuesto / OT (Ctrl+2)"
-                                Command="{Binding NavigateToBuilderCommand}">
+                                Command="{Binding NavigateToBuilderCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>
@@ -175,11 +184,28 @@
                         </Button>
 
                         <Button Tag="&#xE9F9;" Content="Presupuestos" ToolTip="Listado de documentos generados (Ctrl+6)"
-                                Command="{Binding NavigateToPresupuestosCommand}">
+                                Command="{Binding NavigateToPresupuestosCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding ActiveSection}" Value="Presupuestos">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Tag="&#xE9D5;" Content="Seguimiento" ToolTip="Pool de presupuestos, OT y facturación con sus estados (Ctrl+9)"
+                                Command="{Binding NavigateToOrderPoolCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="Seguimiento">
                                             <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
                                             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                             <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
@@ -205,7 +231,24 @@
                             </Button.Style>
                         </Button>
 
-                        <TextBlock Text="CATÁLOGO" Style="{StaticResource NavGroupLabel}"/>
+                        <Button Tag="&#xE9F5;" Content="Órdenes de Trabajo" ToolTip="Ver y previsualizar las OT generadas"
+                                Command="{Binding NavigateToWorkOrdersCommand}"
+                                Visibility="{Binding CanSeeWorkOrders, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActiveSection}" Value="OrdenesTrabajo">
+                                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <TextBlock Text="CATÁLOGO" Style="{StaticResource NavGroupLabel}"
+                                   Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}"/>
 
                         <Button Tag="&#xE7BF;" Content="Productos" ToolTip="Gestión de productos (Ctrl+3)"
                                 Command="{Binding NavigateToProductsCommand}"
@@ -224,7 +267,8 @@
                         </Button>
 
                         <Button Tag="&#xE716;" Content="Clientes" ToolTip="Directorio de clientes (Ctrl+4)"
-                                Command="{Binding NavigateToClientsCommand}">
+                                Command="{Binding NavigateToClientsCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>
@@ -239,7 +283,8 @@
                         </Button>
 
                         <Button Tag="&#xE707;" Content="Ubicaciones" ToolTip="Gestión de ubicaciones (Ctrl+5)"
-                                Command="{Binding NavigateToLocationsCommand}">
+                                Command="{Binding NavigateToLocationsCommand}"
+                                Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>

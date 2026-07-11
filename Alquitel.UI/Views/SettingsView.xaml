@@ -226,8 +226,23 @@
                                    Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,12"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <Button Content="Probar conexión" Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding RefreshRemoteStatusCommand}" Margin="0,0,10,0"/>
+                            <Button Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding RefreshRemoteStatusCommand}" Margin="0,0,10,0">
+                                <Button.Content>
+                                    <TextBlock>
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="Probar conexión"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTestingConnection}" Value="True">
+                                                        <Setter Property="Text" Value="Probando…"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button.Content>
+                            </Button>
                             <Button Content="Subir datos locales al servidor" Style="{StaticResource PrimaryButton}"
                                     Command="{Binding PushLocalDataCommand}"
                                     ToolTip="Carga inicial: sube todos los datos de la base SQLite de esta máquina al servidor. Ejecutar una sola vez desde la máquina con el histórico."/>
@@ -281,7 +296,7 @@
                             </Border>
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="Usuarios y roles" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="Admin: acceso total. Vendedor: presupuestos, clientes y ubicaciones (sin catálogo, reportes ni configuración)."
+                                <TextBlock Text="Admin: acceso total. Vendedor: presupuestos, clientes y ubicaciones. Armador: solo ve y previsualiza las Órdenes de Trabajo (depósito)."
                                            FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
                             </StackPanel>
                         </StackPanel>
@@ -296,6 +311,28 @@
                                                     ElementStyle="{StaticResource DataGridCellTextMuted}"/>
                             </DataGrid.Columns>
                         </DataGrid>
+
+                        <!-- Actividad del usuario seleccionado (solo informativo) -->
+                        <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="10"
+                                Padding="14,10" Margin="0,0,0,14">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedUserStatsMessage}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE9D9;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Text="{Binding SelectedUserStatsMessage}" FontSize="12"
+                                           Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
 
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -313,10 +350,11 @@
                                 <ComboBox Height="40" SelectedIndex="{Binding NewUserRoleIndex}">
                                     <ComboBoxItem Content="Vendedor"/>
                                     <ComboBoxItem Content="Admin"/>
+                                    <ComboBoxItem Content="Armador"/>
                                 </ComboBox>
                             </StackPanel>
                             <StackPanel Grid.Column="2" Margin="0,0,10,0">
-                                <TextBlock Text="Contraseña (opcional)" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Text="Contraseña inicial (opcional)" Style="{StaticResource FieldLabel}"/>
                                 <TextBox Height="40" Text="{Binding NewUserPassword, UpdateSourceTrigger=PropertyChanged}"/>
                             </StackPanel>
                             <Button Grid.Column="3" Content="Agregar" Style="{StaticResource SuccessButton}"
@@ -327,10 +365,45 @@
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                             <Button Content="Establecer contraseña al seleccionado" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding SetUserPasswordCommand}" Margin="0,0,10,0"
-                                    ToolTip="Aplica el texto del campo Contraseña al usuario seleccionado en la lista. Vacío = quitar contraseña."/>
-                            <Button Content="Archivar seleccionado" Style="{StaticResource GhostDangerButton}"
-                                    Command="{Binding ArchiveUserCommand}"/>
+                                    ToolTip="Abre un diálogo para definir o quitar la contraseña del usuario seleccionado en la lista."/>
+                            <Button Content="Eliminar seleccionado" Style="{StaticResource GhostDangerButton}"
+                                    Command="{Binding DeleteUserCommand}"/>
                         </StackPanel>
+
+                        <!-- Editar Usuario Seleccionado (Visible solo cuando hay uno seleccionado) -->
+                        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,16,0,0"
+                                Visibility="{Binding HasSelectedUser, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="Editar Usuario Seleccionado" Style="{StaticResource SectionTitle}" FontSize="12" Margin="0,0,0,10" Foreground="{DynamicResource SecondaryColorBrush}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="Modificar Nombre" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="40" Text="{Binding EditUserName, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                        <TextBlock Text="Modificar Rol" Style="{StaticResource FieldLabel}"/>
+                                        <ComboBox Height="40" SelectedIndex="{Binding EditUserRoleIndex}">
+                                            <ComboBoxItem Content="Vendedor"/>
+                                            <ComboBoxItem Content="Admin"/>
+                                            <ComboBoxItem Content="Armador"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                        <Button Content="Guardar Cambios" Style="{StaticResource SuccessButton}"
+                                                Height="40" Margin="0,0,8,0"
+                                                Command="{Binding UpdateUserCommand}"/>
+                                        <Button Content="Cancelar" Style="{StaticResource SecondaryButton}"
+                                                Height="40"
+                                                Command="{Binding DeselectUserCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
                         <TextBlock Text="{Binding UsersStatusMessage}" FontSize="12" Margin="0,10,0,0"
                                    Foreground="{DynamicResource SecondaryColorBrush}"/>

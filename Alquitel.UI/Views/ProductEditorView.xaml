@@ -7,6 +7,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <local:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
+        <local:StripTagsConverter x:Key="StripTagsConverter"/>
     </UserControl.Resources>
 
     <Grid Margin="32,28,32,28">
@@ -23,15 +24,23 @@
                            Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAsyncCommand}"
+                        ToolTip="Recargar catálogo de productos" Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Actualizar" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <Button Style="{StaticResource SecondaryButton}" Command="{Binding ExportCsvCommand}"
-                        ToolTip="Exportar catálogo a CSV (Excel)">
+                        ToolTip="Exportar catálogo a CSV (Excel)" Margin="0,0,10,0">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xEDE1;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBlock Text="Exportar CSV" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
+                <Button Style="{StaticResource PrimaryButton}"
                         Command="{Binding NewProductCommand}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
@@ -98,7 +107,7 @@
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Description}" FontSize="13" FontWeight="SemiBold"
+                                        <TextBlock Text="{Binding Description, Converter={StaticResource StripTagsConverter}}" FontSize="13" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                             <TextBlock Text="{Binding Category}" FontSize="11"

@@ -4,7 +4,11 @@ using Alquitel.Core.Entities;
 using Alquitel.Core.Interfaces;
 using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
 using Microsoft.EntityFrameworkCore;
+using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -64,6 +68,38 @@ namespace Alquitel.UI.ViewModels
         public ObservableCollection<MonthlyBillingRow> MonthlyBilling { get; } = new();
         public ObservableCollection<ProductProfitRow> ProductProfit { get; } = new();
 
+        // ── Gráficos (LiveCharts2) ───────────────────────────────────
+        // Paleta alineada a los brushes del tema (SecondaryColor/Primary/Success) con
+        // gris neutro para textos, legible tanto en tema claro como oscuro.
+        private static readonly CultureInfo ArCulture = CultureInfo.GetCultureInfo("es-AR");
+        private static readonly SKColor AccentSk = SKColor.Parse("#0D84E7");
+        private static readonly SKColor PrimarySk = SKColor.Parse("#3B5998");
+        private static readonly SKColor SuccessSk = SKColor.Parse("#27AE60");
+        private static readonly SKColor MutedSk = SKColor.Parse("#8A93A2");
+
+        private static SolidColorPaint TextPaint() => new(MutedSk);
+        private static SolidColorPaint SeparatorPaint() => new(new SKColor(138, 147, 162, 40));
+        private static string Money(double v) => v.ToString("C0", ArCulture);
+
+        /// <summary>True: las tres analíticas se muestran como gráficos; false: grillas.</summary>
+        [ObservableProperty]
+        private bool _showCharts = true;
+
+        [ObservableProperty] private ISeries[] _monthlySeries = Array.Empty<ISeries>();
+        [ObservableProperty] private Axis[] _monthlyXAxes = Array.Empty<Axis>();
+        [ObservableProperty] private Axis[] _monthlyYAxes = Array.Empty<Axis>();
+
+        [ObservableProperty] private ISeries[] _clientSeries = Array.Empty<ISeries>();
+        [ObservableProperty] private Axis[] _clientXAxes = Array.Empty<Axis>();
+        [ObservableProperty] private Axis[] _clientYAxes = Array.Empty<Axis>();
+
+        [ObservableProperty] private ISeries[] _productSeries = Array.Empty<ISeries>();
+        [ObservableProperty] private Axis[] _productXAxes = Array.Empty<Axis>();
+        [ObservableProperty] private Axis[] _productYAxes = Array.Empty<Axis>();
+
+        /// <summary>Pintura del texto de la leyenda (los charts la toman por binding).</summary>
+        public SolidColorPaint LegendPaint { get; } = TextPaint();
+
         public ReportsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService)
         {
             _dbContextFactory = dbContextFactory;
@@ -106,6 +142,7 @@ namespace Alquitel.UI.ViewModels
                 BuildClientBilling(orders);
                 BuildMonthlyBilling(orders);
                 BuildProductProfit(orders);
+                BuildCharts();
 
                 TotalOrders = orders.Count;
                 TotalRevenue = orders.Sum(o => o.Total);
@@ -153,9 +190,12 @@ namespace Alquitel.UI.ViewModels
         {
             ProductProfit.Clear();
 
+            // Se agrupa por la descripción SIN tags BBCode: además de mostrarse limpia,
+            // unifica versiones del mismo producto que solo difieren en estilos.
             var rows = orders
                 .SelectMany(o => o.Items)
-                .GroupBy(i => i.Product?.Description ?? i.DescriptionSnapshot ?? "(producto eliminado)")
+                .GroupBy(i => Alquitel.Core.Parsing.TagParser.StripTags(
+                    i.Product?.Description ?? i.DescriptionSnapshot) ?? "(producto eliminado)")
                 .Select(g =>
                 {
                     decimal revenue = g.Sum(i => i.Total);
@@ -178,6 +218,130 @@ namespace Alquitel.UI.ViewModels
             foreach (var x in rows)
                 ProductProfit.Add(new ProductProfitRow(rank++, x.Description, x.Times, x.Revenue, x.Cost, x.Margin));
         }
+
+        /// <summary>
+        /// Reconstruye las series de los tres gráficos a partir de las filas ya agregadas.
+        /// Se llama en cada LoadAsync; con colecciones vacías produce gráficos vacíos válidos.
+        /// </summary>
+        private void BuildCharts()
+        {
+            // ── Tendencia mensual: columnas de facturación ──
+            MonthlySeries = new ISeries[]
+            {
+                new ColumnSeries<decimal>
+                {
+                    Name = "Facturación",
+                    Values = MonthlyBilling.Select(m => m.Total).ToArray(),
+                    Fill = new SolidColorPaint(AccentSk),
+                    Rx = 6,
+                    Ry = 6,
+                }
+            };
+            MonthlyXAxes = new[]
+            {
+                new Axis
+                {
+                    Labels = MonthlyBilling.Select(m => m.MonthLabel).ToArray(),
+                    LabelsRotation = -35,
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    SeparatorsPaint = null,
+                }
+            };
+            MonthlyYAxes = new[]
+            {
+                new Axis
+                {
+                    Labeler = Money,
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    MinLimit = 0,
+                    SeparatorsPaint = SeparatorPaint(),
+                }
+            };
+
+            // ── Facturación por cliente: barras horizontales top 10 ──
+            // Reverse: LiveCharts dibuja el índice 0 abajo; así el mayor queda arriba.
+            var topClients = ClientBilling.Take(10).Reverse().ToList();
+            ClientSeries = new ISeries[]
+            {
+                new RowSeries<decimal>
+                {
+                    Name = "Facturación",
+                    Values = topClients.Select(c => c.Total).ToArray(),
+                    Fill = new SolidColorPaint(PrimarySk),
+                    Rx = 6,
+                    Ry = 6,
+                }
+            };
+            ClientYAxes = new[]
+            {
+                new Axis
+                {
+                    Labels = topClients.Select(c => Truncate(c.ClientName, 28)).ToArray(),
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    SeparatorsPaint = null,
+                }
+            };
+            ClientXAxes = new[]
+            {
+                new Axis
+                {
+                    Labeler = Money,
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    MinLimit = 0,
+                    SeparatorsPaint = SeparatorPaint(),
+                }
+            };
+
+            // ── Rentabilidad por producto: facturación vs margen, top 10 por facturación ──
+            var topProducts = ProductProfit.OrderByDescending(p => p.Revenue).Take(10).Reverse().ToList();
+            ProductSeries = new ISeries[]
+            {
+                new RowSeries<decimal>
+                {
+                    Name = "Facturación",
+                    Values = topProducts.Select(p => p.Revenue).ToArray(),
+                    Fill = new SolidColorPaint(AccentSk),
+                    Rx = 6,
+                    Ry = 6,
+                },
+                new RowSeries<decimal>
+                {
+                    Name = "Margen",
+                    Values = topProducts.Select(p => p.Margin ?? 0m).ToArray(),
+                    Fill = new SolidColorPaint(SuccessSk),
+                    Rx = 6,
+                    Ry = 6,
+                }
+            };
+            ProductYAxes = new[]
+            {
+                new Axis
+                {
+                    Labels = topProducts.Select(p => Truncate(p.Description, 32)).ToArray(),
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    SeparatorsPaint = null,
+                }
+            };
+            ProductXAxes = new[]
+            {
+                new Axis
+                {
+                    Labeler = Money,
+                    LabelsPaint = TextPaint(),
+                    TextSize = 11,
+                    MinLimit = 0,
+                    SeparatorsPaint = SeparatorPaint(),
+                }
+            };
+        }
+
+        private static string Truncate(string value, int max) =>
+            value.Length <= max ? value : value[..(max - 1)] + "…";
 
         /// <summary>
         /// Exporta las tres grillas a un único CSV con secciones (separador ';', BOM

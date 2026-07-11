@@ -55,33 +55,29 @@ namespace Alquitel.Infrastructure.Services
 
                         PlaceholderReplacer.ReplaceAll(session.Document, order, isTechnical);
 
+                        if (isTechnical)
+                        {
+                            // La OT lleva el título de sección "PRODUCCION" subrayado;
+                            // la plantilla lo trae como texto plano.
+                            PlaceholderReplacer.UnderlineOccurrences(session.Document, "PRODUCCION");
+                            PlaceholderReplacer.UnderlineOccurrences(session.Document, "PRODUCCIÓN");
+                        }
+
                         var searchRange = session.Document.Content;
                         if (searchRange.Find.Execute("{{PRODUCTOS_AQUI}}"))
                         {
                             searchRange.Text = "";
 
-                            // Guarda de fin de zona: el párrafo siguiente al tag ancla la
-                            // línea divisoria celeste. Un bookmark lo marca para que el
-                            // renderer nunca inserte productos dentro/después de él.
-                            try
+                            if (isTechnical)
                             {
-                                int guardPos = (int)searchRange.Paragraphs[1].Range.End;
-                                session.Document.Bookmarks.Add(ProductRenderer.EndGuardBookmark,
-                                    session.Document.Range(guardPos, guardPos));
+                                // OT técnica: listado plano en Arial negrita, sin imágenes,
+                                // precios ni tablas (formato del OT de referencia).
+                                WorkOrderProductRenderer.RenderProducts(session.Document, searchRange, order.Items);
                             }
-                            catch (Exception ex) { AppLog.Warning(ex, "Could not place product end-guard bookmark"); }
-
-                            foreach (var item in order.Items)
+                            else
                             {
-                                ProductRenderer.RenderProduct(session.Document, session.WordApp, ref searchRange, item, isTechnical);
+                                RenderBudgetProducts(session, searchRange, order, isTechnical);
                             }
-
-                            try
-                            {
-                                if (session.Document.Bookmarks.Exists(ProductRenderer.EndGuardBookmark))
-                                    session.Document.Bookmarks(ProductRenderer.EndGuardBookmark).Delete();
-                            }
-                            catch (Exception ex) { AppLog.Warning(ex, "Could not remove product end-guard bookmark"); }
                         }
 
                         session.SaveAndClose(outputPath);
@@ -105,6 +101,37 @@ namespace Alquitel.Infrastructure.Services
 
                 await tcs.Task;
             });
+        }
+
+        /// <summary>
+        /// Renderizado clásico de presupuesto/OF: título Montserrat, imagen flotante,
+        /// campos dinámicos y tabla de costos por producto.
+        /// </summary>
+        private static void RenderBudgetProducts(WordComSession session, dynamic searchRange, Order order, bool isTechnical)
+        {
+            dynamic doc = session.Document!;
+
+            // Guarda de fin de zona: el párrafo siguiente al tag ancla la
+            // línea divisoria celeste. Un bookmark lo marca para que el
+            // renderer nunca inserte productos dentro/después de él.
+            try
+            {
+                int guardPos = (int)searchRange.Paragraphs[1].Range.End;
+                doc.Bookmarks.Add(ProductRenderer.EndGuardBookmark, doc.Range(guardPos, guardPos));
+            }
+            catch (Exception ex) { AppLog.Warning(ex, "Could not place product end-guard bookmark"); }
+
+            foreach (var item in order.Items)
+            {
+                ProductRenderer.RenderProduct(doc, session.WordApp, ref searchRange, item, isTechnical);
+            }
+
+            try
+            {
+                if (doc.Bookmarks.Exists(ProductRenderer.EndGuardBookmark))
+                    doc.Bookmarks(ProductRenderer.EndGuardBookmark).Delete();
+            }
+            catch (Exception ex) { AppLog.Warning(ex, "Could not remove product end-guard bookmark"); }
         }
     }
 }

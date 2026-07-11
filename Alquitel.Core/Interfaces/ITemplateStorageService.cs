@@ -22,8 +22,14 @@ namespace Alquitel.Core.Interfaces
     /// </summary>
     public interface ITemplateStorageService
     {
-        /// <summary>True cuando hay Url + AnonKey de Supabase configuradas.</summary>
+        /// <summary>True cuando hay Url + AnonKey de Supabase configuradas (permite descargar/consultar).</summary>
         bool IsConfigured { get; }
+
+        /// <summary>
+        /// True solo en la máquina que tiene la service key configurada. Publicar plantillas
+        /// requiere esa llave privilegiada, que no viaja en el binario distribuido.
+        /// </summary>
+        bool CanPublish { get; }
 
         /// <summary>Sube (upsert) el archivo local como plantilla oficial del tipo dado.</summary>
         Task PublishTemplateAsync(TemplateKind kind, string localFilePath);

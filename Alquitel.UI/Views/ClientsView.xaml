@@ -22,6 +22,14 @@
                            Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAsyncCommand}"
+                        ToolTip="Recargar lista de clientes" Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Actualizar" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <Button Style="{StaticResource SecondaryButton}" Command="{Binding ExportCsvCommand}"
                         ToolTip="Exportar directorio a CSV (Excel)">
                     <StackPanel Orientation="Horizontal">

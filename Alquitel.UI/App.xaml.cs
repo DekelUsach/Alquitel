@@ -23,7 +23,10 @@ namespace Alquitel.UI
             var builder = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
-        .AddEnvironmentVariables("ALQUITEL_");
+                // Secretos por máquina (connection string real, service key). Gitignoreado,
+                // sobreescribe appsettings.json solo en el equipo desplegado. Nunca se commitea.
+                .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false)
+                .AddEnvironmentVariables("ALQUITEL_");
 
 #if DEBUG
             builder.AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true);
@@ -168,18 +171,25 @@ namespace Alquitel.UI
             services.AddSingleton<ICurrentUserService, CurrentUserService>();
 
             // Plantillas centralizadas en Supabase Storage (bucket "templates").
+            // - Url/AnonKey: solo LECTURA (viajan en el binario) -> descargar plantillas.
+            // - ServiceKey: solo el equipo del Admin la tiene (env var ALQUITEL_... o
+            //   appsettings.local.json, nunca commiteada) -> publicar plantillas.
             // Sin Url/AnonKey el servicio queda no-configurado y la app usa las
             // plantillas locales clásicas de IAppSettings.
             services.AddSingleton<ITemplateStorageService>(sp => new SupabaseTemplateStorageService(
                 configuration["Database:Supabase:Url"],
-                configuration["Database:Supabase:AnonKey"]));
+                configuration["Database:Supabase:AnonKey"],
+                configuration["Database:Supabase:ServiceKey"]));
 
             // Sincronización remota: con provider "supabase" el servicio prueba conexión
             // real y permite subir la base local histórica; con "sqlite" queda el no-op.
             if (useRemote)
                 services.AddSingleton<IRemoteSyncService, PostgresSyncService>();
             else
-                services.AddSingleton<IRemoteSyncService>(new LocalOnlySyncService(provider));
+                // Provider EFECTIVO, no el declarado: si hubo fallback por ConnectionString
+                // vacío la app corre contra SQLite y la barra de estado no debe decir
+                // "Servidor compartido (Supabase)".
+                services.AddSingleton<IRemoteSyncService>(new LocalOnlySyncService("sqlite"));
 
             // ViewModels
             services.AddSingleton<MainViewModel>();
@@ -188,9 +198,11 @@ namespace Alquitel.UI
             services.AddTransient<BudgetBuilderViewModel>();
             services.AddTransient<ProductEditorViewModel>();
             services.AddTransient<PresupuestosViewModel>();
+            services.AddTransient<OrderPoolViewModel>();
             services.AddTransient<ClientsViewModel>();
             services.AddTransient<LocationsViewModel>();
             services.AddTransient<ReportsViewModel>();
+            services.AddTransient<WorkOrdersViewModel>();
 
             services.AddSingleton<MainWindow>();
         }

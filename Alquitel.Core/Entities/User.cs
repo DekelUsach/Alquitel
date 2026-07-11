@@ -9,7 +9,12 @@ namespace Alquitel.Core.Entities
         /// <summary>Acceso total: catálogo, configuración, reportes y gestión de usuarios.</summary>
         Admin = 0,
         /// <summary>Solo operación comercial: presupuestos, clientes y ubicaciones.</summary>
-        Vendedor = 1
+        Vendedor = 1,
+        /// <summary>
+        /// Personal de depósito que arma los equipos en eventos. Interfaz mínima:
+        /// solo ve y previsualiza las Órdenes de Trabajo (OT) que se le envían.
+        /// </summary>
+        Armador = 2
     }
 
     /// <summary>

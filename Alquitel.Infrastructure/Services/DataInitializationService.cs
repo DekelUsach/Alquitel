@@ -72,6 +72,7 @@ namespace Alquitel.Infrastructure.Services
             AddColumnIfMissing(context, "Products", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(context, "Clients", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(context, "OrderItems", "DescriptionSnapshot", "TEXT");
+            AddColumnIfMissing(context, "Orders", "EventEndDate", "TEXT");
 
             // 2. Create missing indices (IF NOT EXISTS is supported in SQLite)
             ExecuteSafe(context, "CREATE INDEX IF NOT EXISTS \"IX_Orders_CreatedDate\" ON \"Orders\" (\"CreatedDate\")");

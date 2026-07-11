@@ -45,8 +45,10 @@ namespace Alquitel.Infrastructure.Services
 
                 await mgr.DownloadUpdatesAsync(update).ConfigureAwait(false);
 
+                // La actualización se aplica cuando el usuario cierra la app: reiniciar
+                // acá en caliente le cortaba la sesión en medio de un presupuesto.
                 AppLog.Information("Update downloaded. Applying on next restart.");
-                mgr.ApplyUpdatesAndRestart(update);
+                mgr.WaitExitThenApplyUpdates(update);
             }
             catch (Exception ex)
             {

@@ -24,6 +24,13 @@ namespace Alquitel.Core.Interfaces.Repositories
         Task<List<string>> GetAllBudgetNumbersAsync();
 
         /// <summary>
+        /// Resumen de actividad de un usuario: presupuestos creados, monto acumulado y
+        /// último presupuesto. Matchea por CreatedByUserId y, para órdenes legadas sin
+        /// FK, por AdminName.
+        /// </summary>
+        Task<UserOrderStats> GetUserStatsAsync(Guid userId, string userName);
+
+        /// <summary>
         /// Cantidad total de un producto ya comprometida en órdenes activas
         /// (Approved/SentToOF/SentToOT) cuyo rango de alquiler
         /// [EventDate, EventDate + Dias) se solapa con [from, to).
@@ -31,4 +38,11 @@ namespace Alquitel.Core.Interfaces.Repositories
         /// </summary>
         Task<int> GetCommittedQuantityAsync(Guid productId, DateTime from, DateTime to, Guid excludeOrderId);
     }
+
+    /// <summary>Resumen de actividad de un usuario sobre las órdenes del sistema.</summary>
+    public record UserOrderStats(
+        int OrdersCount,
+        decimal TotalAmount,
+        DateTime? LastOrderDate,
+        string? LastBudgetNumber);
 }

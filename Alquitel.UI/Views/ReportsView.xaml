@@ -3,10 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             xmlns:conv="clr-namespace:Alquitel.UI.Converters"
              mc:Ignorable="d" d:DesignHeight="900" d:DesignWidth="1200"
              Background="{DynamicResource BackgroundBrush}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="32,24">
         <StackPanel MaxWidth="1200">
@@ -37,6 +40,10 @@
                         <TextBlock Text="Hasta" Style="{StaticResource FieldLabel}"/>
                         <DatePicker Width="180" SelectedDate="{Binding ToDate}"/>
                     </StackPanel>
+                    <CheckBox Style="{StaticResource ModernCheckBox}"
+                              Content="Ver gráficos"
+                              IsChecked="{Binding ShowCharts}"
+                              VerticalAlignment="Bottom" Margin="0,0,24,10"/>
                     <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,4">
                         <TextBlock Text="{Binding StatusMessage}" FontSize="12"
                                    Foreground="{DynamicResource MutedTextBrush}"/>
@@ -86,8 +93,14 @@
                         </Border>
                         <TextBlock Text="Facturación por cliente" Style="{StaticResource SectionTitle}"/>
                     </StackPanel>
+                    <lvc:CartesianChart Height="320"
+                                        Series="{Binding ClientSeries}"
+                                        XAxes="{Binding ClientXAxes}"
+                                        YAxes="{Binding ClientYAxes}"
+                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     <DataGrid ItemsSource="{Binding ClientBilling}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40">
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
+                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="CLIENTE" Binding="{Binding ClientName}" Width="3*"
                                                 ElementStyle="{StaticResource DataGridCellText}"/>
@@ -109,8 +122,14 @@
                         </Border>
                         <TextBlock Text="Tendencia mensual" Style="{StaticResource SectionTitle}"/>
                     </StackPanel>
+                    <lvc:CartesianChart Height="320"
+                                        Series="{Binding MonthlySeries}"
+                                        XAxes="{Binding MonthlyXAxes}"
+                                        YAxes="{Binding MonthlyYAxes}"
+                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     <DataGrid ItemsSource="{Binding MonthlyBilling}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40">
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
+                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="MES" Binding="{Binding MonthLabel}" Width="2*"
                                                 ElementStyle="{StaticResource DataGridCellText}"/>
@@ -136,8 +155,16 @@
                                TextWrapping="Wrap"
                                Visibility="{Binding HasProductsWithoutCost, Converter={StaticResource BoolToVisibilityConverter}}"
                                Text="Algunos productos no tienen costo cargado: su margen queda vacío. Cargá el costo en Productos → Costo interno."/>
+                    <lvc:CartesianChart Height="380"
+                                        Series="{Binding ProductSeries}"
+                                        XAxes="{Binding ProductXAxes}"
+                                        YAxes="{Binding ProductYAxes}"
+                                        LegendPosition="Top"
+                                        LegendTextPaint="{Binding LegendPaint}"
+                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     <DataGrid ItemsSource="{Binding ProductProfit}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="420" RowHeight="40">
+                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="420" RowHeight="40"
+                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="50"
                                                 ElementStyle="{StaticResource DataGridCellTextMuted}"/>

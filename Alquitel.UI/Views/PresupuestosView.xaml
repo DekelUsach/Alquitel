@@ -112,7 +112,7 @@
                                    Foreground="{DynamicResource MutedTextBrush}"
                                    VerticalAlignment="Center" Margin="14,0,0,0"
                                    IsHitTestVisible="False"/>
-                        <TextBlock Text="Buscar por N°, empresa, ubicación o nombre de archivo..."
+                        <TextBlock Text="Buscar por N°, empresa, ubicación, creador o nombre de archivo..."
                                    Foreground="{DynamicResource MutedTextBrush}" FontSize="13"
                                    VerticalAlignment="Center" Margin="42,0,0,0"
                                    IsHitTestVisible="False">
@@ -179,6 +179,11 @@
                                             Binding="{Binding LocationName}"
                                             Width="1.3*"
                                             ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+
+                        <DataGridTextColumn Header="CREADOR"
+                                            Binding="{Binding Initials}"
+                                            Width="0.7*"
+                                            ElementStyle="{StaticResource DataGridCellTextAccent}"/>
 
                         <DataGridTextColumn Header="ARCHIVO"
                                             Binding="{Binding FileName}"

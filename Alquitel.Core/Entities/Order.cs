@@ -39,6 +39,13 @@ namespace Alquitel.Core.Entities
         public Location? Location { get; set; }
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
         public DateTime? EventDate { get; set; }
+
+        /// <summary>
+        /// Fin del lapso del evento (inclusive). Null o igual a EventDate = evento de un
+        /// solo día. En los documentos el rango se imprime en palabras
+        /// ("del 14 de abril al 15 de mayo de 2026").
+        /// </summary>
+        public DateTime? EventEndDate { get; set; }
         public OrderStatus Status { get; set; } = OrderStatus.Draft;
         public List<OrderItem> Items { get; set; } = new();
 

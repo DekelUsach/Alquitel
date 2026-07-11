@@ -139,7 +139,13 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderBrush}"
-                                            Padding="0,10">
+                                            Padding="0,10" Background="Transparent" Cursor="Hand"
+                                            ToolTip="Abrir este presupuesto en el armador">
+                                        <Border.InputBindings>
+                                            <MouseBinding Gesture="LeftClick"
+                                                          Command="{Binding DataContext.OpenOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          CommandParameter="{Binding}"/>
+                                        </Border.InputBindings>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>

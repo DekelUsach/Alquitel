@@ -1,0 +1,195 @@
+<UserControl x:Class="Alquitel.UI.Views.OrderPoolView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Margin="32,26,32,26">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Seguimiento" Style="{StaticResource PageTitle}"/>
+                <TextBlock Text="Pool de presupuestos, órdenes de trabajo y facturación. Cambiá el estado directamente desde la columna Estado."
+                           FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <Button Grid.Column="1" Style="{StaticResource SecondaryButton}"
+                    Height="42" Padding="16,0" Margin="0,0,8,0"
+                    Command="{Binding RefreshCommand}" ToolTip="Recargar lista">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="Recargar" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Style="{StaticResource SecondaryButton}"
+                    Height="42" Padding="16,0"
+                    Command="{Binding ClearFiltersCommand}" ToolTip="Limpiar filtros">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="Limpiar filtros" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Filtros -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="20,14" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Chips de estado -->
+                <ListBox Grid.Column="0" ItemsSource="{Binding FilterOptions}"
+                         SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Margin" Value="0,0,8,0"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Chip" CornerRadius="16" Padding="14,7"
+                                                Background="{DynamicResource SurfaceAltBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                Cursor="Hand">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Chip" Property="Background"
+                                                        Value="{DynamicResource SecondaryColorBrush}"/>
+                                                <Setter Property="TextElement.Foreground" Value="White"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chip" Property="BorderBrush"
+                                                        Value="{DynamicResource SecondaryColorBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Border Background="#30000000" CornerRadius="9" Padding="7,1" Margin="7,0,0,0">
+                                    <TextBlock Text="{Binding Count}" FontSize="11" FontWeight="Bold"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Búsqueda -->
+                <TextBox Grid.Column="2" Height="40" VerticalContentAlignment="Center"
+                         Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="Buscar por número, cliente, lugar o creador"/>
+            </Grid>
+        </Border>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}"
+                   FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                   Margin="4,0,0,10"/>
+
+        <!-- Grilla -->
+        <Border Grid.Row="3" Style="{StaticResource Card}">
+            <DataGrid ItemsSource="{Binding RowsView}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      CanUserReorderColumns="False"
+                      CanUserResizeRows="False"
+                      CanUserSortColumns="True"
+                      SelectionUnit="FullRow"
+                      Margin="0">
+                <DataGrid.Columns>
+
+                    <DataGridTextColumn Header="N° PRESUPUESTO"
+                                        Binding="{Binding BudgetNumber}"
+                                        Width="*"
+                                        ElementStyle="{StaticResource DataGridCellText}"/>
+
+                    <DataGridTextColumn Header="EMPRESA / CLIENTE"
+                                        Binding="{Binding ClientName}"
+                                        Width="1.6*"
+                                        ElementStyle="{StaticResource DataGridCellText}"/>
+
+                    <DataGridTextColumn Header="LUGAR"
+                                        Binding="{Binding LocationName}"
+                                        Width="1.1*"
+                                        ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+
+                    <DataGridTextColumn Header="EVENTO"
+                                        Binding="{Binding EventLabel}"
+                                        Width="1.5*"
+                                        ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+
+                    <DataGridTextColumn Header="CREADO"
+                                        Binding="{Binding CreatedDate, StringFormat='{}{0:dd/MM/yyyy}'}"
+                                        Width="0.8*"
+                                        ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+
+                    <DataGridTextColumn Header="TOTAL"
+                                        Binding="{Binding Total, StringFormat='{}{0:C0}'}"
+                                        Width="0.9*"
+                                        ElementStyle="{StaticResource DataGridCellTextAccent}"/>
+
+                    <DataGridTextColumn Header="CREADOR"
+                                        Binding="{Binding AdminName}"
+                                        Width="0.9*"
+                                        ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+
+                    <DataGridTemplateColumn Header="ESTADO" Width="1.3*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox Margin="4,3" MinWidth="130"
+                                          ItemsSource="{Binding DataContext.StatusOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          SelectedValue="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          SelectedValuePath="Value"
+                                          DisplayMemberPath="Label"
+                                          ToolTip="Cambiar el estado guarda inmediatamente en la base"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="" Width="56">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource IconButton}" Width="32" Height="32"
+                                        ToolTip="Abrir en el armador de presupuestos"
+                                        Command="{Binding DataContext.OpenOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</UserControl>

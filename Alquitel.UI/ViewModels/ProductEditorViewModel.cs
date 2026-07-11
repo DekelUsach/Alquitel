@@ -34,6 +34,7 @@ namespace Alquitel.UI.ViewModels
             new NamedColor("#FF0000", "Rojo"),
             new NamedColor("#006600", "Verde"),
             new NamedColor("#C00000", "Rojo Oscuro"),
+            new NamedColor("#1F68C7", "Azul"),
         };
 
         // Live preview brush used by the XAML preview TextBlock
@@ -107,11 +108,15 @@ namespace Alquitel.UI.ViewModels
         // ── Serialization helpers ────────────────────────────────
 
         // Maps hex → tag name used by WordDocumentService parser
+        // Debe cubrir todos los colores que TagParser.Parse puede devolver: un color
+        // sin entrada acá se perdería al re-serializar (round-trip editar → guardar).
         private static readonly Dictionary<string, string> _colorToTag = new(StringComparer.OrdinalIgnoreCase)
         {
             ["#FF0000"] = "red",
             ["#006600"] = "green",
             ["#C00000"] = "darkred",
+            ["#1F68C7"] = "blue",
+            ["#FFFFFF"] = "white",
         };
 
         private static string SerializeDescriptionSegments(IEnumerable<DescriptionSegmentViewModel> segs)
@@ -162,6 +167,9 @@ namespace Alquitel.UI.ViewModels
         // Loading happens here (invoked by NavigationService) instead of the constructor,
         // so the DB hit no longer blocks the UI thread during navigation.
         public async System.Threading.Tasks.Task InitializeAsync() => await LoadProductsAsync();
+
+        [CommunityToolkit.Mvvm.Input.RelayCommand]
+        private async System.Threading.Tasks.Task RefreshAsync() => await LoadProductsAsync();
 
         partial void OnSearchTextChanged(string value)
         {

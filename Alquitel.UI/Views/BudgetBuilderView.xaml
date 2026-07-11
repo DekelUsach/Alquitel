@@ -9,6 +9,7 @@
         <conv:ProductButtonTextConverter x:Key="ProductButtonTextConverter"/>
         <conv:ProductButtonBackgroundConverter x:Key="ProductButtonBackgroundConverter"/>
         <conv:ProductRemoveButtonVisibilityConverter x:Key="ProductRemoveButtonVisibilityConverter"/>
+        <conv:StripTagsConverter x:Key="StripTagsConverter"/>
         <helpers:BindingProxy x:Key="Proxy" Data="{Binding}"/>
 
         <!-- Segmento del selector de vista (Presupuesto / Orden de Trabajo) -->
@@ -146,7 +147,7 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Text="{Binding Description}"
+                                <TextBlock Grid.Row="0" Text="{Binding Description, Converter={StaticResource StripTagsConverter}}"
                                            FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
                                            TextWrapping="Wrap" Margin="0,0,0,8"/>
 
@@ -280,17 +281,28 @@
                     <!-- Fila 2: Evento -->
                     <Grid>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.8*"/>
+                            <ColumnDefinition Width="0.6*"/>
                             <ColumnDefinition Width="1.2*"/>
-                            <ColumnDefinition Width="0.7*"/>
-                            <ColumnDefinition Width="1.3*"/>
-                            <ColumnDefinition Width="1.3*"/>
-                            <ColumnDefinition Width="1.1*"/>
+                            <ColumnDefinition Width="1.2*"/>
+                            <ColumnDefinition Width="1.0*"/>
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                            <TextBlock Text="Fecha del Evento" Style="{StaticResource FieldLabel}"/>
-                            <DatePicker SelectedDate="{Binding CurrentOrder.EventDate, UpdateSourceTrigger=PropertyChanged}"
-                                        Height="42"/>
+                            <TextBlock Text="Fecha del Evento (desde / hasta)" Style="{StaticResource FieldLabel}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <DatePicker Grid.Column="0" Height="42"
+                                            SelectedDate="{Binding CurrentOrder.EventDate, UpdateSourceTrigger=PropertyChanged}"
+                                            ToolTip="Inicio del evento"/>
+                                <DatePicker Grid.Column="2" Height="42"
+                                            SelectedDate="{Binding CurrentOrder.EventEndDate, UpdateSourceTrigger=PropertyChanged}"
+                                            ToolTip="Fin del evento (opcional: dejar vacío si es de un solo día). En el documento sale en palabras: 'del 14 de abril al 15 de mayo'."/>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Margin="0,0,14,0">
@@ -386,7 +398,7 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description}" Width="3*" IsReadOnly="True">
+                        <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description, Converter={StaticResource StripTagsConverter}}" Width="3*" IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="HorizontalAlignment" Value="Left"/>

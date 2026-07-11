@@ -196,6 +196,7 @@ namespace Alquitel.UI.ViewModels
                             ClientCuit = CurrentOrder.Client?.Cuit,
                             LocationName = CurrentOrder.Location?.Name,
                             CurrentOrder.EventDate,
+                            CurrentOrder.EventEndDate,
                             CurrentOrder.CreatedDate,
                             Status = CurrentOrder.Status.ToString(),
                             Items = SelectedItems.Select(i => new
@@ -306,10 +307,22 @@ namespace Alquitel.UI.ViewModels
             CuitInput = value.Cuit ?? string.Empty;
         }
 
+        // Al cargar una orden existente EventDays se setea desde el primer ítem; sin esta
+        // bandera ese seteo pisaba los Dias individuales del resto de los ítems.
+        private bool _suppressEventDaysPropagation;
+
         partial void OnEventDaysChanged(int value)
         {
             if (value < 1) { EventDays = 1; return; }
+            if (_suppressEventDaysPropagation) return;
             foreach (var item in SelectedItems) item.Dias = value;
+        }
+
+        private void SetEventDaysWithoutPropagation(int value)
+        {
+            _suppressEventDaysPropagation = true;
+            try { EventDays = Math.Max(1, value); }
+            finally { _suppressEventDaysPropagation = false; }
         }
 
         partial void OnIsTechnicalViewChanged(bool value)
@@ -362,13 +375,9 @@ namespace Alquitel.UI.ViewModels
             _isRestoringUndo = true;
             try
             {
-                SelectedItems.Clear();
-                CurrentOrder.Items.Clear();
+                ClearCart();
                 foreach (var item in snapshot)
-                {
-                    SelectedItems.Add(item);
-                    CurrentOrder.Items.Add(item);
-                }
+                    AddItemToCart(item);
             }
             finally
             {
@@ -401,16 +410,14 @@ namespace Alquitel.UI.ViewModels
                 DescriptionSnapshot = product.Description,
                 RequestedMeasure = string.Empty, // Starts off empty, user fills it in for the budget
             };
-            SelectedItems.Add(item);
-            CurrentOrder.Items.Add(item);
+            AddItemToCart(item);
         }
 
         [RelayCommand]
         private void RemoveItem(OrderItem item)
         {
             PushUndoSnapshot();
-            SelectedItems.Remove(item);
-            CurrentOrder.Items.Remove(item);
+            RemoveItemFromCart(item);
         }
 
         [RelayCommand]
@@ -420,8 +427,27 @@ namespace Alquitel.UI.ViewModels
             if (existingItem == null) return;
             PushUndoSnapshot();
             if (existingItem.Quantity > 1) { existingItem.Quantity -= 1; return; }
-            SelectedItems.Remove(existingItem);
-            CurrentOrder.Items.Remove(existingItem);
+            RemoveItemFromCart(existingItem);
+        }
+
+        // SelectedItems (vista) y CurrentOrder.Items (modelo) deben permanecer sincronizados.
+        // Estos helpers evitan que una colección se actualice sin la otra.
+        private void AddItemToCart(OrderItem item)
+        {
+            SelectedItems.Add(item);
+            CurrentOrder.Items.Add(item);
+        }
+
+        private void RemoveItemFromCart(OrderItem item)
+        {
+            SelectedItems.Remove(item);
+            CurrentOrder.Items.Remove(item);
+        }
+
+        private void ClearCart()
+        {
+            SelectedItems.Clear();
+            CurrentOrder.Items.Clear();
         }
 
         [RelayCommand]
@@ -449,7 +475,7 @@ namespace Alquitel.UI.ViewModels
                 var replace = _dialogService.ShowConfirm(
                     "Confirmar reemplazo",
                     "Ya hay productos en el pedido. ¿Querés reemplazarlos con lo detectado en el texto?");
-                if (replace) { SelectedItems.Clear(); CurrentOrder.Items.Clear(); }
+                if (replace) ClearCart();
             }
 
             int addedCount = 0;
@@ -468,8 +494,7 @@ namespace Alquitel.UI.ViewModels
                     DescriptionSnapshot = result.Product.Description,
                     RequestedMeasure = string.Empty
                 };
-                SelectedItems.Add(item);
-                CurrentOrder.Items.Add(item);
+                AddItemToCart(item);
                 addedCount++;
             }
             _dialogService.ShowInfo("Búsqueda inteligente", $"Se agregaron {addedCount} producto(s) automáticamente.");
@@ -523,6 +548,11 @@ namespace Alquitel.UI.ViewModels
                 if (_currentUserService.Current != null)
                     CurrentOrder.AdminName = _currentUserService.Current.Name;
 
+                // Los campos Contacto/CUIT de los documentos salen SIEMPRE de la ficha
+                // del cliente: si se tipeó a mano y el cliente existe en la base,
+                // completar los datos de contacto que falten.
+                await HydrateClientContactAsync();
+
                 // CreatedDate is UTC; use local time so evening budgets don't get tomorrow's date
                 string datePart = CurrentOrder.CreatedDate.ToLocalTime().ToString("MMdd");
                 string empresaPart = string.IsNullOrWhiteSpace(CurrentOrder.Client?.CompanyName) ? "CLIENTE" : CurrentOrder.Client.CompanyName;
@@ -571,6 +601,53 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
                 _dialogService.ShowError("Error de Generación", $"Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Completa ContactName/Email/Phone/Cuit del cliente del pedido con los datos de
+        /// su ficha en la base (buscada por Id, CUIT o razón social). Garantiza que la OT
+        /// imprima el contacto y CUIT del CLIENTE aunque se lo haya tipeado a mano.
+        /// </summary>
+        private async Task HydrateClientContactAsync()
+        {
+            var client = CurrentOrder.Client;
+            if (client == null) return;
+            if (!string.IsNullOrWhiteSpace(client.ContactName) &&
+                !string.IsNullOrWhiteSpace(client.Email) &&
+                !string.IsNullOrWhiteSpace(client.Phone) &&
+                !string.IsNullOrWhiteSpace(client.Cuit)) return;
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                Client? stored = null;
+                if (client.Id != Guid.Empty)
+                    stored = await db.Clients.AsNoTracking().IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(c => c.Id == client.Id);
+                if (stored == null && !string.IsNullOrWhiteSpace(client.Cuit))
+                {
+                    var cuit = client.Cuit.Trim();
+                    stored = await db.Clients.AsNoTracking().IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(c => c.Cuit == cuit);
+                }
+                if (stored == null && !string.IsNullOrWhiteSpace(client.CompanyName))
+                {
+                    var name = client.CompanyName.Trim();
+                    stored = await db.Clients.AsNoTracking().IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(c => c.CompanyName == name);
+                }
+                if (stored == null) return;
+
+                if (string.IsNullOrWhiteSpace(client.ContactName)) client.ContactName = stored.ContactName;
+                if (string.IsNullOrWhiteSpace(client.Email)) client.Email = stored.Email;
+                if (string.IsNullOrWhiteSpace(client.Phone)) client.Phone = stored.Phone;
+                if (string.IsNullOrWhiteSpace(client.Cuit)) client.Cuit = stored.Cuit;
+                OnPropertyChanged(nameof(CurrentOrder));
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "HydrateClientContactAsync failed");
             }
         }
 
@@ -650,15 +727,18 @@ namespace Alquitel.UI.ViewModels
         /// pero con identidad nueva (Id/N° presupuesto/fechas en blanco). Es la base del
         /// botón "Repetir pedido" del dashboard.
         /// </summary>
-        public void LoadOrderCopyById(Guid orderId)
+        public async Task LoadOrderCopyByIdAsync(Guid orderId)
         {
-            LoadOrder(new Order { Id = orderId });
-            if (CurrentOrder.Id != orderId) return; // la orden original no existe
+            var full = await FetchOrderAsync(orderId);
+            if (full == null) return; // la orden original no existe
+
+            ApplyLoadedOrder(full);
 
             CurrentOrder.Id = Guid.NewGuid();
             CurrentOrder.BudgetNumber = string.Empty;
             CurrentOrder.CreatedDate = DateTime.UtcNow;
             CurrentOrder.EventDate = null; // el evento nuevo tendrá otra fecha; forzar selección
+            CurrentOrder.EventEndDate = null;
             CurrentOrder.Status = OrderStatus.Draft;
 
             // La copia es un pedido nuevo: lo firma quien está logueado, no el autor original.
@@ -678,7 +758,21 @@ namespace Alquitel.UI.ViewModels
             OnPropertyChanged(nameof(CurrentOrder));
 
             // La copia arranca con el próximo número de la serie.
-            _ = AssignNextSerialIfEmptyAsync();
+            await AssignNextSerialIfEmptyAsync();
+        }
+
+        /// <summary>
+        /// Carga una orden existente para EDITARLA: conserva Id, número, fechas y estado.
+        /// Es lo que usa la "Actividad reciente" del dashboard al tocar un presupuesto.
+        /// </summary>
+        public async Task<bool> LoadOrderForEditAsync(Guid orderId)
+        {
+            var full = await FetchOrderAsync(orderId);
+            if (full == null) return false;
+
+            ApplyLoadedOrder(full);
+            OnPropertyChanged(nameof(CurrentOrder));
+            return true;
         }
 
         /// <summary>
@@ -695,34 +789,37 @@ namespace Alquitel.UI.ViewModels
             branch.Items = new List<OrderItem>();
             CurrentOrder = branch;
 
-            SelectedItems.Clear();
+            ClearCart();
             foreach (var item in items)
-            {
-                SelectedItems.Add(item);
-                CurrentOrder.Items.Add(item);
-            }
+                AddItemToCart(item);
 
-            EventDays = items.FirstOrDefault()?.Dias ?? 1;
+            SetEventDaysWithoutPropagation(items.FirstOrDefault()?.Dias ?? 1);
             CuitInput = branch.Client?.Cuit ?? string.Empty;
             OnPropertyChanged(nameof(CurrentOrder));
         }
 
-        public void LoadOrder(Order order)
+        /// <summary>
+        /// Lee la orden completa de la base (incluyendo entidades archivadas) sin
+        /// bloquear el hilo de UI — importante en modo servidor (PostgreSQL remoto).
+        /// </summary>
+        private async Task<Order?> FetchOrderAsync(Guid orderId)
         {
-            // El historial que se carga reemplaza al carrito actual: los snapshots viejos ya no aplican.
-            _undoSnapshots.Clear();
-            UndoCartCommand.NotifyCanExecuteChanged();
-
-            using var db = _dbContextFactory.CreateDbContext();
-            var full = db.Orders
+            using var db = await _dbContextFactory.CreateDbContextAsync();
+            return await db.Orders
                 .AsNoTracking()
                 .IgnoreQueryFilters() // Include archived clients/products in historical orders
                 .Include(o => o.Client)
                 .Include(o => o.Location)
                 .Include(o => o.Items).ThenInclude(i => i.Product)
-                .FirstOrDefault(o => o.Id == order.Id);
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+        }
 
-            if (full == null) return;
+        /// <summary>Vuelca una orden ya leída de la base al estado del armador (carrito, cliente, días).</summary>
+        private void ApplyLoadedOrder(Order full)
+        {
+            // El historial que se carga reemplaza al carrito actual: los snapshots viejos ya no aplican.
+            _undoSnapshots.Clear();
+            UndoCartCommand.NotifyCanExecuteChanged();
 
             CurrentOrder = new Order
             {
@@ -732,13 +829,13 @@ namespace Alquitel.UI.ViewModels
                 CreatedByUserId = full.CreatedByUserId,
                 CreatedDate = full.CreatedDate,
                 EventDate = full.EventDate,
+                EventEndDate = full.EventEndDate,
                 Status = full.Status,
                 Client = full.Client ?? new Client(),
                 Location = full.Location ?? new Location(),
             };
 
-            SelectedItems.Clear();
-            CurrentOrder.Items.Clear();
+            ClearCart();
 
             foreach (var item in full.Items)
             {
@@ -757,11 +854,10 @@ namespace Alquitel.UI.ViewModels
                     DescriptionSnapshot = item.DescriptionSnapshot,
                     RequestedMeasure = item.RequestedMeasure,
                 };
-                SelectedItems.Add(oi);
-                CurrentOrder.Items.Add(oi);
+                AddItemToCart(oi);
             }
 
-            EventDays = full.Items.FirstOrDefault()?.Dias ?? 1;
+            SetEventDaysWithoutPropagation(full.Items.FirstOrDefault()?.Dias ?? 1);
             CuitInput = full.Client?.Cuit ?? string.Empty;
         }
 
@@ -845,7 +941,7 @@ namespace Alquitel.UI.ViewModels
                 var clientId = await ResolveClientIdAsync(db);
                 var locationId = location.Id;
 
-                var orderExists = db.Orders.Any(o => o.Id == CurrentOrder.Id);
+                var orderExists = await db.Orders.AnyAsync(o => o.Id == CurrentOrder.Id);
 
                 if (!orderExists)
                 {
@@ -859,6 +955,7 @@ namespace Alquitel.UI.ViewModels
                         LocationId = locationId,
                         CreatedDate = CurrentOrder.CreatedDate,
                         EventDate = CurrentOrder.EventDate,
+                        EventEndDate = CurrentOrder.EventEndDate,
                         Status = CurrentOrder.Status,
                     };
                     db.Orders.Add(orderToSave);
@@ -885,7 +982,7 @@ namespace Alquitel.UI.ViewModels
                 }
                 else
                 {
-                    var tracked = db.Orders.Find(CurrentOrder.Id);
+                    var tracked = await db.Orders.FindAsync(CurrentOrder.Id);
                     if (tracked != null)
                     {
                         tracked.BudgetNumber = CurrentOrder.BudgetNumber;
@@ -895,10 +992,11 @@ namespace Alquitel.UI.ViewModels
                         tracked.ClientId = clientId;
                         tracked.LocationId = locationId;
                         tracked.EventDate = CurrentOrder.EventDate;
+                        tracked.EventEndDate = CurrentOrder.EventEndDate;
                         tracked.Status = CurrentOrder.Status;
                     }
 
-                    var oldItems = db.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToList();
+                    var oldItems = await db.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToListAsync();
                     db.OrderItems.RemoveRange(oldItems);
                     await db.SaveChangesAsync();
 
@@ -989,6 +1087,9 @@ namespace Alquitel.UI.ViewModels
             
             if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber)) errors.Add("N° Presupuesto: ingresá un número.");
             if (!CurrentOrder.EventDate.HasValue) errors.Add("Fecha del evento: seleccioná una fecha.");
+            if (CurrentOrder.EventDate.HasValue && CurrentOrder.EventEndDate.HasValue &&
+                CurrentOrder.EventEndDate.Value.Date < CurrentOrder.EventDate.Value.Date)
+                errors.Add("Fecha del evento: la fecha de fin no puede ser anterior a la de inicio.");
             if (EventDays < 1) errors.Add("Días: debe ser mayor o igual a 1.");
             if (!SelectedItems.Any()) errors.Add("Productos: agregá al menos un producto.");
             if (!errors.Any()) { message = string.Empty; return true; }
@@ -996,10 +1097,20 @@ namespace Alquitel.UI.ViewModels
             return false;
         }
 
+        // Items actualmente suscriptos a PropertyChanged. Clear() dispara Reset SIN
+        // OldItems, así que confiar solo en e.OldItems dejaba handlers colgados (leak
+        // y recálculos fantasma). Se resincroniza la suscripción completa en cada cambio.
+        private readonly List<OrderItem> _subscribedItems = new();
+
         private void OnSelectedItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (e.OldItems != null) foreach (OrderItem item in e.OldItems) item.PropertyChanged -= OnSelectedItemPropertyChanged;
-            if (e.NewItems != null) foreach (OrderItem item in e.NewItems) item.PropertyChanged += OnSelectedItemPropertyChanged;
+            foreach (var item in _subscribedItems) item.PropertyChanged -= OnSelectedItemPropertyChanged;
+            _subscribedItems.Clear();
+            foreach (var item in SelectedItems)
+            {
+                item.PropertyChanged += OnSelectedItemPropertyChanged;
+                _subscribedItems.Add(item);
+            }
             SelectionVersion++;
             OnPropertyChanged(nameof(FinalBudget));
             _ = RefreshStockConflictsAsync();

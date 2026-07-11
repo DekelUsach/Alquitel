@@ -107,7 +107,8 @@ namespace Alquitel.UI.ViewModels
                 if (!f.FileName.Contains(text, StringComparison.OrdinalIgnoreCase)
                     && !f.BudgetNumber.Contains(text, StringComparison.OrdinalIgnoreCase)
                     && !f.Company.Contains(text, StringComparison.OrdinalIgnoreCase)
-                    && !f.LocationName.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    && !f.LocationName.Contains(text, StringComparison.OrdinalIgnoreCase)
+                    && !f.Initials.Contains(text, StringComparison.OrdinalIgnoreCase))
                     return false;
             }
 

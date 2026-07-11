@@ -21,6 +21,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IAppSettings _appSettings;
         private readonly IRemoteSyncService _remoteSyncService;
         private readonly IUserRepository _userRepository;
+        private readonly IOrderRepository _orderRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly IDialogService _dialogService;
         private readonly ITemplateStorageService _templateStorage;
@@ -56,6 +57,9 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private bool _isPushingData;
 
+        [ObservableProperty]
+        private bool _isTestingConnection;
+
         public bool IsRemoteConfigured => _remoteSyncService.IsRemoteConfigured;
 
         // ── Plantillas en la nube (solo Admin) ───────────────────────
@@ -79,7 +83,7 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _newUserName = string.Empty;
 
-        /// <summary>0 = Vendedor, 1 = Admin (índice del combo de rol).</summary>
+        /// <summary>0 = Vendedor, 1 = Admin, 2 = Armador (índice del combo de rol).</summary>
         [ObservableProperty]
         private int _newUserRoleIndex;
 
@@ -89,13 +93,75 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _usersStatusMessage = string.Empty;
 
+        /// <summary>Resumen de actividad del usuario seleccionado (presupuestos, montos).</summary>
+        [ObservableProperty]
+        private string _selectedUserStatsMessage = string.Empty;
+
+        [ObservableProperty]
+        private string _editUserName = string.Empty;
+
+        [ObservableProperty]
+        private int _editUserRoleIndex;
+
+        public bool HasSelectedUser => SelectedUser != null;
+
+        partial void OnSelectedUserChanged(User? value)
+        {
+            _ = LoadSelectedUserStatsAsync(value);
+            OnPropertyChanged(nameof(HasSelectedUser));
+            if (value != null)
+            {
+                EditUserName = value.Name;
+                EditUserRoleIndex = value.Role switch
+                {
+                    UserRole.Admin => 1,
+                    UserRole.Armador => 2,
+                    _ => 0
+                };
+            }
+            else
+            {
+                EditUserName = string.Empty;
+                EditUserRoleIndex = 0;
+            }
+        }
+
+        private async Task LoadSelectedUserStatsAsync(User? user)
+        {
+            if (user == null)
+            {
+                SelectedUserStatsMessage = string.Empty;
+                return;
+            }
+
+            SelectedUserStatsMessage = $"Cargando actividad de {user.Name}…";
+            try
+            {
+                var stats = await _orderRepository.GetUserStatsAsync(user.Id, user.Name);
+                // El usuario seleccionado pudo cambiar mientras corría la consulta.
+                if (SelectedUser?.Id != user.Id) return;
+
+                SelectedUserStatsMessage = stats.OrdersCount == 0
+                    ? $"{user.Name} todavía no creó presupuestos."
+                    : $"{user.Name}: {stats.OrdersCount} presupuesto(s) · Total {stats.TotalAmount:C0} · " +
+                      $"Último: N° {stats.LastBudgetNumber} ({stats.LastOrderDate:dd/MM/yyyy})";
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "LoadSelectedUserStatsAsync failed");
+                SelectedUserStatsMessage = $"✗ No se pudo cargar la actividad: {ex.Message}";
+            }
+        }
+
         public SettingsViewModel(IAppSettings appSettings, IRemoteSyncService remoteSyncService,
-            IUserRepository userRepository, ICurrentUserService currentUserService, IDialogService dialogService,
+            IUserRepository userRepository, IOrderRepository orderRepository,
+            ICurrentUserService currentUserService, IDialogService dialogService,
             ITemplateStorageService templateStorage)
         {
             _appSettings = appSettings;
             _remoteSyncService = remoteSyncService;
             _userRepository = userRepository;
+            _orderRepository = orderRepository;
             _currentUserService = currentUserService;
             _dialogService = dialogService;
             _templateStorage = templateStorage;
@@ -110,14 +176,26 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task RefreshRemoteStatusAsync()
         {
+            if (IsTestingConnection) return;
+            IsTestingConnection = true;
+            RemoteStatusMessage = "Probando conexión…";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var status = await _remoteSyncService.TestConnectionAsync();
-                RemoteStatusMessage = status.Message;
+                sw.Stop();
+                RemoteStatusMessage = status.IsConfigured
+                    ? $"{status.Message}\nÚltima prueba: {DateTime.Now:HH:mm:ss} ({sw.ElapsedMilliseconds} ms)"
+                    : status.Message;
             }
             catch (Exception ex)
             {
-                RemoteStatusMessage = $"Error: {ex.Message}";
+                AppLog.Error(ex, "RefreshRemoteStatusAsync failed");
+                RemoteStatusMessage = $"✗ Error al probar la conexión: {ex.Message}";
+            }
+            finally
+            {
+                IsTestingConnection = false;
             }
         }
 
@@ -211,6 +289,14 @@ namespace Alquitel.UI.ViewModels
                     "No hay servidor configurado: completá Url y AnonKey de Supabase en appsettings.json.");
                 return;
             }
+            if (!_templateStorage.CanPublish)
+            {
+                _dialogService.ShowInfo("Plantillas en la nube",
+                    "Este equipo no tiene la service key para publicar (la anon key de la app es de solo lectura). " +
+                    "Configurá la variable de entorno ALQUITEL_Database__Supabase__ServiceKey " +
+                    "o Database:Supabase:ServiceKey en appsettings.local.json en el equipo del Admin.");
+                return;
+            }
 
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -281,7 +367,12 @@ namespace Alquitel.UI.ViewModels
                 var user = new User
                 {
                     Name = name,
-                    Role = NewUserRoleIndex == 1 ? UserRole.Admin : UserRole.Vendedor,
+                    Role = NewUserRoleIndex switch
+                    {
+                        1 => UserRole.Admin,
+                        2 => UserRole.Armador,
+                        _ => UserRole.Vendedor
+                    },
                     PasswordHash = string.IsNullOrWhiteSpace(NewUserPassword)
                         ? null
                         : PasswordHasher.Hash(NewUserPassword)
@@ -309,16 +400,30 @@ namespace Alquitel.UI.ViewModels
                 return;
             }
 
+            // Diálogo dedicado: antes se usaba el campo "Contraseña" de la fila Agregar
+            // y un campo vacío borraba la contraseña sin aviso.
+            var prompt = new Views.PasswordPromptWindow(
+                SelectedUser.Name,
+                hasPassword: !string.IsNullOrWhiteSpace(SelectedUser.PasswordHash))
+            {
+                Owner = Application.Current.MainWindow
+            };
+            if (prompt.ShowDialog() != true) return;
+
+            if (prompt.RemoveRequested &&
+                !_dialogService.ShowConfirm("Quitar contraseña",
+                    $"¿Quitar la contraseña de {SelectedUser.Name}? Podrá iniciar sesión con solo elegir su nombre."))
+                return;
+
             try
             {
-                SelectedUser.PasswordHash = string.IsNullOrWhiteSpace(NewUserPassword)
+                SelectedUser.PasswordHash = prompt.RemoveRequested
                     ? null
-                    : PasswordHasher.Hash(NewUserPassword);
+                    : PasswordHasher.Hash(prompt.Password);
                 await _userRepository.UpsertAsync(SelectedUser);
-                UsersStatusMessage = string.IsNullOrWhiteSpace(NewUserPassword)
+                UsersStatusMessage = prompt.RemoveRequested
                     ? $"✓ Contraseña de {SelectedUser.Name} eliminada (entra sin contraseña)."
                     : $"✓ Contraseña de {SelectedUser.Name} actualizada.";
-                NewUserPassword = string.Empty;
             }
             catch (Exception ex)
             {
@@ -328,7 +433,7 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private async Task ArchiveUserAsync()
+        private async Task DeleteUserAsync()
         {
             if (SelectedUser == null)
             {
@@ -337,33 +442,98 @@ namespace Alquitel.UI.ViewModels
             }
             if (SelectedUser.Id == _currentUserService.Current?.Id)
             {
-                UsersStatusMessage = "✗ No podés archivar tu propio usuario.";
+                UsersStatusMessage = "✗ No podés eliminar tu propio usuario.";
                 return;
             }
             if (SelectedUser.Role == UserRole.Admin &&
                 Users.Count(u => u.Role == UserRole.Admin) <= 1)
             {
-                UsersStatusMessage = "✗ No se puede archivar al único Admin del sistema.";
+                UsersStatusMessage = "✗ No se puede eliminar al único Admin del sistema.";
                 return;
             }
 
-            if (!_dialogService.ShowConfirm("Archivar usuario",
-                $"¿Archivar al usuario {SelectedUser.Name}? No podrá iniciar sesión, " +
-                "pero sus presupuestos históricos se conservan."))
+            if (!_dialogService.ShowConfirm("Eliminar usuario",
+                $"¿Estás seguro de que deseas eliminar al usuario {SelectedUser.Name}?\n\nNo podrá iniciar sesión, pero sus presupuestos históricos se conservan."))
                 return;
 
             try
             {
                 await _userRepository.ArchiveAsync(SelectedUser.Id);
-                UsersStatusMessage = $"✓ Usuario {SelectedUser.Name} archivado.";
+                UsersStatusMessage = $"✓ Usuario {SelectedUser.Name} eliminado.";
                 SelectedUser = null;
                 await LoadUsersAsync();
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "ArchiveUserAsync failed");
-                UsersStatusMessage = $"✗ Error al archivar: {ex.Message}";
+                AppLog.Error(ex, "DeleteUserAsync failed");
+                UsersStatusMessage = $"✗ Error al eliminar usuario: {ex.Message}";
             }
+        }
+
+        [RelayCommand]
+        private async Task UpdateUserAsync()
+        {
+            if (SelectedUser == null)
+            {
+                UsersStatusMessage = "✗ Seleccioná un usuario de la lista.";
+                return;
+            }
+
+            var name = EditUserName.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                UsersStatusMessage = "✗ El nombre no puede estar vacío.";
+                return;
+            }
+
+            if (Users.Any(u => u.Id != SelectedUser.Id && string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                UsersStatusMessage = "✗ Ya existe otro usuario con ese nombre.";
+                return;
+            }
+
+            var newRole = EditUserRoleIndex switch
+            {
+                1 => UserRole.Admin,
+                2 => UserRole.Armador,
+                _ => UserRole.Vendedor
+            };
+
+            // Validations for role modifications of self or last admin
+            if (SelectedUser.Id == _currentUserService.Current?.Id && newRole != UserRole.Admin)
+            {
+                UsersStatusMessage = "✗ No podés quitarte el rol de Admin a vos mismo.";
+                return;
+            }
+
+            if (SelectedUser.Role == UserRole.Admin && newRole != UserRole.Admin &&
+                Users.Count(u => u.Role == UserRole.Admin) <= 1)
+            {
+                UsersStatusMessage = "✗ No podés cambiar el rol del único Admin del sistema.";
+                return;
+            }
+
+            try
+            {
+                SelectedUser.Name = name;
+                SelectedUser.Role = newRole;
+
+                await _userRepository.UpsertAsync(SelectedUser);
+                UsersStatusMessage = $"✓ Usuario {name} actualizado.";
+                SelectedUser = null; // Clean selection after update
+                await LoadUsersAsync();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "UpdateUserAsync failed");
+                UsersStatusMessage = $"✗ Error al actualizar usuario: {ex.Message}";
+            }
+        }
+
+        [RelayCommand]
+        private void DeselectUser()
+        {
+            SelectedUser = null;
         }
 
         [RelayCommand]

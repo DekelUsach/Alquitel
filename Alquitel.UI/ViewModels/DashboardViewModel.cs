@@ -137,7 +137,9 @@ namespace Alquitel.UI.ViewModels
             TopProducts.Clear();
             var rank = 1;
             foreach (var t in topRaw)
-                TopProducts.Add(new TopProductRow(rank++, t.Description, t.Count));
+                TopProducts.Add(new TopProductRow(rank++,
+                    Alquitel.Core.Parsing.TagParser.StripTags(t.Description) ?? t.Description,
+                    t.Count));
         }
 
         private static string StatusLabel(OrderStatus status) => status switch
@@ -156,11 +158,24 @@ namespace Alquitel.UI.ViewModels
         /// (mismos productos y cliente, número y fechas en blanco).
         /// </summary>
         [RelayCommand]
-        private void RepeatOrder(RecentOrderRow? row)
+        private async System.Threading.Tasks.Task RepeatOrderAsync(RecentOrderRow? row)
         {
             if (row == null) return;
             var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
-            builder.LoadOrderCopyById(row.OrderId);
+            await builder.LoadOrderCopyByIdAsync(row.OrderId);
+            _navigationService.NavigateTo(builder);
+        }
+
+        /// <summary>
+        /// Tocar un presupuesto de "Actividad reciente" lo abre en el armador para
+        /// verlo o editarlo (conserva número, fechas y estado).
+        /// </summary>
+        [RelayCommand]
+        private async System.Threading.Tasks.Task OpenOrderAsync(RecentOrderRow? row)
+        {
+            if (row == null) return;
+            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            if (!await builder.LoadOrderForEditAsync(row.OrderId)) return;
             _navigationService.NavigateTo(builder);
         }
 

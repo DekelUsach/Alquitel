@@ -22,8 +22,13 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             // CreatedDate is stored in UTC — render it in local time or documents
             // generated at night carry tomorrow's date (Argentina is UTC-3).
             string createdLocal = order.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy");
+            // La fecha del evento va en palabras y admite lapso:
+            // "del 14 de abril al 15 de mayo de 2026".
+            string eventDateWords = order.EventDate.HasValue
+                ? Alquitel.Core.Helpers.SpanishDateFormatter.ToWordsRange(order.EventDate.Value, order.EventEndDate)
+                : "CONSULTAR";
             ReplaceText(doc, "(fecha actual)", createdLocal);
-            ReplaceText(doc, "(fecha)",        order.EventDate?.ToString("dd/MM/yyyy") ?? createdLocal);
+            ReplaceText(doc, "(fecha)",        order.EventDate.HasValue ? eventDateWords : createdLocal);
             ReplaceText(doc, "[FECHA]",        createdLocal);
             ReplaceText(doc, "{{FECHA}}",      createdLocal);
 
@@ -42,6 +47,21 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             ReplaceText(doc, "(empleado que hizo el presupuesto)", order.AdminName);
             ReplaceText(doc, "{{ADMIN}}",      order.AdminName);
             ReplaceText(doc, "[ADMIN]",        order.AdminName);
+            ReplaceText(doc, "{{USUARIO}}",    order.AdminName);
+
+            // Placeholders de la plantilla de OT (orden de trabajo técnica).
+            ReplaceText(doc, "(FECHA_EVENTO)",   eventDateWords);
+            ReplaceText(doc, "{{FECHA_EVENTO}}", eventDateWords);
+
+            // Contacto del cliente: "Nombre email teléfono" (solo los datos cargados).
+            string contacto = string.Join("  ", new[] { order.Client?.ContactName, order.Client?.Email, order.Client?.Phone }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+            ReplaceText(doc, "{{CONTACTO}}", contacto);
+
+            // Sin campo de comentarios en el modelo todavía: la línea queda en blanco
+            // para completar a mano en Word, igual que en las OT históricas.
+            ReplaceText(doc, "{{COMENTARIOS}}", string.Empty);
+            ReplaceText(doc, "{{DIRECCION}}",   string.Empty);
 
             ReplaceBookmark(doc, "BK_CLIENT_NAME",  order.Client?.CompanyName ?? "N/A");
             ReplaceBookmark(doc, "BK_CUIT",         order.Client?.Cuit ?? "N/A");
@@ -77,6 +97,39 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             }
         }
 
+        /// <summary>
+        /// Subraya todas las ocurrencias de un texto literal en el documento (ej. el
+        /// título "PRODUCCION" de la orden de trabajo, que la plantilla trae sin formato).
+        /// </summary>
+        public static void UnderlineOccurrences(dynamic doc, string findText)
+        {
+            foreach (dynamic storyRange in doc.StoryRanges)
+            {
+                dynamic? currentRange = storyRange;
+                while (currentRange != null)
+                {
+                    try
+                    {
+                        dynamic search = currentRange.Duplicate;
+                        search.Find.ClearFormatting();
+                        // Solo el título en MAYÚSCULAS y como palabra completa: sin esto
+                        // también se subrayaría "producción" dentro de notas técnicas.
+                        search.Find.MatchCase = true;
+                        search.Find.MatchWholeWord = true;
+                        while ((bool)search.Find.Execute(findText))
+                        {
+                            search.Font.Underline = 1; // wdUnderlineSingle
+                            search.Collapse(0);        // wdCollapseEnd — seguir después del hallazgo
+                        }
+                    }
+                    catch (Exception ex) { AppLog.Warning(ex, "Underline failed for text {Text}", findText); }
+
+                    try { currentRange = currentRange.NextStoryRange; }
+                    catch { currentRange = null; }
+                }
+            }
+        }
+
         private static void ReplaceBookmark(dynamic doc, string name, string text)
         {
             if (!doc.Bookmarks.Exists(name)) return;
@@ -98,11 +151,27 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 {
                     try
                     {
-                        currentRange.Find.ClearFormatting();
-                        currentRange.Find.Execute(
-                            findText, Type.Missing, Type.Missing, Type.Missing, Type.Missing,
-                            Type.Missing, Type.Missing, 1 /*wdFindContinue*/, Type.Missing,
-                            safeReplace, 2 /*wdReplaceAll*/);
+                        if (safeReplace.Length <= 250)
+                        {
+                            currentRange.Find.ClearFormatting();
+                            currentRange.Find.Execute(
+                                findText, Type.Missing, Type.Missing, Type.Missing, Type.Missing,
+                                Type.Missing, Type.Missing, 1 /*wdFindContinue*/, Type.Missing,
+                                safeReplace, 2 /*wdReplaceAll*/);
+                        }
+                        else
+                        {
+                            // Word limita ReplaceWith a 255 caracteres y lanza COMException
+                            // con textos largos (ej. la lista completa de productos). Para
+                            // esos casos se localiza cada ocurrencia y se asigna Range.Text.
+                            dynamic search = currentRange.Duplicate;
+                            search.Find.ClearFormatting();
+                            while ((bool)search.Find.Execute(findText))
+                            {
+                                search.Text = safeReplace;
+                                search.Collapse(0); // wdCollapseEnd — seguir buscando después del reemplazo
+                            }
+                        }
                     }
                     catch (Exception ex) { AppLog.Warning(ex, "Find/Replace failed for placeholder {Placeholder}", findText); }
 

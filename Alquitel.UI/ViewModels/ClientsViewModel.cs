@@ -83,6 +83,9 @@ namespace Alquitel.UI.ViewModels
             await LoadClientsAsync();
         }
 
+        [RelayCommand]
+        private async Task RefreshAsync() => await LoadClientsAsync();
+
         private async Task LoadClientsAsync()
         {
             try
