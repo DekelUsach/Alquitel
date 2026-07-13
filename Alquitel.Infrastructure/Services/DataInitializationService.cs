@@ -73,6 +73,7 @@ namespace Alquitel.Infrastructure.Services
             AddColumnIfMissing(context, "Clients", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(context, "OrderItems", "DescriptionSnapshot", "TEXT");
             AddColumnIfMissing(context, "Orders", "EventEndDate", "TEXT");
+            AddColumnIfMissing(context, "Orders", "Comments", "TEXT");
 
             // 2. Create missing indices (IF NOT EXISTS is supported in SQLite)
             ExecuteSafe(context, "CREATE INDEX IF NOT EXISTS \"IX_Orders_CreatedDate\" ON \"Orders\" (\"CreatedDate\")");
@@ -161,6 +162,17 @@ namespace Alquitel.Infrastructure.Services
         // ── Seed data ────────────────────────────────────────────────
         private static void SeedData(AlquitelDbContext context)
         {
+            // Productos de demostración: solo en builds DEBUG. En producción una base
+            // vacía debe quedar vacía — el catálogo real lo carga la empresa.
+#if DEBUG
+            SeedDemoProducts(context);
+#endif
+            SeedLocations(context);
+        }
+
+#if DEBUG
+        private static void SeedDemoProducts(AlquitelDbContext context)
+        {
             // IgnoreQueryFilters: archived (soft-deleted) rows must count as existing,
             // otherwise archiving the seed data causes it to be re-inserted on every launch.
             if (!context.Products.IgnoreQueryFilters().Any())
@@ -200,9 +212,8 @@ namespace Alquitel.Infrastructure.Services
                 });
                 context.SaveChanges();
             }
-
-            SeedLocations(context);
         }
+#endif
 
         /// <summary>
         /// Garantiza que siempre exista al menos un usuario Admin para poder entrar al

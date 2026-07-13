@@ -88,6 +88,15 @@
                         </TextBlock>
                     </Grid>
 
+                    <!-- Skeleton mientras cargan los clientes (latencia en modo Supabase) -->
+                    <StackPanel Grid.Row="1" VerticalAlignment="Top" Panel.ZIndex="1"
+                                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                        <Border Style="{StaticResource SkeletonRow}"/>
+                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.5"/>
+                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.45"/>
+                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.35"/>
+                    </StackPanel>
+
                     <ListBox Grid.Row="1" ItemsSource="{Binding ClientsCollectionView}"
                              SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
                              ItemContainerStyle="{StaticResource NavListItem}"
@@ -152,6 +161,23 @@
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="CUIT" Style="{StaticResource FieldLabel}"/>
                                         <TextBox Height="42" Text="{Binding EditCuit, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <!-- Feedback inline ✓/✗ al pie del campo -->
+                                        <TextBlock Text="{Binding CuitFeedback}" FontSize="11"
+                                                   TextWrapping="Wrap" Margin="4,3,0,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CuitFeedbackIsError}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding CuitFeedback}" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </Grid>
 
@@ -170,8 +196,21 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <TextBlock Text="Email" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Height="42" Text="{Binding EditEmail, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                        <TextBlock Text="Email" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditEmail, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Descuento acordado % (vacío = sin acuerdo)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Height="42" Text="{Binding EditSpecialDiscount, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Precio especial del cliente: el armador aplica este % de descuento por defecto al seleccionarlo (editable en cada presupuesto)."/>
+                                    </StackPanel>
+                                </Grid>
 
                                 <TextBlock Text="Notas internas (no se imprimen en documentos)" Style="{StaticResource FieldLabel}"/>
                                 <TextBox Height="90" AcceptsReturn="True" TextWrapping="Wrap"
@@ -179,6 +218,40 @@
                                          VerticalContentAlignment="Top" Padding="14,10"
                                          Text="{Binding EditInternalNotes, UpdateSourceTrigger=PropertyChanged}"
                                          ToolTip="Uso interno del equipo: condiciones de pago, historial de trato, etc."/>
+
+                                <!-- Quick-win IA: resumen del historial de pedidos -->
+                                <Button Height="36" Margin="0,14,0,0" HorizontalAlignment="Left"
+                                        Command="{Binding SummarizeClientHistoryCommand}"
+                                        AutomationProperties.Name="Resumir historial del cliente con inteligencia artificial"
+                                        ToolTip="IA: resume qué alquila este cliente, con qué frecuencia y por qué montos.">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSummarizing}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Resumen IA del historial" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Border Padding="14,10" Margin="0,10,0,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource CardInner}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ClientAiSummary}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding ClientAiSummary}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </Border>
                             </StackPanel>
                         </Border>
 

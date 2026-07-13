@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -72,6 +74,71 @@ namespace Alquitel.Infrastructure.Services
             {
                 AppLog.Warning(ex, "Error cleaning up old backups");
             }
+        }
+
+        // ── Restauración ─────────────────────────────────────────────
+
+        /// <summary>Backup disponible en disco, para el listado de Configuración.</summary>
+        public sealed record BackupInfo(string FilePath, DateTime CreatedLocal, long SizeBytes)
+        {
+            public string DisplayLabel =>
+                $"{CreatedLocal:dd/MM/yyyy HH:mm}  ·  {SizeBytes / 1024.0 / 1024.0:0.#} MB";
+        }
+
+        /// <summary>Backups existentes, el más reciente primero.</summary>
+        public IReadOnlyList<BackupInfo> GetAvailableBackups()
+        {
+            try
+            {
+                var dir = new DirectoryInfo(AppPaths.BackupsFolder);
+                if (!dir.Exists) return Array.Empty<BackupInfo>();
+                return dir.GetFiles("Alquitel_Backup_*.db")
+                    .OrderByDescending(f => f.LastWriteTime)
+                    .Select(f => new BackupInfo(f.FullName, f.LastWriteTime, f.Length))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "GetAvailableBackups failed");
+                return Array.Empty<BackupInfo>();
+            }
+        }
+
+        /// <summary>
+        /// Restaura un backup sobre la base SQLite local. Antes de pisar nada guarda una
+        /// copia de seguridad de la base actual (Alquitel_PreRestore_*). La aplicación
+        /// debe reiniciarse después para reabrir conexiones sobre el archivo nuevo.
+        /// </summary>
+        public void RestoreBackup(string backupPath)
+        {
+            if (!File.Exists(backupPath))
+                throw new FileNotFoundException("El backup seleccionado ya no existe.", backupPath);
+
+            var dbPath = AppPaths.DbFilePath;
+
+            // Red de seguridad: la base actual se preserva junto a los backups.
+            if (File.Exists(dbPath))
+            {
+                var safety = Path.Combine(AppPaths.BackupsFolder,
+                    $"Alquitel_PreRestore_{DateTime.Now:yyyyMMdd_HHmmss}.db");
+                File.Copy(dbPath, safety, overwrite: false);
+                AppLog.Information("Pre-restore safety copy created at {Path}", safety);
+            }
+
+            // Liberar los handles de SQLite (pooling) antes de tocar el archivo.
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+            File.Copy(backupPath, dbPath, overwrite: true);
+
+            // WAL/SHM del archivo anterior quedarían inconsistentes con la base restaurada.
+            foreach (var suffix in new[] { "-wal", "-shm" })
+            {
+                var side = dbPath + suffix;
+                try { if (File.Exists(side)) File.Delete(side); }
+                catch (Exception ex) { AppLog.Warning(ex, "Could not delete {File}", side); }
+            }
+
+            AppLog.Information("Database restored from {Backup}", backupPath);
         }
 
         public void Stop()

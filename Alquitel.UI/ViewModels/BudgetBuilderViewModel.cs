@@ -19,6 +19,7 @@ using System.Text;
 using System.Collections.Specialized;
 using System.Collections.Generic;
 using Alquitel.Core.Helpers;
+using Alquitel.Core.Search;
 
 namespace Alquitel.UI.ViewModels
 {
@@ -35,6 +36,13 @@ namespace Alquitel.UI.ViewModels
         private readonly ICurrentUserService _currentUserService;
         private readonly Alquitel.Core.Interfaces.Repositories.IOrderRepository _orderRepository;
         private readonly ITemplateStorageService _templateStorage;
+        private readonly IAiOrderParser _aiOrderParser;
+        private readonly IOrderPersistenceService _orderPersistence;
+        private readonly IDraftService _draftService;
+        private readonly IToastService _toastService;
+        private readonly IEmailService _emailService;
+        private readonly IOrderAuditService _auditService;
+        private readonly IAiTextAssistant _aiAssistant;
 
         [ObservableProperty]
         private string _searchText = string.Empty;
@@ -47,6 +55,19 @@ namespace Alquitel.UI.ViewModels
 
         [ObservableProperty]
         private string _cuitInput = string.Empty;
+
+        // ── Validación inline (feedback al pie del campo, no modal) ──
+        /// <summary>"✓ CUIT válido" o el motivo del error; vacío mientras se tipea.</summary>
+        [ObservableProperty]
+        private string _cuitFeedback = string.Empty;
+
+        /// <summary>True cuando el feedback del CUIT es un error (pinta en rojo).</summary>
+        [ObservableProperty]
+        private bool _cuitFeedbackIsError;
+
+        /// <summary>Error de coherencia de fechas (fin &lt; inicio); vacío si está todo bien.</summary>
+        [ObservableProperty]
+        private string _dateRangeError = string.Empty;
 
         [ObservableProperty]
         private int _eventDays = 1;
@@ -62,6 +83,20 @@ namespace Alquitel.UI.ViewModels
 
         [ObservableProperty]
         private bool _isTechnicalView;
+
+        /// <summary>True mientras la IA analiza el texto del pedido automático.</summary>
+        [ObservableProperty]
+        private bool _isAiParsing;
+
+        /// <summary>
+        /// Rail derecho colapsado a un resumen mínimo (total + generar). Útil en
+        /// ventanas angostas (~1000 px) donde el armador queda apretado.
+        /// </summary>
+        [ObservableProperty]
+        private bool _isRailCollapsed;
+
+        [RelayCommand]
+        private void ToggleRail() => IsRailCollapsed = !IsRailCollapsed;
 
         public ObservableCollection<Product> AvailableProducts { get; } = new();
         public ObservableCollection<OrderItem> SelectedItems { get; } = new();
@@ -80,28 +115,88 @@ namespace Alquitel.UI.ViewModels
             new StatusOption(OrderStatus.Archived, "Archivado"),
         };
         public decimal FinalBudget => SelectedItems.Sum(i => i.Total);
+
+        // ── Motor comercial: proxies con notificación (Order no implementa INPC) ──
+        /// <summary>Descuento global % (0-100) del presupuesto actual.</summary>
+        public decimal DiscountPercent
+        {
+            get => CurrentOrder.DiscountPercent;
+            set
+            {
+                CurrentOrder.DiscountPercent = Math.Clamp(value, 0m, 100m);
+                OnPropertyChanged();
+                NotifyCommercialTotals();
+            }
+        }
+
+        /// <summary>Descuento global en monto fijo del presupuesto actual.</summary>
+        public decimal DiscountAmount
+        {
+            get => CurrentOrder.DiscountAmount;
+            set
+            {
+                CurrentOrder.DiscountAmount = Math.Max(0m, value);
+                OnPropertyChanged();
+                NotifyCommercialTotals();
+            }
+        }
+
+        /// <summary>Toggle IVA: true = precios netos + IVA 21% discriminado.</summary>
+        public bool AddVat
+        {
+            get => CurrentOrder.AddVat;
+            set
+            {
+                CurrentOrder.AddVat = value;
+                OnPropertyChanged();
+                NotifyCommercialTotals();
+            }
+        }
+
+        public decimal DiscountValue => CurrentOrder.DiscountValue;
+        public decimal VatValue => CurrentOrder.VatValue;
+        public decimal GrandTotal => CurrentOrder.GrandTotal;
+        public bool HasDiscount => CurrentOrder.DiscountValue > 0;
+
+        private void NotifyCommercialTotals()
+        {
+            OnPropertyChanged(nameof(DiscountValue));
+            OnPropertyChanged(nameof(VatValue));
+            OnPropertyChanged(nameof(GrandTotal));
+            OnPropertyChanged(nameof(HasDiscount));
+        }
+
+        /// <summary>Al cambiar la orden raíz (cargar/copiar/recuperar) refrescar los proxies comerciales.</summary>
+        partial void OnCurrentOrderChanged(Order value)
+        {
+            OnPropertyChanged(nameof(DiscountPercent));
+            OnPropertyChanged(nameof(DiscountAmount));
+            OnPropertyChanged(nameof(AddVat));
+            NotifyCommercialTotals();
+        }
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
 
-        private Dictionary<Guid, ProductCacheEntry> _productSearchCache = new();
+        // Motor de coincidencia del Smart Search (Core, testeable). Se reconstruye en
+        // cada InitializeAsync con el snapshot del catálogo y la config vigente.
+        private ProductMatcher? _matcher;
         private CancellationTokenSource? _autosaveCts;
-        private string _draftsFolder;
 
         // ── Undo del carrito: snapshots de items antes de cada mutación ──
         private readonly List<List<OrderItem>> _undoSnapshots = new();
         private const int MaxUndoSnapshots = 20;
         private bool _isRestoringUndo;
 
-        private class ProductCacheEntry
-        {
-            public HashSet<string> DescriptionTokens { get; set; } = new();
-            public HashSet<string> CategoryTokens { get; set; } = new();
-            public HashSet<string> DescriptionTrigrams { get; set; } = new();
-            public string NormalizedDescription { get; set; } = string.Empty;
-        }
+        // La oferta de recuperar un borrador se hace una sola vez por sesión de la app:
+        // repetirla en cada navegación al armador sería intrusivo.
+        private static bool _draftRecoveryOffered;
 
-        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService, ICurrentUserService currentUserService, Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository, ITemplateStorageService templateStorage)
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService, ICurrentUserService currentUserService, Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository, ITemplateStorageService templateStorage, IAiOrderParser aiOrderParser, IOrderPersistenceService orderPersistence, IDraftService draftService, IToastService toastService, IEmailService emailService, IOrderAuditService auditService, IAiTextAssistant aiAssistant)
         {
+            _toastService = toastService;
+            _emailService = emailService;
+            _auditService = auditService;
+            _aiAssistant = aiAssistant;
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _appSettings = appSettings;
@@ -109,17 +204,14 @@ namespace Alquitel.UI.ViewModels
             _currentUserService = currentUserService;
             _orderRepository = orderRepository;
             _templateStorage = templateStorage;
+            _aiOrderParser = aiOrderParser;
+            _orderPersistence = orderPersistence;
+            _draftService = draftService;
 
             _productsView = CollectionViewSource.GetDefaultView(AvailableProducts);
             _productsView.Filter = FilterProduct;
 
             SelectedItems.CollectionChanged += OnSelectedItemsCollectionChanged;
-
-            _draftsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Alquitel", "Drafts");
-            if (!Directory.Exists(_draftsFolder))
-            {
-                Directory.CreateDirectory(_draftsFolder);
-            }
         }
 
         public async Task InitializeAsync()
@@ -136,27 +228,16 @@ namespace Alquitel.UI.ViewModels
             await AssignNextSerialIfEmptyAsync();
 
             AvailableProducts.Clear();
-            _productSearchCache.Clear();
 
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
                 var products = await db.Products.AsNoTracking().ToListAsync();
 
-                var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
+                foreach (var p in products) AvailableProducts.Add(p);
 
-                foreach (var p in products)
-                {
-                    AvailableProducts.Add(p);
-                    string nd = NormalizeText(p.Description);
-                    _productSearchCache[p.Id] = new ProductCacheEntry
-                    {
-                        DescriptionTokens = ExtractMeaningfulTokens(nd, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
-                        CategoryTokens = ExtractMeaningfulTokens(NormalizeText(p.Category), stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase),
-                        DescriptionTrigrams = Trigrams(nd),
-                        NormalizedDescription = nd
-                    };
-                }
+                _matcher = new ProductMatcher(products, _appSettings.SmartSearchStopWords,
+                    _appSettings.SmartSearchThreshold, _appSettings.SmartSearchMargin);
 
                 // Directorio de clientes para el buscador por nombre.
                 var clients = await db.Clients.AsNoTracking().OrderBy(c => c.CompanyName).ToListAsync();
@@ -167,6 +248,10 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "Failed to load products in BudgetBuilder");
             }
+
+            // Recuperación de borradores: si la app se cerró con un pedido a medias,
+            // el autosave quedó en disco y acá se ofrece retomarlo.
+            await OfferDraftRecoveryAsync();
 
             _autosaveCts?.Cancel();
             _autosaveCts = new CancellationTokenSource();
@@ -181,34 +266,7 @@ namespace Alquitel.UI.ViewModels
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30), token);
                     if (SelectedItems.Any() && CurrentOrder != null)
-                    {
-                        var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
-                        var path = Path.Combine(_draftsFolder, draftName);
-                        // Convert to DTO to avoid circular references during serialization.
-                        // Must mirror every user-editable field of Order/OrderItem or the draft loses data.
-                        var dto = new
-                        {
-                            CurrentOrder.Id,
-                            CurrentOrder.BudgetNumber,
-                            CurrentOrder.AdminName,
-                            CurrentOrder.CreatedByUserId,
-                            ClientName = CurrentOrder.Client?.CompanyName,
-                            ClientCuit = CurrentOrder.Client?.Cuit,
-                            LocationName = CurrentOrder.Location?.Name,
-                            CurrentOrder.EventDate,
-                            CurrentOrder.EventEndDate,
-                            CurrentOrder.CreatedDate,
-                            Status = CurrentOrder.Status.ToString(),
-                            Items = SelectedItems.Select(i => new
-                            {
-                                i.ProductId, i.Quantity, i.Dias, i.UnitPrice, i.Total,
-                                i.TechnicalNotes, i.ImagePath, i.CustomFieldsJson,
-                                i.DescriptionSnapshot, i.RequestedMeasure
-                            }).ToList()
-                        };
-                        var json = System.Text.Json.JsonSerializer.Serialize(dto, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-                        await File.WriteAllTextAsync(path, json, token);
-                    }
+                        await _draftService.SaveDraftAsync(CurrentOrder, SelectedItems.ToList(), token);
                 }
                 catch (TaskCanceledException) { break; }
                 catch (Exception ex)
@@ -218,28 +276,98 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Ofrece recuperar el borrador más reciente (menos de 3 días) si el armador
+        /// está vacío. Solo una vez por sesión de la aplicación.
+        /// </summary>
+        private async Task OfferDraftRecoveryAsync()
+        {
+            if (_draftRecoveryOffered || SelectedItems.Any()) return;
+            _draftRecoveryOffered = true;
+
+            var recent = _draftService.GetRecentDrafts(TimeSpan.FromDays(3));
+            if (recent.Count == 0) return;
+
+            var newest = recent[0];
+            var draft = await _draftService.LoadDraftAsync(newest.FilePath);
+            if (draft == null || draft.Items.Count == 0) return;
+
+            var age = DateTime.Now - newest.LastWriteLocal;
+            string ageText = age.TotalMinutes < 60
+                ? $"hace {Math.Max(1, (int)age.TotalMinutes)} min"
+                : age.TotalHours < 24
+                    ? $"hace {(int)age.TotalHours} h"
+                    : $"hace {(int)age.TotalDays} día(s)";
+
+            bool recover = _dialogService.ShowConfirm("Pedido sin guardar",
+                $"Hay un pedido sin guardar ({ageText}): " +
+                $"{draft.Items.Count} producto(s) para \"{draft.ClientName ?? "cliente sin nombre"}\".\n\n" +
+                "¿Querés recuperarlo?");
+
+            if (!recover)
+            {
+                // Rechazado: se descarta para no volver a ofrecerlo en cada arranque.
+                _draftService.DeleteDraftFile(newest.FilePath);
+                return;
+            }
+
+            ApplyDraft(draft);
+        }
+
+        /// <summary>Vuelca un borrador recuperado al estado del armador.</summary>
+        private void ApplyDraft(OrderDraft draft)
+        {
+            _undoSnapshots.Clear();
+            UndoCartCommand.NotifyCanExecuteChanged();
+
+            CurrentOrder = new Order
+            {
+                Id = draft.Id,
+                BudgetNumber = draft.BudgetNumber ?? string.Empty,
+                AdminName = draft.AdminName ?? string.Empty,
+                CreatedByUserId = draft.CreatedByUserId,
+                CreatedDate = draft.CreatedDate,
+                EventDate = draft.EventDate,
+                EventEndDate = draft.EventEndDate,
+                Comments = draft.Comments,
+                Status = Enum.TryParse<OrderStatus>(draft.Status, out var st) ? st : OrderStatus.Draft,
+                DiscountPercent = draft.DiscountPercent,
+                DiscountAmount = draft.DiscountAmount,
+                AddVat = draft.AddVat,
+                Client = new Client { CompanyName = draft.ClientName ?? string.Empty, Cuit = draft.ClientCuit ?? string.Empty },
+                Location = new Location { Name = draft.LocationName ?? string.Empty },
+            };
+
+            ClearCart();
+            foreach (var di in draft.Items)
+            {
+                // El borrador guarda solo el ProductId: la instancia viva sale del catálogo.
+                // Si el producto ya no existe se recupera igual con el snapshot de descripción.
+                var product = AvailableProducts.FirstOrDefault(p => p.Id == di.ProductId);
+                AddItemToCart(new OrderItem
+                {
+                    ProductId = di.ProductId,
+                    Product = product,
+                    Quantity = di.Quantity,
+                    Dias = di.Dias,
+                    UnitPrice = di.UnitPrice,
+                    TechnicalNotes = di.TechnicalNotes,
+                    ImagePath = di.ImagePath,
+                    CustomFieldsJson = di.CustomFieldsJson,
+                    DescriptionSnapshot = di.DescriptionSnapshot,
+                    RequestedMeasure = di.RequestedMeasure,
+                });
+            }
+
+            SetEventDaysWithoutPropagation(draft.Items.FirstOrDefault()?.Dias ?? 1);
+            CuitInput = draft.ClientCuit ?? string.Empty;
+            OnPropertyChanged(nameof(CurrentOrder));
+        }
+
         public void Dispose()
         {
             _autosaveCts?.Cancel();
             _autosaveCts?.Dispose();
-        }
-
-        /// <summary>
-        /// Removes the autosave draft once the order was persisted to the database,
-        /// so stale drafts don't accumulate in %AppData%\Alquitel\Drafts.
-        /// </summary>
-        private void TryDeleteDraft()
-        {
-            try
-            {
-                var draftName = CurrentOrder.Id == Guid.Empty ? "new_draft.json" : $"draft_{CurrentOrder.Id}.json";
-                var path = Path.Combine(_draftsFolder, draftName);
-                if (File.Exists(path)) File.Delete(path);
-            }
-            catch (Exception ex)
-            {
-                AppLog.Warning(ex, "Could not delete draft for order {OrderId}", CurrentOrder.Id);
-            }
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -262,10 +390,54 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnCuitInputChanged(string value)
         {
+            RefreshCuitFeedback(value);
+
             // Only hit the DB once the input is a complete, checksum-valid CUIT.
             // A synchronous query per keystroke blocked the UI thread while typing.
             if (!CuitValidator.IsValid(value)) return;
             _ = LookupClientByCuitAsync(value);
+        }
+
+        /// <summary>
+        /// Feedback inline del CUIT: ✓ apenas es válido, ✗ solo cuando el número está
+        /// completo (11 dígitos) y falla Módulo 11 — no se marca error mientras se tipea.
+        /// </summary>
+        private void RefreshCuitFeedback(string value)
+        {
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+            if (digits.Length == 0)
+            {
+                CuitFeedback = string.Empty;
+                CuitFeedbackIsError = false;
+            }
+            else if (CuitValidator.IsValid(value))
+            {
+                CuitFeedback = "✓ CUIT válido (verificación AFIP)";
+                CuitFeedbackIsError = false;
+            }
+            else if (digits.Length >= 11)
+            {
+                CuitFeedback = "✗ El CUIT no supera la verificación de AFIP (Módulo 11).";
+                CuitFeedbackIsError = true;
+            }
+            else
+            {
+                CuitFeedback = string.Empty;
+                CuitFeedbackIsError = false;
+            }
+        }
+
+        /// <summary>
+        /// Recalcula el error de rango de fechas. La vista lo invoca al cambiar cualquiera
+        /// de los DatePickers (Order no implementa INotifyPropertyChanged).
+        /// </summary>
+        public void RefreshDateValidation()
+        {
+            DateRangeError = CurrentOrder.EventDate is DateTime s &&
+                             CurrentOrder.EventEndDate is DateTime e &&
+                             e.Date < s.Date
+                ? "✗ La fecha de fin es anterior a la de inicio."
+                : string.Empty;
         }
 
         private async Task LookupClientByCuitAsync(string cuit)
@@ -305,6 +477,14 @@ namespace Alquitel.UI.ViewModels
             };
             OnPropertyChanged(nameof(CurrentOrder));
             CuitInput = value.Cuit ?? string.Empty;
+
+            // Precio especial por cliente: si la ficha tiene un % acordado y el
+            // presupuesto todavía no tiene descuento, se aplica como default editable.
+            if (value.SpecialDiscountPercent is decimal special && special > 0 && DiscountPercent == 0)
+            {
+                DiscountPercent = special;
+                _toastService.ShowInfo($"Descuento acordado con {value.CompanyName}: {special:0.##}% aplicado (editable en Totales).");
+            }
         }
 
         // Al cargar una orden existente EventDays se setea desde el primer ítem; sin esta
@@ -451,21 +631,116 @@ namespace Alquitel.UI.ViewModels
         }
 
         [RelayCommand]
-        private void ToggleSmartSearchInput() => IsSmartSearchVisible = !IsSmartSearchVisible;
+        private void EmptyCart()
+        {
+            if (!SelectedItems.Any()) return;
+            if (!_dialogService.ShowConfirm("Vaciar pedido",
+                "¿Quitar todos los productos del pedido actual?\n\nPodés recuperarlos con Deshacer (Ctrl+Z)."))
+                return;
+            PushUndoSnapshot();
+            ClearCart();
+        }
 
         [RelayCommand]
-        private void ParseSmartSearch()
+        private void ToggleSmartSearchInput() => IsSmartSearchVisible = !IsSmartSearchVisible;
+
+        // ── Escalabilidad del pedido automático con IA ──────────────────
+        // Con catálogos grandes no se manda todo a la IA: se preseleccionan candidatos
+        // con el motor local (tokens + trigramas) y la IA solo desambigua entre ellos.
+        // Mantiene el prompt chico (~15 tokens por producto) sin importar cuánto crezca
+        // el catálogo, y de paso mejora la precisión al reducir ruido.
+
+        /// <summary>Hasta este tamaño el catálogo completo entra al prompt sin preselección.</summary>
+        private const int AiFullCatalogLimit = 60;
+        /// <summary>Candidatos que aporta cada segmento del texto del cliente.</summary>
+        private const int AiCandidatesPerSegment = 8;
+        /// <summary>Techo absoluto de productos enviados a la IA.</summary>
+        private const int AiMaxCatalogProducts = 80;
+        /// <summary>Largo máximo de descripción enviada a la IA (economía de tokens).</summary>
+        private const int AiMaxDescriptionLength = 140;
+
+        /// <summary>
+        /// Preselecciona los productos del catálogo relevantes para el texto del cliente
+        /// (retrieval delegado a <see cref="ProductMatcher.SelectAiCandidates"/>).
+        /// </summary>
+        private List<Product> BuildAiCandidateProducts(string customerText)
+        {
+            if (_matcher == null) return AvailableProducts.ToList();
+            return _matcher.SelectAiCandidates(customerText,
+                AiFullCatalogLimit, AiCandidatesPerSegment, AiMaxCatalogProducts).ToList();
+        }
+
+        [RelayCommand]
+        private async Task ParseSmartSearchAsync()
         {
             if (string.IsNullOrWhiteSpace(SmartSearchText))
             {
-                _dialogService.ShowInfo("Búsqueda inteligente", "Pegá un texto para analizar primero.");
+                _toastService.ShowInfo("Pegá un texto para analizar primero.");
                 return;
             }
 
-            var matches = FindProductsFromParagraph(SmartSearchText).ToList();
-            if (!matches.Any())
+            // Productos resueltos (por IA o por el motor local) con cantidad y medida.
+            var resolved = new List<(Product Product, int Quantity, string? Measure)>();
+            var unmatched = new List<string>();
+            int? aiDays = null;
+            bool aiSucceeded = false;
+
+            if (_aiOrderParser.IsConfigured)
             {
-                _dialogService.ShowWarning("Búsqueda inteligente", "No detecté productos del catálogo en ese texto.");
+                IsAiParsing = true;
+                try
+                {
+                    // Lista de candidatos preseleccionados localmente: el índice "ref"
+                    // que ve la IA apunta a esta lista (snapshot, inmune a cambios
+                    // de la colección durante el await).
+                    var products = BuildAiCandidateProducts(SmartSearchText);
+                    var catalog = products
+                        .Select((p, i) =>
+                        {
+                            var desc = Alquitel.Core.Parsing.TagParser.StripTags(p.Description) ?? p.Description;
+                            if (desc.Length > AiMaxDescriptionLength)
+                                desc = desc[..AiMaxDescriptionLength] + "…";
+                            return new AiCatalogProduct(i, desc, p.Category);
+                        })
+                        .ToList();
+
+                    var result = await _aiOrderParser.ParseOrderAsync(SmartSearchText, catalog);
+                    if (result != null)
+                    {
+                        foreach (var item in result.Items)
+                        {
+                            if (item.Ref < 0 || item.Ref >= products.Count) continue;
+                            resolved.Add((products[item.Ref], item.Quantity, item.RequestedMeasure));
+                        }
+                        aiDays = result.Days;
+                        unmatched.AddRange(result.Unmatched);
+                        aiSucceeded = resolved.Count > 0 || unmatched.Count > 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warning(ex, "Pedido automático: la IA falló — se usa el motor local");
+                }
+                finally
+                {
+                    IsAiParsing = false;
+                }
+            }
+
+            if (!aiSucceeded && _matcher != null)
+            {
+                var matches = _matcher.FindMatches(SmartSearchText);
+                resolved.AddRange(matches
+                    .OrderByDescending(m => m.Score)
+                    .Select(m => (m.Product, m.Quantity, (string?)null)));
+            }
+
+            if (!resolved.Any())
+            {
+                _dialogService.ShowWarning("Pedido automático",
+                    unmatched.Any()
+                        ? "Ningún pedido coincide con el catálogo:\n\n- " + string.Join("\n- ", unmatched)
+                        : "No detecté productos del catálogo en ese texto.");
                 return;
             }
 
@@ -478,26 +753,48 @@ namespace Alquitel.UI.ViewModels
                 if (replace) ClearCart();
             }
 
+            // Si la IA detectó la duración ("por 3 días"), se aplica a todo el pedido.
+            if (aiDays is int days) EventDays = days;
+
             int addedCount = 0;
-            foreach (var result in matches.OrderByDescending(m => m.Score))
+            foreach (var (product, quantity, measure) in resolved)
             {
-                if (SelectedItems.Any(i => i.ProductId == result.Product.Id)) continue;
+                if (SelectedItems.Any(i => i.ProductId == product.Id)) continue;
                 var item = new OrderItem
                 {
-                    ProductId = result.Product.Id,
-                    Product = result.Product,
-                    Quantity = result.Quantity,
+                    ProductId = product.Id,
+                    Product = product,
+                    Quantity = quantity,
                     Dias = EventDays,
-                    UnitPrice = result.Product.BasePrice,
-                    ImagePath = result.Product.ImagePath,
-                    CustomFieldsJson = result.Product.CustomFieldsJson,
-                    DescriptionSnapshot = result.Product.Description,
-                    RequestedMeasure = string.Empty
+                    UnitPrice = product.BasePrice,
+                    ImagePath = product.ImagePath,
+                    CustomFieldsJson = product.CustomFieldsJson,
+                    DescriptionSnapshot = product.Description,
+                    RequestedMeasure = measure ?? string.Empty
                 };
                 AddItemToCart(item);
                 addedCount++;
             }
-            _dialogService.ShowInfo("Búsqueda inteligente", $"Se agregaron {addedCount} producto(s) automáticamente.");
+
+            // Quick-win IA: en el mismo texto suele venir la firma del cliente
+            // (empresa, contacto, teléfono) — completar los campos vacíos en background.
+            _ = DetectClientDataFromTextAsync(SmartSearchText);
+
+            var summary = new StringBuilder();
+            summary.Append($"Se agregaron {addedCount} producto(s)");
+            summary.Append(aiSucceeded ? " con IA." : " con el motor local.");
+            if (aiDays is int d) summary.Append($"\nDías detectados: {d}.");
+            if (unmatched.Any())
+            {
+                // Hay renglones sin coincidencia: eso requiere atención, se mantiene el modal.
+                summary.Append("\n\nPedidos sin coincidencia en el catálogo:\n- ");
+                summary.Append(string.Join("\n- ", unmatched));
+                _dialogService.ShowInfo("Pedido automático", summary.ToString());
+            }
+            else
+            {
+                _toastService.ShowSuccess(summary.ToString());
+            }
         }
 
         [RelayCommand]
@@ -581,12 +878,20 @@ namespace Alquitel.UI.ViewModels
                 }
 
                 await _documentService.GenerateDocumentAsync(CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
-                bool persisted = await PersistOrderAsync();
+
+                // Firma multi-usuario: la primera persistencia registra quién creó la orden.
+                CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
+                bool persisted = await _orderPersistence.PersistAsync(CurrentOrder);
 
                 if (persisted)
                 {
-                    TryDeleteDraft();
-                    _dialogService.ShowInfo("Éxito", $"Archivo guardado correctamente en:\n{outputPath}");
+                    _draftService.DeleteDraft(CurrentOrder.Id);
+                    LastGeneratedPath = outputPath;
+                    SendByEmailCommand.NotifyCanExecuteChanged();
+                    _ = _auditService.LogAsync(CurrentOrder.Id,
+                        $"Documento generado ({templateKind})", fileName);
+                    _toastService.ShowSuccess($"Documento guardado: {fileName}", "Abrir carpeta",
+                        () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""));
                 }
                 else
                 {
@@ -712,7 +1017,7 @@ namespace Alquitel.UI.ViewModels
                 }
 
                 OnPropertyChanged(nameof(CurrentOrder));
-                _dialogService.ShowInfo("Nueva versión",
+                _toastService.ShowSuccess(
                     $"Estás editando la versión {newNumber}. Los cambios se guardan como presupuesto aparte al generar.");
             }
             catch (Exception ex)
@@ -740,6 +1045,7 @@ namespace Alquitel.UI.ViewModels
             CurrentOrder.EventDate = null; // el evento nuevo tendrá otra fecha; forzar selección
             CurrentOrder.EventEndDate = null;
             CurrentOrder.Status = OrderStatus.Draft;
+            CurrentOrder.Comments = null; // los comentarios son propios de cada evento
 
             // La copia es un pedido nuevo: lo firma quien está logueado, no el autor original.
             if (_currentUserService.Current != null)
@@ -831,6 +1137,10 @@ namespace Alquitel.UI.ViewModels
                 EventDate = full.EventDate,
                 EventEndDate = full.EventEndDate,
                 Status = full.Status,
+                Comments = full.Comments,
+                DiscountPercent = full.DiscountPercent,
+                DiscountAmount = full.DiscountAmount,
+                AddVat = full.AddVat,
                 Client = full.Client ?? new Client(),
                 Location = full.Location ?? new Location(),
             };
@@ -915,155 +1225,181 @@ namespace Alquitel.UI.ViewModels
             return warnings;
         }
 
-        private async Task<bool> PersistOrderAsync()
+        // ── Quick-wins IA ────────────────────────────────────────────
+
+        /// <summary>True mientras la IA redacta las notas técnicas sugeridas.</summary>
+        [ObservableProperty]
+        private bool _isSuggestingNotes;
+
+        /// <summary>
+        /// Autocompleta las notas técnicas de la OT para los ítems que no tienen nota,
+        /// a partir de la descripción y campos de cada producto. Nunca pisa notas escritas.
+        /// </summary>
+        [RelayCommand]
+        private async Task SuggestTechnicalNotesAsync()
         {
+            if (!_aiAssistant.IsConfigured)
+            {
+                _toastService.ShowInfo("La IA no está configurada (falta la API key de Pollinations).");
+                return;
+            }
+            var pending = SelectedItems
+                .Select((item, idx) => (item, idx))
+                .Where(x => string.IsNullOrWhiteSpace(x.item.TechnicalNotes))
+                .ToList();
+            if (pending.Count == 0)
+            {
+                _toastService.ShowInfo("Todos los ítems ya tienen notas técnicas.");
+                return;
+            }
+
+            IsSuggestingNotes = true;
             try
             {
-                // Firma multi-usuario: la primera persistencia registra quién creó la orden.
-                CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
-
-                using var db = await _dbContextFactory.CreateDbContextAsync();
-                await using var tx = await db.Database.BeginTransactionAsync();
-
-                // ── Location: find-or-create so Order.LocationId always references a real row.
-                // A Guid.Empty FK violated the constraint and silently failed the whole persist. ──
-                var locName = (CurrentOrder.Location?.Name ?? string.Empty).Trim();
-                var location = await db.Locations.FirstOrDefaultAsync(l => l.Name == locName);
-                if (location == null)
+                var sb = new StringBuilder();
+                foreach (var (item, idx) in pending)
                 {
-                    location = new Location { Name = locName };
-                    db.Locations.Add(location);
-                    await db.SaveChangesAsync();
+                    var desc = Alquitel.Core.Parsing.TagParser.StripTags(
+                        item.DescriptionSnapshot ?? item.Product?.Description) ?? "Equipo";
+                    sb.AppendLine($"{idx} | {item.Quantity}x {desc} | {item.Product?.Category ?? ""}");
                 }
 
-                // ── Client: reuse existing (by Id, then by CUIT) or create it.
-                // A client typed manually never existed in the DB and broke the FK. ──
-                var clientId = await ResolveClientIdAsync(db);
-                var locationId = location.Id;
+                const string system =
+                    "Sos el jefe técnico de una empresa argentina de alquiler de equipamiento audiovisual. " +
+                    "Para cada ítem numerado escribí UNA nota técnica breve (máx. 15 palabras) para la orden de " +
+                    "trabajo del armador de depósito: cableado, montaje, accesorios a no olvidar. " +
+                    "Respondé SOLO JSON: {\"notas\":[{\"idx\":0,\"nota\":\"...\"}]}";
 
-                var orderExists = await db.Orders.AnyAsync(o => o.Id == CurrentOrder.Id);
-
-                if (!orderExists)
+                var json = await _aiAssistant.CompleteToJsonAsync(system, sb.ToString());
+                if (json == null)
                 {
-                    var orderToSave = new Order
-                    {
-                        Id = CurrentOrder.Id,
-                        BudgetNumber = CurrentOrder.BudgetNumber,
-                        AdminName = CurrentOrder.AdminName,
-                        CreatedByUserId = CurrentOrder.CreatedByUserId,
-                        ClientId = clientId,
-                        LocationId = locationId,
-                        CreatedDate = CurrentOrder.CreatedDate,
-                        EventDate = CurrentOrder.EventDate,
-                        EventEndDate = CurrentOrder.EventEndDate,
-                        Status = CurrentOrder.Status,
-                    };
-                    db.Orders.Add(orderToSave);
-                    await db.SaveChangesAsync();
-
-                    foreach (var item in CurrentOrder.Items)
-                    {
-                        db.OrderItems.Add(new OrderItem
-                        {
-                            Id = item.Id,
-                            OrderId = orderToSave.Id,
-                            ProductId = item.ProductId,
-                            Quantity = item.Quantity,
-                            UnitPrice = item.UnitPrice,
-                            Dias = item.Dias,
-                            TechnicalNotes = item.TechnicalNotes,
-                            ImagePath = item.ImagePath,
-                            CustomFieldsJson = item.CustomFieldsJson,
-                            DescriptionSnapshot = item.DescriptionSnapshot,
-                            RequestedMeasure = item.RequestedMeasure,
-                        });
-                    }
-                    await db.SaveChangesAsync();
-                }
-                else
-                {
-                    var tracked = await db.Orders.FindAsync(CurrentOrder.Id);
-                    if (tracked != null)
-                    {
-                        tracked.BudgetNumber = CurrentOrder.BudgetNumber;
-                        tracked.AdminName = CurrentOrder.AdminName;
-                        // No pisar al creador original al editar una orden ajena.
-                        tracked.CreatedByUserId ??= CurrentOrder.CreatedByUserId;
-                        tracked.ClientId = clientId;
-                        tracked.LocationId = locationId;
-                        tracked.EventDate = CurrentOrder.EventDate;
-                        tracked.EventEndDate = CurrentOrder.EventEndDate;
-                        tracked.Status = CurrentOrder.Status;
-                    }
-
-                    var oldItems = await db.OrderItems.Where(i => i.OrderId == CurrentOrder.Id).ToListAsync();
-                    db.OrderItems.RemoveRange(oldItems);
-                    await db.SaveChangesAsync();
-
-                    foreach (var item in CurrentOrder.Items)
-                    {
-                        db.OrderItems.Add(new OrderItem
-                        {
-                            Id = Guid.NewGuid(),
-                            OrderId = CurrentOrder.Id,
-                            ProductId = item.ProductId,
-                            Quantity = item.Quantity,
-                            UnitPrice = item.UnitPrice,
-                            Dias = item.Dias,
-                            TechnicalNotes = item.TechnicalNotes,
-                            ImagePath = item.ImagePath,
-                            CustomFieldsJson = item.CustomFieldsJson,
-                            DescriptionSnapshot = item.DescriptionSnapshot,
-                            RequestedMeasure = item.RequestedMeasure,
-                        });
-                    }
-                    await db.SaveChangesAsync();
+                    _toastService.ShowInfo("La IA no devolvió sugerencias. Reintentá en unos segundos.");
+                    return;
                 }
 
-                await tx.CommitAsync();
-                AppLog.Information("Order persisted: {OrderId} ({Budget})", CurrentOrder.Id, CurrentOrder.BudgetNumber);
-                return true;
+                int applied = 0;
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("notas", out var notas))
+                {
+                    foreach (var n in notas.EnumerateArray())
+                    {
+                        if (!n.TryGetProperty("idx", out var idxEl) || !n.TryGetProperty("nota", out var notaEl)) continue;
+                        int idx = idxEl.GetInt32();
+                        string? nota = notaEl.GetString();
+                        if (string.IsNullOrWhiteSpace(nota)) continue;
+                        if (idx < 0 || idx >= SelectedItems.Count) continue;
+                        if (!string.IsNullOrWhiteSpace(SelectedItems[idx].TechnicalNotes)) continue;
+                        SelectedItems[idx].TechnicalNotes = nota.Trim();
+                        applied++;
+                    }
+                }
+
+                SelectionVersion++; // refrescar las tarjetas con la nota nueva
+                _toastService.ShowSuccess(applied > 0
+                    ? $"Notas técnicas sugeridas para {applied} ítem(s). Revisalas antes de generar la OT."
+                    : "La IA no sugirió notas aplicables.");
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "PersistOrderAsync failed for order {OrderId}", CurrentOrder.Id);
-                return false;
+                AppLog.Warning(ex, "SuggestTechnicalNotesAsync failed");
+                _toastService.ShowInfo("No se pudieron sugerir notas técnicas.");
+            }
+            finally
+            {
+                IsSuggestingNotes = false;
             }
         }
 
         /// <summary>
-        /// Returns the Id of a Client row guaranteed to exist in the DB for the current order:
-        /// the tracked client if already persisted, an existing client with the same CUIT,
-        /// or a newly inserted row built from the manually typed data.
+        /// Busca datos del cliente (empresa, contacto, teléfono, email, CUIT) en el mismo
+        /// texto pegado del pedido automático y completa SOLO los campos vacíos del formulario.
         /// </summary>
-        private async Task<Guid> ResolveClientIdAsync(AlquitelDbContext db)
+        private async Task DetectClientDataFromTextAsync(string customerText)
         {
-            var client = CurrentOrder.Client ?? new Client();
+            if (!_aiAssistant.IsConfigured) return;
+            var client = CurrentOrder.Client ??= new Client();
 
-            if (client.Id != Guid.Empty &&
-                await db.Clients.IgnoreQueryFilters().AnyAsync(c => c.Id == client.Id))
-                return client.Id;
+            // Con la ficha ya completa no hay nada que detectar.
+            if (!string.IsNullOrWhiteSpace(client.CompanyName) &&
+                !string.IsNullOrWhiteSpace(client.ContactName) &&
+                !string.IsNullOrWhiteSpace(client.Phone)) return;
 
-            if (!string.IsNullOrWhiteSpace(client.Cuit))
+            try
             {
-                var cuit = client.Cuit.Trim();
-                var byCuit = await db.Clients.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Cuit == cuit);
-                if (byCuit != null) return byCuit.Id;
+                const string system =
+                    "Extraé los datos del REMITENTE/cliente de este texto de pedido (mail o WhatsApp argentino). " +
+                    "Respondé SOLO JSON: {\"empresa\":null,\"contacto\":null,\"telefono\":null,\"email\":null,\"cuit\":null}. " +
+                    "Usá null para todo dato que el texto no mencione explícitamente. Nunca inventes.";
+
+                var json = await _aiAssistant.CompleteToJsonAsync(system, customerText);
+                if (json == null) return;
+
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                string? Get(string prop) =>
+                    doc.RootElement.TryGetProperty(prop, out var el) && el.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? el.GetString()?.Trim()
+                        : null;
+
+                var filled = new List<string>();
+                if (string.IsNullOrWhiteSpace(client.CompanyName) && Get("empresa") is string emp && emp.Length > 1)
+                { client.CompanyName = emp; filled.Add("empresa"); }
+                if (string.IsNullOrWhiteSpace(client.ContactName) && Get("contacto") is string con && con.Length > 1)
+                { client.ContactName = con; filled.Add("contacto"); }
+                if (string.IsNullOrWhiteSpace(client.Phone) && Get("telefono") is string tel && tel.Length > 5)
+                { client.Phone = tel; filled.Add("teléfono"); }
+                if (string.IsNullOrWhiteSpace(client.Email) && Get("email") is string mail && mail.Contains('@'))
+                { client.Email = mail; filled.Add("email"); }
+                if (string.IsNullOrWhiteSpace(client.Cuit) && Get("cuit") is string cuit && CuitValidator.IsValid(cuit))
+                { client.Cuit = cuit; CuitInput = cuit; filled.Add("CUIT"); }
+
+                if (filled.Count > 0)
+                {
+                    OnPropertyChanged(nameof(CurrentOrder));
+                    _toastService.ShowSuccess($"Datos del cliente detectados en el texto: {string.Join(", ", filled)}.");
+                }
             }
-
-            var newClient = new Client
+            catch (Exception ex)
             {
-                Id = client.Id == Guid.Empty ? Guid.NewGuid() : client.Id,
-                CompanyName = client.CompanyName?.Trim() ?? string.Empty,
-                Cuit = client.Cuit?.Trim() ?? string.Empty,
-                ContactName = client.ContactName,
-                Phone = client.Phone,
-                Email = client.Email,
-            };
-            db.Clients.Add(newClient);
-            await db.SaveChangesAsync();
-            AppLog.Information("Client auto-created from budget: {Company} ({Cuit})", newClient.CompanyName, newClient.Cuit);
-            return newClient.Id;
+                AppLog.Warning(ex, "DetectClientDataFromTextAsync failed");
+            }
+        }
+
+        // ── Envío por correo del último documento generado ──────────
+
+        /// <summary>Ruta del último .docx generado en esta sesión del armador.</summary>
+        [ObservableProperty]
+        private string? _lastGeneratedPath;
+
+        private bool CanSendByEmail() =>
+            !string.IsNullOrEmpty(LastGeneratedPath) && File.Exists(LastGeneratedPath);
+
+        /// <summary>
+        /// Abre un borrador de Outlook con el .docx (y el PDF si se exportó) adjuntos,
+        /// dirigido al email del cliente si está cargado. No envía: el usuario revisa.
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanSendByEmail))]
+        private void SendByEmail()
+        {
+            if (LastGeneratedPath == null) return;
+            try
+            {
+                var attachments = new List<string> { LastGeneratedPath };
+                var pdf = Path.ChangeExtension(LastGeneratedPath, ".pdf");
+                if (File.Exists(pdf)) attachments.Add(pdf);
+
+                string subject = $"Presupuesto {CurrentOrder.BudgetNumber} - Grupo Alquitel";
+                string body =
+                    $"Estimado/a,\n\nAdjuntamos el presupuesto {CurrentOrder.BudgetNumber} solicitado.\n\n" +
+                    "Quedamos a disposición por cualquier consulta.\n\nSaludos cordiales,\n" +
+                    $"{CurrentOrder.AdminName}\nGrupo Alquitel";
+
+                _emailService.CreateDraft(CurrentOrder.Client?.Email, subject, body, attachments);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "SendByEmail failed");
+                _dialogService.ShowError("Enviar por mail", ex.Message);
+            }
         }
 
         private string GetInitials(string name)
@@ -1113,6 +1449,7 @@ namespace Alquitel.UI.ViewModels
             }
             SelectionVersion++;
             OnPropertyChanged(nameof(FinalBudget));
+            NotifyCommercialTotals();
             _ = RefreshStockConflictsAsync();
         }
 
@@ -1122,141 +1459,11 @@ namespace Alquitel.UI.ViewModels
             {
                 SelectionVersion++;
                 OnPropertyChanged(nameof(FinalBudget));
+                NotifyCommercialTotals();
                 if (e.PropertyName is nameof(OrderItem.Quantity) or nameof(OrderItem.Dias))
                     _ = RefreshStockConflictsAsync();
             }
         }
 
-        #region Smart Search Engine
-
-        private IEnumerable<SmartMatchResult> FindProductsFromParagraph(string paragraph)
-        {
-            var segments = BuildSmartSegments(paragraph);
-            var aggregated = new Dictionary<Guid, SmartMatchResult>();
-            var threshold = _appSettings.SmartSearchThreshold;
-            var margin = _appSettings.SmartSearchMargin;
-            var stopWords = new HashSet<string>(_appSettings.SmartSearchStopWords, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var segment in segments)
-            {
-                int quantity = ExtractQuantityFromSegment(segment);
-
-                // Normalize the segment once — previously tokens, trigrams and the
-                // stop-word set were rebuilt for every product on every segment.
-                string ns = NormalizeText(segment);
-                var st = ExtractMeaningfulTokens(ns, stopWords).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                if (!st.Any()) continue;
-                var sTri = Trigrams(ns);
-
-                var ranked = AvailableProducts
-                    .Select(product => new SmartMatchResult(product, quantity, ScoreProductAgainstSegment(ns, st, sTri, product)))
-                    .OrderByDescending(x => x.Score).ToList();
-                if (!ranked.Any()) continue;
-                var best = ranked[0];
-                var second = ranked.Count > 1 ? ranked[1] : null;
-                if (best.Score < threshold) continue;
-                if (second != null && Math.Abs(best.Score - second.Score) < margin) continue;
-                if (aggregated.TryGetValue(best.Product.Id, out var existing))
-                    aggregated[best.Product.Id] = existing with { Quantity = existing.Quantity + best.Quantity, Score = Math.Max(existing.Score, best.Score) };
-                else
-                    aggregated[best.Product.Id] = best;
-            }
-            return aggregated.Values;
-        }
-
-        private static List<string> BuildSmartSegments(string paragraph)
-        {
-            var primarySegments = paragraph.Split(new[] { '.', '\n', ';', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => !string.IsNullOrWhiteSpace(s));
-            var expanded = new List<string>();
-            foreach (var segment in primarySegments)
-            {
-                expanded.AddRange(Regex.Split(segment, @"\s+y\s+", RegexOptions.IgnoreCase).Select(s => s.Trim()).Where(s => !string.IsNullOrWhiteSpace(s)));
-            }
-            return expanded;
-        }
-
-        private static int ExtractQuantityFromSegment(string segment)
-        {
-            string raw = RemoveDiacritics(segment).ToLowerInvariant();
-            var patterns = new[]
-            {
-                @"\b(\d{1,3})(?![\.,]\d)\s*(x|u|ud|uds|unidad|unidades)\b",
-                @"\b(?:x|por)\s*(\d{1,3})(?![\.,]\d)\b",
-                @"\b(\d{1,3})(?![\.,]\d)\s*(?:pantalla|pantallas|notebook|notebooks|camara|camaras|servicio|servicios|traslado|traslados|touch|equipo|equipos)\b"
-            };
-            foreach (var pattern in patterns)
-            {
-                var m = Regex.Match(raw, pattern, RegexOptions.IgnoreCase);
-                if (m.Success && int.TryParse(m.Groups[1].Value, out int q) && q > 0) return q;
-            }
-            return 1;
-        }
-
-        private double ScoreProductAgainstSegment(string normalizedSegment, HashSet<string> segmentTokens, HashSet<string> segmentTrigrams, Product product)
-        {
-            if (!_productSearchCache.TryGetValue(product.Id, out var cache)) return 0;
-
-            var pt = cache.DescriptionTokens;
-            var ct = cache.CategoryTokens;
-
-            if (!pt.Any()) return 0;
-
-            int overlap = segmentTokens.Intersect(pt, StringComparer.OrdinalIgnoreCase).Count();
-            int catOverlap = segmentTokens.Intersect(ct, StringComparer.OrdinalIgnoreCase).Count();
-            double coverage = (double)overlap / pt.Count;
-            double precision = (double)overlap / Math.Max(1, segmentTokens.Count);
-            double tri = DiceCoefficient(segmentTrigrams, cache.DescriptionTrigrams);
-
-            double score = overlap * 2.7 + catOverlap * 0.8 + coverage * 3.5 + precision * 1.5 + tri * 4.0;
-
-            if (normalizedSegment.Contains(cache.NormalizedDescription, StringComparison.OrdinalIgnoreCase)) score += 3.0;
-
-            return score;
-        }
-
-        private static IEnumerable<string> ExtractMeaningfulTokens(string text, HashSet<string> stopWords)
-        {
-            return Regex.Split(text, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !stopWords.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase);
-        }
-
-        private static string NormalizeText(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-            string formD = RemoveDiacritics(text);
-            var sb = new StringBuilder(formD.Length);
-            foreach (char c in formD) sb.Append(char.IsLetterOrDigit(c) || char.IsWhiteSpace(c) ? c : ' ');
-            return Regex.Replace(sb.ToString().ToLowerInvariant(), @"\s+", " ").Trim();
-        }
-
-        private static HashSet<string> Trigrams(string input)
-        {
-            string text = $"  {input}  ";
-            var grams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (text.Length < 3) { grams.Add(text); return grams; }
-            for (int i = 0; i <= text.Length - 3; i++) grams.Add(text.Substring(i, 3));
-            return grams;
-        }
-
-        private static double DiceCoefficient(HashSet<string> a, HashSet<string> b)
-        {
-            if (!a.Any() || !b.Any()) return 0;
-            int intersection = a.Intersect(b, StringComparer.OrdinalIgnoreCase).Count();
-            return (2.0 * intersection) / (a.Count + b.Count);
-        }
-
-        private static string RemoveDiacritics(string text)
-        {
-            string normalized = text.Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder(normalized.Length);
-            foreach (char c in normalized)
-            {
-                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) sb.Append(c);
-            }
-            return sb.ToString().Normalize(NormalizationForm.FormC);
-        }
-
-        private sealed record SmartMatchResult(Product Product, int Quantity, double Score);
-
-        #endregion
     }
 }

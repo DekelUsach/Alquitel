@@ -1,0 +1,55 @@
+# CI mínimo: compila la solución y corre los tests de Core en cada push/PR a main.
+# Elimina el "compila en mi máquina": un PR que rompe el build o los tests no se mergea.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    # windows-latest: Alquitel.UI/Infrastructure targetean net8.0-windows (WPF + COM).
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Alquitel.sln
+
+      - name: Build
+        run: dotnet build Alquitel.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test Alquitel.Core.Tests/Alquitel.Core.Tests.csproj --no-build -c Release --verbosity normal
+
+  # Al taggear vX.Y.Z: publica el ejecutable self-contained como artifact del run.
+  # (El empaquetado Velopack con `vpk` se puede sumar después sobre este publish.)
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-and-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish (self-contained x64)
+        run: dotnet publish Alquitel.UI/Alquitel.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alquitel-${{ github.ref_name }}
+          path: publish/

@@ -18,11 +18,13 @@ namespace Alquitel.UI.Views
     public partial class LoginWindow : Window
     {
         private readonly ICurrentUserService _currentUserService;
+        private readonly IUserRepository _userRepository;
         private List<User> _users = new();
 
         public LoginWindow(IUserRepository userRepository, ICurrentUserService currentUserService)
         {
             _currentUserService = currentUserService;
+            _userRepository = userRepository;
             InitializeComponent();
 
             try
@@ -78,6 +80,31 @@ namespace Alquitel.UI.Views
                 PasswordInput.Clear();
                 PasswordInput.Focus();
                 return;
+            }
+
+            // Un Admin sin contraseña tiene acceso total a datos de facturación con solo
+            // elegir su nombre. Se obliga a definir una en el primer login; cancelar no entra.
+            if (user.Role == UserRole.Admin && string.IsNullOrWhiteSpace(user.PasswordHash))
+            {
+                var prompt = new PasswordPromptWindow(user.Name, hasPassword: false) { Owner = this };
+                if (prompt.ShowDialog() != true || prompt.RemoveRequested)
+                {
+                    ShowError("Un usuario Admin debe tener contraseña para poder ingresar.");
+                    return;
+                }
+
+                user.PasswordHash = PasswordHasher.Hash(prompt.Password);
+                try
+                {
+                    Task.Run(() => _userRepository.UpsertAsync(user)).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    Alquitel.Infrastructure.AppLog.Error(ex, "No se pudo guardar la contraseña inicial del Admin");
+                    ShowError($"No se pudo guardar la contraseña:\n{ex.Message}");
+                    user.PasswordHash = null;
+                    return;
+                }
             }
 
             _currentUserService.SetCurrentUser(user);

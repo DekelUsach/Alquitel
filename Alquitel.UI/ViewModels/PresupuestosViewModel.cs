@@ -121,9 +121,14 @@ namespace Alquitel.UI.ViewModels
             return true;
         }
 
+        /// <summary>True mientras se escanea la carpeta: la vista muestra skeleton rows.</summary>
+        [ObservableProperty]
+        private bool _isLoading;
+
         public async Task InitializeAsync()
         {
             Files.Clear();
+            IsLoading = true;
             try
             {
                 if (string.IsNullOrWhiteSpace(FolderPath))
@@ -160,6 +165,10 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "InitializeAsync failed for {Folder}", FolderPath);
                 StatusMessage = $"Error al leer la carpeta: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
             }
         }
 

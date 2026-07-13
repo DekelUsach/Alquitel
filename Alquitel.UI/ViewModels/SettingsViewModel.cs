@@ -153,11 +153,16 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        private readonly IToastService _toastService;
+        private readonly Alquitel.Infrastructure.Services.DatabaseBackupService _backupService;
+
         public SettingsViewModel(IAppSettings appSettings, IRemoteSyncService remoteSyncService,
             IUserRepository userRepository, IOrderRepository orderRepository,
             ICurrentUserService currentUserService, IDialogService dialogService,
-            ITemplateStorageService templateStorage)
+            ITemplateStorageService templateStorage, IToastService toastService,
+            Alquitel.Infrastructure.Services.DatabaseBackupService backupService)
         {
+            _backupService = backupService;
             _appSettings = appSettings;
             _remoteSyncService = remoteSyncService;
             _userRepository = userRepository;
@@ -165,10 +170,60 @@ namespace Alquitel.UI.ViewModels
             _currentUserService = currentUserService;
             _dialogService = dialogService;
             _templateStorage = templateStorage;
+            _toastService = toastService;
             LoadSettings();
             _ = LoadUsersAsync();
             _ = RefreshRemoteStatusAsync();
             _ = RefreshCloudTemplatesStatusAsync();
+            RefreshBackups();
+        }
+
+        // ── Backups: listado y restauración ──────────────────────────
+
+        public System.Collections.ObjectModel.ObservableCollection<Alquitel.Infrastructure.Services.DatabaseBackupService.BackupInfo> Backups { get; } = new();
+
+        [ObservableProperty]
+        private Alquitel.Infrastructure.Services.DatabaseBackupService.BackupInfo? _selectedBackup;
+
+        /// <summary>El restore aplica a la base SQLite local; en modo servidor se oculta.</summary>
+        public bool CanRestoreBackups => !IsRemoteConfigured;
+
+        [RelayCommand]
+        private void RefreshBackups()
+        {
+            Backups.Clear();
+            foreach (var b in _backupService.GetAvailableBackups())
+                Backups.Add(b);
+        }
+
+        [RelayCommand]
+        private void RestoreSelectedBackup()
+        {
+            if (SelectedBackup == null)
+            {
+                _toastService.ShowInfo("Elegí un backup de la lista para restaurar.");
+                return;
+            }
+
+            if (!_dialogService.ShowConfirm(
+                "Restaurar backup",
+                $"Se restaurará la base de datos al estado del {SelectedBackup.CreatedLocal:dd/MM/yyyy HH:mm}.\n\n" +
+                "La base actual se guarda como copia de seguridad (Alquitel_PreRestore_*) antes de pisarla, " +
+                "pero TODO lo cargado después de ese backup dejará de verse.\n\n¿Continuar?"))
+                return;
+
+            try
+            {
+                _backupService.RestoreBackup(SelectedBackup.FilePath);
+                _dialogService.ShowInfo("Backup restaurado",
+                    "La base de datos fue restaurada correctamente.\n\n" +
+                    "Cerrá y volvé a abrir Alquitel para que todos los módulos lean la base restaurada.");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "RestoreSelectedBackup failed");
+                _dialogService.ShowError("Error al restaurar", ex.Message);
+            }
         }
 
         // ── Servidor ─────────────────────────────────────────────────
@@ -209,7 +264,7 @@ namespace Alquitel.UI.ViewModels
         {
             if (!IsRemoteConfigured)
             {
-                _dialogService.ShowInfo("Servidor", "No hay servidor configurado: la app está en modo SQLite local.");
+                _toastService.ShowInfo("No hay servidor configurado: la app está en modo SQLite local.");
                 return;
             }
 
@@ -224,7 +279,7 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 await _remoteSyncService.PushPendingChangesAsync();
-                _dialogService.ShowInfo("Servidor", "Datos locales subidos correctamente al servidor.");
+                _toastService.ShowSuccess("Datos locales subidos correctamente al servidor.");
                 await RefreshRemoteStatusAsync();
             }
             catch (Exception ex)
@@ -315,8 +370,8 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 await _templateStorage.PublishTemplateAsync(kind, dialog.FileName);
-                _dialogService.ShowInfo("Plantillas en la nube",
-                    $"Plantilla de {kind} publicada correctamente. Todos los equipos usarán esta versión en la próxima generación.");
+                _toastService.ShowSuccess(
+                    $"Plantilla de {kind} publicada. Todos los equipos usarán esta versión en la próxima generación.");
                 await RefreshCloudTemplatesStatusAsync();
             }
             catch (Exception ex)

@@ -88,6 +88,43 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                 .Sum(c => c.Quantity);
         }
 
+        public async Task<List<ProductCommitment>> GetCommitmentsAsync(Guid productId, DateTime from, DateTime to)
+        {
+            using var db = await _factory.CreateDbContextAsync();
+
+            // Mismo criterio que GetCommittedQuantityAsync: solapamiento resuelto en
+            // memoria porque EventDate.AddDays(Dias) no traduce bien en todos los providers.
+            var candidates = await db.OrderItems.IgnoreQueryFilters().AsNoTracking()
+                .Where(i => i.ProductId == productId)
+                .Join(
+                    db.Orders.IgnoreQueryFilters().Where(o =>
+                        o.EventDate != null &&
+                        (o.Status == OrderStatus.Approved ||
+                         o.Status == OrderStatus.SentToOF ||
+                         o.Status == OrderStatus.SentToOT)),
+                    i => i.OrderId,
+                    o => o.Id,
+                    (i, o) => new { o.Id, o.BudgetNumber, o.ClientId, o.EventDate, i.Dias, i.Quantity })
+                .ToListAsync();
+
+            var clientIds = candidates.Select(c => c.ClientId).Distinct().ToList();
+            var clientNames = await db.Clients.IgnoreQueryFilters().AsNoTracking()
+                .Where(c => clientIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.CompanyName);
+
+            return candidates
+                .Select(c =>
+                {
+                    var start = c.EventDate!.Value.Date;
+                    var end = start.AddDays(Math.Max(1, c.Dias));
+                    return new ProductCommitment(c.Id, c.BudgetNumber,
+                        clientNames.GetValueOrDefault(c.ClientId), start, end, c.Quantity);
+                })
+                .Where(c => c.Start < to && c.End > from)
+                .OrderBy(c => c.Start)
+                .ToList();
+        }
+
         public async Task<UserOrderStats> GetUserStatsAsync(Guid userId, string userName)
         {
             using var db = await _factory.CreateDbContextAsync();

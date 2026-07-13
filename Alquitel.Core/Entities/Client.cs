@@ -25,5 +25,11 @@ namespace Alquitel.Core.Entities
         /// Nunca se imprimen en documentos generados.
         /// </summary>
         public string? InternalNotes { get; set; }
+
+        /// <summary>
+        /// Precio especial acordado con el cliente: % de descuento que el armador aplica
+        /// por defecto al seleccionarlo (editable por presupuesto). Null = sin acuerdo.
+        /// </summary>
+        public decimal? SpecialDiscountPercent { get; set; }
     }
 }

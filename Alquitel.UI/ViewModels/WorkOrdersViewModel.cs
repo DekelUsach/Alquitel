@@ -163,6 +163,39 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        [RelayCommand]
+        private void DeleteFile()
+        {
+            if (SelectedFile == null) return;
+            if (!PathValidator.IsDocxWithinRoot(SelectedFile.FullPath, FolderPath))
+            {
+                AppLog.Warning("Rejected OT DeleteFile — invalid path: {Path}", SelectedFile.FullPath);
+                _dialogService.ShowWarning("Acceso denegado", "Ruta inválida o fuera de la carpeta de OT.");
+                return;
+            }
+
+            var confirmed = _dialogService.ShowConfirm(
+                "Eliminar orden de trabajo",
+                $"¿Eliminar el archivo?\n\n{SelectedFile.FileName}\n\nEsta acción no se puede deshacer.");
+            if (!confirmed) return;
+
+            var toDelete = SelectedFile;
+            try
+            {
+                File.Delete(toDelete.FullPath);
+                Files.Remove(toDelete);
+                SelectedFile = null;
+                PreviewText = string.Empty;
+                StatusMessage = $"{Files.Count} orden(es) de trabajo — {FolderPath}";
+                AppLog.Information("OT file deleted: {Path}", toDelete.FullPath);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "OT DeleteFile failed for {Path}", toDelete.FullPath);
+                _dialogService.ShowError("Error", $"No se pudo eliminar: {ex.Message}");
+            }
+        }
+
         private void StartWatching()
         {
             if (_watcher != null && string.Equals(_watcher.Path, FolderPath, StringComparison.OrdinalIgnoreCase))

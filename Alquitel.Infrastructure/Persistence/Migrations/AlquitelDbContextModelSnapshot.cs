@@ -46,6 +46,9 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.Property<string>("Phone")
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal?>("SpecialDiscountPercent")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Cuit")
@@ -76,6 +79,9 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("AddVat")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("AdminName")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -87,10 +93,19 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ClientId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Comments")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("DiscountPercent")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("EventDate")
@@ -117,6 +132,39 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.HasIndex("LocationId");
 
                     b.ToTable("Orders");
+                });
+
+            modelBuilder.Entity("Alquitel.Core.Entities.OrderAuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("OrderAuditEvents");
                 });
 
             modelBuilder.Entity("Alquitel.Core.Entities.OrderItem", b =>
@@ -233,13 +281,13 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.HasOne("Alquitel.Core.Entities.Client", "Client")
                         .WithMany()
                         .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Alquitel.Core.Entities.Location", "Location")
                         .WithMany()
                         .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Client");
@@ -258,7 +306,7 @@ namespace Alquitel.Infrastructure.Persistence.Migrations
                     b.HasOne("Alquitel.Core.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Product");

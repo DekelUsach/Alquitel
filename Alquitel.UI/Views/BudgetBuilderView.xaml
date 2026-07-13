@@ -1,34 +1,55 @@
 <UserControl x:Class="Alquitel.UI.Views.BudgetBuilderView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:conv="clr-namespace:Alquitel.UI.Converters"
-             xmlns:helpers="clr-namespace:Alquitel.UI.Helpers">
+             xmlns:conv="clr-namespace:Alquitel.UI.Converters">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
-        <conv:ProductButtonTextConverter x:Key="ProductButtonTextConverter"/>
-        <conv:ProductButtonBackgroundConverter x:Key="ProductButtonBackgroundConverter"/>
-        <conv:ProductRemoveButtonVisibilityConverter x:Key="ProductRemoveButtonVisibilityConverter"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InvBoolToVisibilityConverter"/>
         <conv:StripTagsConverter x:Key="StripTagsConverter"/>
-        <helpers:BindingProxy x:Key="Proxy" Data="{Binding}"/>
+        <conv:ProductQuantityBadgeTextConverter x:Key="QtyBadgeText"/>
+        <conv:ProductInCartVisibilityConverter x:Key="InCartVisibility"/>
 
-        <!-- Segmento del selector de vista (Presupuesto / Orden de Trabajo) -->
+        <!-- StepperButton y MiniLabel ahora viven en App.xaml (compartidos entre vistas) -->
+
+        <!-- Input compacto para las tarjetas de ítem -->
+        <Style x:Key="CompactBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Segmento del selector Presupuesto / Orden de Trabajo -->
         <Style x:Key="SegmentButtonBase" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Height" Value="34"/>
-            <Setter Property="Padding" Value="16,0"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="9"
-                                Padding="{TemplateBinding Padding}">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="9">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Ítem de catálogo sin cromo de selección -->
+        <Style x:Key="CatalogItemContainer" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter/>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -39,207 +60,539 @@
         <KeyBinding Modifiers="Control" Key="Z" Command="{Binding UndoCartCommand}"/>
     </UserControl.InputBindings>
 
-    <Grid Margin="28,24,28,24">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="350"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+    <Grid Margin="24,18,24,18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-        <!-- ═══════════════ IZQUIERDA: CATÁLOGO ═══════════════ -->
-        <Grid Grid.Column="0" Margin="0,0,20,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <!-- ═══════════════ BARRA SUPERIOR ═══════════════ -->
+        <Grid Grid.Row="0" Margin="4,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-            <!-- Título de sección -->
-            <TextBlock Grid.Row="0" Text="Catálogo" Style="{StaticResource PageTitle}" FontSize="22"
-                       Margin="4,2,0,14"/>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Border Style="{StaticResource SectionIconBox}" Width="38" Height="38">
+                    <TextBlock Text="&#xE8A5;" Style="{StaticResource SectionIconGlyph}" FontSize="16"/>
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Armar pedido" Style="{StaticResource PageTitle}" FontSize="21"/>
+                    <TextBlock Text="Elegí equipamiento, completá los datos del rail derecho y generá el documento."
+                               Style="{StaticResource PageSubtitle}" FontSize="12"/>
+                </StackPanel>
+            </StackPanel>
 
-            <!-- Buscador -->
-            <Grid Grid.Row="1" Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Grid Grid.Column="0">
-                    <TextBox Height="42" Padding="36,10,14,10"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                    <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                               Foreground="{DynamicResource MutedTextBrush}"
-                               VerticalAlignment="Center" Margin="14,0,0,0"
-                               IsHitTestVisible="False"/>
-                    <TextBlock Text="Buscar equipamiento"
-                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
-                               VerticalAlignment="Center" Margin="38,0,0,0"
-                               IsHitTestVisible="False">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Style="{StaticResource GhostButton}" Height="36" Margin="0,0,8,0"
+                        Command="{Binding SuggestTechnicalNotesCommand}"
+                        AutomationProperties.Name="Sugerir notas técnicas con inteligencia artificial"
+                        ToolTip="IA: redacta una nota técnica breve para cada ítem sin nota (revisar antes de generar la OT)">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <TextBlock VerticalAlignment="Center" FontSize="12">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Notas IA"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSuggestingNotes}" Value="True">
+                                            <Setter Property="Text" Value="Redactando…"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource GhostButton}" Height="36"
+                        Command="{Binding UndoCartCommand}"
+                        ToolTip="Deshacer último cambio de productos (Ctrl+Z)">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <TextBlock Text="Deshacer" VerticalAlignment="Center" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource GhostDangerButton}" Height="36" Margin="8,0,0,0"
+                        Command="{Binding EmptyCartCommand}"
+                        ToolTip="Quitar todos los productos del pedido">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <TextBlock Text="Vaciar pedido" VerticalAlignment="Center" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- ═══════════════ TRES PANELES ═══════════════ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="292"/>
+                <ColumnDefinition Width="14"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="14"/>
+                <ColumnDefinition Width="Auto"/>  <!-- rail: 330 expandido / 64 colapsado -->
+            </Grid.ColumnDefinitions>
+
+            <!-- ──────────── 1 · CATÁLOGO ──────────── -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="16,14,16,10">
+                        <TextBlock Text="CATÁLOGO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   FontSize="11" Foreground="{DynamicResource MutedTextBrush}">
+                            <Run Text="{Binding AvailableProducts.Count, Mode=OneWay}"/><Run Text=" equipos"/>
+                        </TextBlock>
+                    </Grid>
+
+                    <!-- Buscador + pedido automático -->
+                    <Grid Grid.Row="1" Margin="14,0,14,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <TextBox Height="38" Padding="32,0,12,0" FontSize="12" VerticalContentAlignment="Center"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False"/>
+                            <TextBlock Text="Buscar equipamiento" FontSize="12"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       VerticalAlignment="Center" Margin="34,0,0,0" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SearchText}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <Button Grid.Column="1" Height="38" Width="38" Margin="6,0,0,0" Padding="0"
+                                Command="{Binding ToggleSmartSearchInputCommand}"
+                                ToolTip="Pedido automático: pegá el texto del cliente y se arma el carrito solo">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSmartSearchVisible}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                       Foreground="{DynamicResource SecondaryColorBrush}"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Panel de pedido automático -->
+                    <Border Grid.Row="2" Style="{StaticResource CardInner}" Margin="14,0,14,8" Padding="12,10"
+                            Visibility="{Binding IsSmartSearchVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="Pegá el pedido del cliente (mail, WhatsApp) y detecto productos y cantidades."
+                                       TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,8"/>
+                            <TextBox Height="72" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                     Padding="10,8" FontSize="12"
+                                     Text="{Binding SmartSearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Style="{StaticResource PrimaryButton}" Height="34" Margin="0,8,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding ParseSmartSearchCommand}">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAiParsing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Armar pedido desde texto" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Analizando con IA…" FontSize="12" VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               Visibility="{Binding IsAiParsing, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                </Grid>
+                            </Button>
+                            <ProgressBar Height="3" Margin="0,6,0,0" IsIndeterminate="True"
+                                         Visibility="{Binding IsAiParsing, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Lista de productos -->
+                    <ListBox Grid.Row="3" Margin="6,0,6,8"
+                             ItemsSource="{Binding AvailableProducts}"
+                             ItemContainerStyle="{StaticResource CatalogItemContainer}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingStackPanel.IsVirtualizing="True">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="4,1" Padding="10,9" CornerRadius="10">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                            <TextBlock Text="{Binding Description, Converter={StaticResource StripTagsConverter}}"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                <TextBlock Text="{Binding Category}" FontSize="11"
+                                                           Foreground="{DynamicResource MutedTextBrush}"/>
+                                                <TextBlock Text=" · " FontSize="11"
+                                                           Foreground="{DynamicResource MutedTextBrush}"/>
+                                                <TextBlock Text="{Binding BasePrice, StringFormat='{}{0:C0}'}"
+                                                           FontSize="11" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border CornerRadius="8" Background="{DynamicResource AccentSoftBrush}"
+                                                    Padding="7,2" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                <Border.Visibility>
+                                                    <MultiBinding Converter="{StaticResource InCartVisibility}">
+                                                        <Binding/>
+                                                        <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                        <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    </MultiBinding>
+                                                </Border.Visibility>
+                                                <TextBlock FontSize="11" FontWeight="Bold"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding Converter="{StaticResource QtyBadgeText}">
+                                                            <Binding/>
+                                                            <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                            <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                            </Border>
+                                            <Button Style="{StaticResource StepperButton}" Content="&#x2212;"
+                                                    Foreground="{DynamicResource DangerBrush}"
+                                                    ToolTip="Quitar una unidad"
+                                                    AutomationProperties.Name="Quitar una unidad"
+                                                    Command="{Binding DataContext.RemoveProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Button.Visibility>
+                                                    <MultiBinding Converter="{StaticResource InCartVisibility}">
+                                                        <Binding/>
+                                                        <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                        <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    </MultiBinding>
+                                                </Button.Visibility>
+                                            </Button>
+                                            <Button Style="{StaticResource StepperButton}" Content="+"
+                                                    Foreground="{DynamicResource SecondaryColorBrush}"
+                                                    ToolTip="Agregar al pedido"
+                                                    AutomationProperties.Name="Agregar producto al pedido"
+                                                    Command="{Binding DataContext.AddProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- ──────────── 2 · PEDIDO ──────────── -->
+            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Encabezado del pedido -->
+                    <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderBrush}"
+                            Padding="18,12">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="PEDIDO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+                                <Border Style="{StaticResource Chip}" Margin="10,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource ChipText}">
+                                        <Run Text="{Binding SelectedItems.Count, Mode=OneWay}"/><Run Text=" ítem(s)"/>
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="Días para todo el pedido" FontSize="11"
+                                           Foreground="{DynamicResource MutedTextBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBox Style="{StaticResource CompactBox}" Width="54"
+                                         HorizontalContentAlignment="Center"
+                                         Text="{Binding EventDays, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Aplica esta cantidad de días a todos los ítems"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Estado vacío -->
+                    <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="340">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <DataTrigger Binding="{Binding SelectedItems.Count}" Value="0">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </Grid>
-                <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Margin="6,0,0,0" Height="42" Width="42" Padding="0"
-                        ToolTip="Armar pedido desde texto" Command="{Binding ParseSmartSearchCommand}">
-                    <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="15"/>
-                </Button>
-                <Button Grid.Column="2" Style="{StaticResource SecondaryButton}" Margin="6,0,0,0" Height="42" Width="42" Padding="0"
-                        ToolTip="Mostrar/Ocultar input de texto" Command="{Binding ToggleSmartSearchInputCommand}">
-                    <TextBlock Text="&#xE8A7;" FontFamily="{StaticResource IconFont}" FontSize="15"/>
-                </Button>
-            </Grid>
-
-            <!-- Panel de búsqueda inteligente -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16,14" Margin="0,0,0,12"
-                    Visibility="{Binding IsSmartSearchVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   Foreground="{DynamicResource SecondaryColorBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Pedido automático" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                        </StackPanel.Style>
+                        <TextBlock Text="&#xE7BF;" Style="{StaticResource EmptyStateIcon}"/>
+                        <TextBlock Text="El pedido está vacío" Style="{StaticResource EmptyStateTitle}"/>
+                        <TextBlock Text="Sumá equipamiento con el botón + del catálogo, o tocá la varita para armar el pedido pegando el texto del cliente."
+                                   Style="{StaticResource EmptyStateHint}"/>
                     </StackPanel>
-                    <TextBlock Text="Pegá un párrafo con productos y cantidades. Luego tocá la lupa para armar el pedido."
-                               TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,10"/>
-                    <TextBox Height="80" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                             VerticalContentAlignment="Top" Padding="12,8"
-                             Text="{Binding SmartSearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                </StackPanel>
+
+                    <!-- Tarjetas de ítems -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12,10,12,10">
+                        <ItemsControl ItemsSource="{Binding SelectedItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CardInner}" Margin="2,4" Padding="14,12">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Título + alerta stock + quitar -->
+                                            <Grid Grid.Row="0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="&#xE7BA;" FontFamily="{StaticResource IconFont}"
+                                                           FontSize="13" Foreground="{DynamicResource WarningBrush}"
+                                                           VerticalAlignment="Center" Margin="0,0,8,0"
+                                                           ToolTip="Stock insuficiente: este producto ya está comprometido en otras órdenes activas para la fecha del evento."
+                                                           Visibility="{Binding HasStockConflict, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Product.Description, Converter={StaticResource StripTagsConverter}}"
+                                                           FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}"
+                                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Style="{StaticResource IconButton}"
+                                                        Width="36" Height="36"
+                                                        ToolTip="Quitar del pedido"
+                                                        AutomationProperties.Name="Quitar producto del pedido"
+                                                        Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                                               Foreground="{DynamicResource DangerBrush}"/>
+                                                </Button>
+                                            </Grid>
+
+                                            <!-- Controles del ítem -->
+                                            <Grid Grid.Row="1" Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Cantidad -->
+                                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                    <TextBlock Text="CANTIDAD" Style="{StaticResource MiniLabel}"/>
+                                                    <Border CornerRadius="9" BorderThickness="1"
+                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                            Background="{DynamicResource SurfaceBrush}" Height="34">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Button Style="{StaticResource StepperButton}" Content="&#x2212;"
+                                                                    ToolTip="Quitar una unidad"
+                                                                    AutomationProperties.Name="Quitar una unidad"
+                                                                    Command="{Binding DataContext.RemoveProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding Product}"/>
+                                                            <TextBlock Text="{Binding Quantity}" Width="28"
+                                                                       TextAlignment="Center" FontSize="13" FontWeight="Bold"
+                                                                       Foreground="{DynamicResource TextBrush}"
+                                                                       VerticalAlignment="Center"/>
+                                                            <Button Style="{StaticResource StepperButton}" Content="+"
+                                                                    ToolTip="Agregar una unidad"
+                                                                    AutomationProperties.Name="Agregar una unidad"
+                                                                    Command="{Binding DataContext.AddProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding Product}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <!-- Días -->
+                                                <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                                    <TextBlock Text="DÍAS" Style="{StaticResource MiniLabel}"/>
+                                                    <TextBox Style="{StaticResource CompactBox}" Width="54"
+                                                             HorizontalContentAlignment="Center"
+                                                             Text="{Binding Dias, UpdateSourceTrigger=PropertyChanged}"/>
+                                                </StackPanel>
+
+                                                <!-- Medida -->
+                                                <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                                                    <TextBlock Text="MEDIDA SOLICITADA" Style="{StaticResource MiniLabel}"/>
+                                                    <TextBox Style="{StaticResource CompactBox}"
+                                                             Text="{Binding RequestedMeasure, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="Ej.: 8 x 3"/>
+                                                </StackPanel>
+
+                                                <!-- Precio unitario (solo vista comercial) -->
+                                                <StackPanel Grid.Column="3" Margin="0,0,12,0"
+                                                            Visibility="{Binding DataContext.CommercialColumnsVisibility, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                                    <TextBlock Text="PRECIO UNIT." Style="{StaticResource MiniLabel}"/>
+                                                    <TextBox Style="{StaticResource CompactBox}" Width="96"
+                                                             HorizontalContentAlignment="Right"
+                                                             Text="{Binding UnitPrice, StringFormat='{}{0:0.00}', UpdateSourceTrigger=LostFocus}"/>
+                                                </StackPanel>
+
+                                                <!-- Subtotal (solo vista comercial) -->
+                                                <StackPanel Grid.Column="4" MinWidth="96"
+                                                            Visibility="{Binding DataContext.CommercialColumnsVisibility, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                                    <TextBlock Text="SUBTOTAL" Style="{StaticResource MiniLabel}" HorizontalAlignment="Right"/>
+                                                    <TextBlock Text="{Binding Total, Mode=OneWay, StringFormat='{}{0:C}'}"
+                                                               FontSize="14" FontWeight="Bold"
+                                                               Foreground="{DynamicResource SecondaryColorBrush}"
+                                                               HorizontalAlignment="Right" Margin="0,7,2,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </Border>
 
-            <!-- Lista de productos -->
-            <ListBox Grid.Row="3" ItemsSource="{Binding AvailableProducts}"
-                     Background="Transparent" BorderThickness="0"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     VirtualizingStackPanel.IsVirtualizing="True">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="0"/>
-                        <Setter Property="Margin" Value="0"/>
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                        <Setter Property="Background" Value="Transparent"/>
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <ContentPresenter/>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Border Style="{StaticResource Card}" Padding="16,14" Margin="2,4,2,8">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+            <!-- ──────────── 3 · RAIL DE DATOS Y GENERACIÓN ──────────── -->
+            <Grid Grid.Column="4">
 
-                                <TextBlock Grid.Row="0" Text="{Binding Description, Converter={StaticResource StripTagsConverter}}"
-                                           FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <!-- Rail colapsado: resumen mínimo (expandir + total + generar) -->
+                <Border Width="64" VerticalAlignment="Stretch"
+                        Style="{StaticResource Card}" Padding="8,12"
+                        Visibility="{Binding IsRailCollapsed, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <Button Style="{StaticResource StepperButton}" Content="&#xE76B;"
+                                FontFamily="{StaticResource IconFont}" FontSize="12"
+                                HorizontalAlignment="Center"
+                                Command="{Binding ToggleRailCommand}"
+                                AutomationProperties.Name="Expandir panel de datos"
+                                ToolTip="Expandir el panel de datos y generación"/>
+                        <Separator Background="{DynamicResource BorderBrush}" Height="1" Margin="4,10"/>
+                        <TextBlock Text="TOTAL" FontSize="9" FontWeight="Bold"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   HorizontalAlignment="Center" Margin="0,2,0,2"/>
+                        <TextBlock Text="{Binding GrandTotal, Mode=OneWay, StringFormat={}{0:C0}}"
+                                   FontSize="11" FontWeight="Black" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SecondaryColorBrush}"
+                                   HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,10"/>
+                        <Button Style="{StaticResource StepperButton}" Content="&#xE8A5;"
+                                FontFamily="{StaticResource IconFont}" FontSize="13"
+                                HorizontalAlignment="Center"
+                                Foreground="{DynamicResource SecondaryColorBrush}"
+                                Command="{Binding GenerateBudgetCommand}"
+                                AutomationProperties.Name="Generar presupuesto"
+                                ToolTip="Generar Presupuesto"/>
+                    </StackPanel>
+                </Border>
 
-                                <Grid Grid.Row="1" Margin="0,0,0,12">
-                                    <Border Style="{StaticResource Chip}" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Category}" Style="{StaticResource ChipText}"/>
-                                    </Border>
-                                    <TextBlock Text="{Binding BasePrice, StringFormat='{}{0:C}'}"
-                                               FontSize="15" Foreground="{DynamicResource SecondaryColorBrush}" FontWeight="Bold"
-                                               VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                                </Grid>
+                <!-- Rail completo -->
+                <Grid Width="330"
+                      Visibility="{Binding IsRailCollapsed, Converter={StaticResource InvBoolToVisibilityConverter}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
 
-                                <Grid Grid.Row="2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+                            <!-- Colapsar (ventanas angostas) -->
+                            <Button Style="{StaticResource StepperButton}" Content="&#xE76C;"
+                                    FontFamily="{StaticResource IconFont}" FontSize="12"
+                                    HorizontalAlignment="Right" Margin="0,0,2,4"
+                                    Command="{Binding ToggleRailCommand}"
+                                    AutomationProperties.Name="Colapsar panel de datos"
+                                    ToolTip="Colapsar el panel a un resumen mínimo"/>
 
-                                    <Button Grid.Column="0" Style="{StaticResource PrimaryButton}" Height="36" Margin="0"
-                                            Command="{Binding DataContext.AddProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <Button.Content>
-                                            <MultiBinding Converter="{StaticResource ProductButtonTextConverter}">
-                                                <Binding/>
-                                                <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                            </MultiBinding>
-                                        </Button.Content>
-                                        <Button.Background>
-                                            <MultiBinding Converter="{StaticResource ProductButtonBackgroundConverter}">
-                                                <Binding/>
-                                                <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                            </MultiBinding>
-                                        </Button.Background>
-                                    </Button>
+                    <!-- Documento -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE9F9;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Documento" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
 
-                                    <Button Grid.Column="1" Width="36" Height="36" Margin="6,0,0,0"
-                                            Foreground="White" Background="{DynamicResource DangerBrush}" BorderThickness="0"
-                                            FontSize="16" FontWeight="Bold" Cursor="Hand"
-                                            ToolTip="Quitar una unidad"
-                                            Command="{Binding DataContext.RemoveProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <Button.Visibility>
-                                            <MultiBinding Converter="{StaticResource ProductRemoveButtonVisibilityConverter}">
-                                                <Binding/>
-                                                <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                <Binding Path="IsMouseOver" RelativeSource="{RelativeSource AncestorType=Border}"/>
-                                                <Binding Path="DataContext.SelectionVersion" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                            </MultiBinding>
-                                        </Button.Visibility>
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="{TemplateBinding Background}" CornerRadius="10">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                        <TextBlock Text="&#x2212;" FontSize="16" FontWeight="Bold"/>
-                                    </Button>
-                                </Grid>
+                            <TextBlock Text="Nº Presupuesto" Style="{StaticResource FieldLabel}"/>
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Height="38"
+                                         Text="{Binding CurrentOrder.BudgetNumber, UpdateSourceTrigger=PropertyChanged}"/>
+                                <Button Grid.Column="1" Style="{StaticResource SecondaryButton}"
+                                        Height="38" Width="38" Padding="0" Margin="6,0,0,0"
+                                        Command="{Binding CreateNewVersionCommand}"
+                                        ToolTip="Crear nueva versión (rama) de este presupuesto: 31294 → 31294/2. La versión anterior no se modifica.">
+                                    <TextBlock Text="&#xE8F4;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                </Button>
                             </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </Grid>
 
-        <!-- ═══════════════ DERECHA: EDITOR DE ORDEN ═══════════════ -->
-        <Grid Grid.Column="1">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+                            <TextBlock Text="Estado" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox Height="38"
+                                      ItemsSource="{Binding StatusOptions}"
+                                      SelectedValue="{Binding CurrentOrder.Status, Mode=TwoWay}"
+                                      SelectedValuePath="Value"
+                                      DisplayMemberPath="Label"
+                                      ToolTip="Estado del presupuesto (se guarda con la orden)"/>
+                        </StackPanel>
+                    </Border>
 
-            <!-- DATOS DEL PEDIDO -->
-            <Border Grid.Row="0" Style="{StaticResource Card}" Padding="24,20" Margin="0,0,0,14">
-                <StackPanel>
-                    <!-- Fila 1: Cliente -->
-                    <Grid Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.8*"/>
-                            <ColumnDefinition Width="1.3*"/>
-                            <ColumnDefinition Width="2*"/>
-                            <ColumnDefinition Width="1.2*"/>
-                        </Grid.ColumnDefinitions>
+                    <!-- Cliente -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE716;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Cliente" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
 
-                        <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                            <TextBlock Text="Buscar cliente" Style="{StaticResource FieldLabel}"/>
-                            <ComboBox Height="42"
+                            <TextBlock Text="Buscar cliente registrado" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox Height="38" Margin="0,0,0,12"
                                       ItemsSource="{Binding KnownClients}"
                                       SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
                                       DisplayMemberPath="CompanyName"
@@ -247,309 +600,268 @@
                                       IsEditable="True"
                                       IsTextSearchCaseSensitive="False"
                                       ToolTip="Escribí el nombre de un cliente registrado para autocompletar sus datos"/>
-                        </StackPanel>
 
-                        <StackPanel Grid.Column="1" Margin="0,0,14,0">
                             <TextBlock Text="CUIT (autocompleta)" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Height="42" Text="{Binding CuitInput, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
+                            <TextBox Height="38"
+                                     Text="{Binding CuitInput, UpdateSourceTrigger=PropertyChanged}"/>
+                            <!-- Feedback inline: ✓ verde / ✗ rojo al pie del campo -->
+                            <TextBlock Text="{Binding CuitFeedback}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="4,3,0,12">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CuitFeedbackIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CuitFeedback}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="Margin" Value="0,0,0,12"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
-                        <StackPanel Grid.Column="2" Margin="0,0,14,0">
                             <TextBlock Text="Empresa / Cliente" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Height="42" Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Height="38"
+                                     Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
+                    </Border>
 
-                        <StackPanel Grid.Column="3">
-                            <TextBlock Text="Nº Presupuesto" Style="{StaticResource FieldLabel}"/>
+                    <!-- Evento -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE787;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Evento" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Fecha (desde / hasta)" Style="{StaticResource FieldLabel}"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="46"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox Grid.Column="0" Height="42"
-                                         Text="{Binding CurrentOrder.BudgetNumber, UpdateSourceTrigger=PropertyChanged}"/>
-                                <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Height="42" Width="42"
-                                        Padding="0" Margin="4,0,0,0"
-                                        Command="{Binding CreateNewVersionCommand}"
-                                        ToolTip="Crear nueva versión (rama) de este presupuesto: 31294 → 31294/2. La versión anterior no se modifica.">
-                                    <TextBlock Text="&#xE8F4;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
-                                </Button>
-                            </Grid>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Fila 2: Evento -->
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.8*"/>
-                            <ColumnDefinition Width="0.6*"/>
-                            <ColumnDefinition Width="1.2*"/>
-                            <ColumnDefinition Width="1.2*"/>
-                            <ColumnDefinition Width="1.0*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                            <TextBlock Text="Fecha del Evento (desde / hasta)" Style="{StaticResource FieldLabel}"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="6"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <DatePicker Grid.Column="0" Height="42"
+                                <DatePicker Grid.Column="0" Height="38"
+                                            SelectedDateChanged="EventDatePicker_SelectedDateChanged"
                                             SelectedDate="{Binding CurrentOrder.EventDate, UpdateSourceTrigger=PropertyChanged}"
                                             ToolTip="Inicio del evento"/>
-                                <DatePicker Grid.Column="2" Height="42"
+                                <DatePicker Grid.Column="2" Height="38"
+                                            SelectedDateChanged="EventDatePicker_SelectedDateChanged"
                                             SelectedDate="{Binding CurrentOrder.EventEndDate, UpdateSourceTrigger=PropertyChanged}"
                                             ToolTip="Fin del evento (opcional: dejar vacío si es de un solo día). En el documento sale en palabras: 'del 14 de abril al 15 de mayo'."/>
                             </Grid>
-                        </StackPanel>
+                            <!-- Coherencia de fechas: se avisa acá, antes del diálogo de generación -->
+                            <TextBlock Text="{Binding DateRangeError}" FontSize="11"
+                                       Foreground="{DynamicResource DangerBrush}"
+                                       TextWrapping="Wrap" Margin="4,3,0,12">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DateRangeError}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="Margin" Value="0,0,0,12"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
-                        <StackPanel Grid.Column="1" Margin="0,0,14,0">
-                            <TextBlock Text="Días" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Height="42" Text="{Binding EventDays, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
+                            <TextBlock Text="Lugar del evento" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="38" Margin="0,0,0,12"
+                                     Text="{Binding CurrentOrder.Location.Name, UpdateSourceTrigger=PropertyChanged}"/>
 
-                        <StackPanel Grid.Column="2" Margin="0,0,14,0">
-                            <TextBlock Text="Lugar del Evento" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Height="42" Text="{Binding CurrentOrder.Location.Name, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="3" Margin="0,0,14,0">
                             <TextBlock Text="Administrador" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Height="42" Text="{Binding CurrentOrder.AdminName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Height="38"
+                                     Text="{Binding CurrentOrder.AdminName, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
+                    </Border>
 
-                        <StackPanel Grid.Column="4">
-                            <TextBlock Text="Estado" Style="{StaticResource FieldLabel}"/>
-                            <ComboBox Height="42"
-                                      ItemsSource="{Binding StatusOptions}"
-                                      SelectedValue="{Binding CurrentOrder.Status, Mode=TwoWay}"
-                                      SelectedValuePath="Value"
-                                      DisplayMemberPath="Label"
-                                      ToolTip="Estado del presupuesto (se guarda con la orden)"/>
+                    <!-- Comentarios -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE90A;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Comentarios" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
+                            <TextBox Height="76" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                     Padding="12,8" FontSize="12"
+                                     Text="{Binding CurrentOrder.Comments, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Salen en la sección Comentarios de la Orden de Trabajo (tag {{COMENTARIOS}} de la plantilla)"/>
                         </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
+                    </Border>
 
-            <!-- SELECTOR DE VISTA (segmented control) + DESHACER -->
-            <Grid Grid.Row="1" Margin="0,0,0,12">
-                <Border Background="{DynamicResource SurfaceAltBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                        CornerRadius="12" Padding="4" HorizontalAlignment="Left">
-                    <StackPanel Orientation="Horizontal">
-                        <Button Command="{Binding SetCommercialViewCommand}" Content="Presupuesto Comercial">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonBase}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsTechnicalView}" Value="False">
-                                            <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Command="{Binding SetTechnicalViewCommand}" Content="Orden de Trabajo" Margin="4,0,0,0">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonBase}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsTechnicalView}" Value="True">
-                                            <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                    </StackPanel>
-                </Border>
+                    <!-- Generación -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,4">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE9F5;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Generar" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
 
-                <Button Style="{StaticResource GhostButton}" Height="38" HorizontalAlignment="Right"
-                        Command="{Binding UndoCartCommand}"
-                        ToolTip="Deshacer último cambio de productos del carrito (Ctrl+Z)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Deshacer" VerticalAlignment="Center" FontSize="12"/>
-                    </StackPanel>
-                </Button>
-            </Grid>
-
-            <!-- TABLA DE ITEMS -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="24,16">
-                <DataGrid ItemsSource="{Binding SelectedItems}" AutoGenerateColumns="False"
-                          CanUserAddRows="False" CanUserDeleteRows="False"
-                          RowDetailsVisibilityMode="Collapsed"
-                          HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                          RowHeight="56">
-                    <DataGrid.Columns>
-                        <!-- §2 Disponibilidad: ⚠ cuando el pedido supera el stock libre para la fecha -->
-                        <DataGridTemplateColumn Header="" Width="34" IsReadOnly="True">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}"
-                                               FontSize="14" Foreground="{DynamicResource WarningBrush}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               ToolTip="Stock insuficiente: este producto ya está comprometido en otras órdenes activas para la fecha del evento."
-                                               Visibility="{Binding HasStockConflict, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-
-                        <DataGridTextColumn Header="EQUIPAMIENTO" Binding="{Binding Product.Description, Converter={StaticResource StripTagsConverter}}" Width="3*" IsReadOnly="True">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Left"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="TextWrapping" Value="Wrap"/>
-                                    <Setter Property="Margin" Value="4,0,0,0"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTextColumn Header="CANT." Binding="{Binding Quantity}" Width="90">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                            <DataGridTextColumn.EditingElementStyle>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.EditingElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTextColumn Header="DÍAS" Binding="{Binding Dias}" Width="80">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                            <DataGridTextColumn.EditingElementStyle>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.EditingElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTextColumn Header="MEDIDA SOLICITADA" Binding="{Binding RequestedMeasure}" Width="160">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Left"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="Margin" Value="4,0,0,0"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                            <DataGridTextColumn.EditingElementStyle>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.EditingElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTextColumn Header="PRECIO UNIT." Binding="{Binding UnitPrice, StringFormat='{}{0:C}'}" Width="130"
-                                            Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="Margin" Value="0,0,6,0"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                            <DataGridTextColumn.EditingElementStyle>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="HorizontalContentAlignment" Value="Right"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.EditingElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTextColumn Header="SUBTOTAL" Binding="{Binding Total, Mode=OneWay, StringFormat='{}{0:C}'}" Width="140" IsReadOnly="True"
-                                            Visibility="{Binding Data.CommercialColumnsVisibility, Source={StaticResource Proxy}}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                    <Setter Property="Margin" Value="0,0,6,0"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-
-                        <DataGridTemplateColumn Header="" Width="70">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource IconButton}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                            ToolTip="Quitar del pedido"
-                                            Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                                   Foreground="{DynamicResource DangerBrush}"/>
+                            <!-- Selector de vista -->
+                            <Border Background="{DynamicResource SurfaceAltBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="12" Padding="4" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Command="{Binding SetCommercialViewCommand}" Content="Presupuesto">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonBase}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTechnicalView}" Value="False">
+                                                        <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
                                     </Button>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Border>
+                                    <Button Grid.Column="1" Command="{Binding SetTechnicalViewCommand}" Content="Orden de Trabajo" Margin="4,0,0,0">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonBase}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTechnicalView}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource SecondaryColorBrush}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </Border>
 
-            <!-- PIE: TOTAL + GENERAR -->
-            <Grid Grid.Row="3" Margin="0,14,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+                            <!-- Total -->
+                            <Border Style="{StaticResource CardInner}" Padding="14,12" Margin="0,0,0,12"
+                                    Visibility="{Binding CommercialColumnsVisibility}">
+                                <StackPanel>
+                                    <!-- Subtotal lineal -->
+                                    <Grid Margin="0,0,0,8">
+                                        <TextBlock Text="SUBTOTAL" FontWeight="Bold" FontSize="10"
+                                                   Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding FinalBudget, Mode=OneWay, StringFormat={}{0:C2}, FallbackValue=$0.00, TargetNullValue=$0.00}"
+                                                   FontWeight="SemiBold" FontSize="13"
+                                                   Foreground="{DynamicResource TextBrush}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
 
-                <!-- Total -->
-                <Border Grid.Column="0" Style="{StaticResource Card}" Padding="20,10"
-                        VerticalAlignment="Center"
-                        Visibility="{Binding CommercialColumnsVisibility}">
-                    <StackPanel>
-                        <TextBlock Text="TOTAL ESTIMADO" FontWeight="Bold" FontSize="10"
-                                   Foreground="{DynamicResource MutedTextBrush}"/>
-                        <TextBlock Text="{Binding FinalBudget, Mode=OneWay, StringFormat={}{0:C2}, FallbackValue=$0.00, TargetNullValue=$0.00}"
-                                   FontWeight="Black" FontSize="22" Margin="0,2,0,0"
-                                   Foreground="{DynamicResource SecondaryColorBrush}"/>
-                    </StackPanel>
-                </Border>
+                                    <!-- Descuento global: % y monto fijo -->
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="6"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="DESC. %" Style="{StaticResource MiniLabel}"/>
+                                            <TextBox Height="30" FontSize="12" VerticalContentAlignment="Center"
+                                                     Text="{Binding DiscountPercent, UpdateSourceTrigger=LostFocus, StringFormat={}{0:0.##}}"
+                                                     ToolTip="Descuento global porcentual sobre el subtotal"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="DESC. $" Style="{StaticResource MiniLabel}"/>
+                                            <TextBox Height="30" FontSize="12" VerticalContentAlignment="Center"
+                                                     Text="{Binding DiscountAmount, UpdateSourceTrigger=LostFocus, StringFormat={}{0:0.##}}"
+                                                     ToolTip="Descuento global en monto fijo (se suma al porcentual)"/>
+                                        </StackPanel>
+                                    </Grid>
 
-                <!-- Botones de generación -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button Height="46" Style="{StaticResource PrimaryButton}" Padding="18,0"
-                            Command="{Binding GenerateBudgetCommand}"
-                            Visibility="{Binding CommercialColumnsVisibility}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Generar Presupuesto" FontSize="13" VerticalAlignment="Center"/>
+                                    <!-- Descuento aplicado -->
+                                    <Grid Margin="0,0,0,8" Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="DESCUENTO" FontWeight="Bold" FontSize="10"
+                                                   Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock FontWeight="SemiBold" FontSize="13"
+                                                   Foreground="{DynamicResource DangerBrush}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center">
+                                            <Run Text="−"/><Run Text="{Binding DiscountValue, Mode=OneWay, StringFormat={}{0:C2}}"/>
+                                        </TextBlock>
+                                    </Grid>
+
+                                    <!-- IVA -->
+                                    <Grid Margin="0,0,0,8">
+                                        <CheckBox Content="Discriminar IVA (21%)" FontSize="11"
+                                                  Foreground="{DynamicResource MutedTextBrush}"
+                                                  IsChecked="{Binding AddVat}" VerticalAlignment="Center"
+                                                  ToolTip="Activado: los precios son netos y el documento suma el IVA. Desactivado: precios finales."/>
+                                        <TextBlock Text="{Binding VatValue, Mode=OneWay, StringFormat={}{0:C2}}"
+                                                   FontWeight="SemiBold" FontSize="13"
+                                                   Foreground="{DynamicResource TextBrush}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Visibility="{Binding AddVat, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    </Grid>
+
+                                    <Separator Background="{DynamicResource BorderBrush}" Height="1" Margin="0,0,0,8"/>
+
+                                    <!-- Total final -->
+                                    <Grid>
+                                        <TextBlock Text="TOTAL" FontWeight="Bold" FontSize="10"
+                                                   Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding GrandTotal, Mode=OneWay, StringFormat={}{0:C2}, FallbackValue=$0.00, TargetNullValue=$0.00}"
+                                                   FontWeight="Black" FontSize="19"
+                                                   Foreground="{DynamicResource SecondaryColorBrush}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Button Height="42" Style="{StaticResource PrimaryButton}" Margin="0,0,0,8"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding GenerateBudgetCommand}"
+                                    Visibility="{Binding CommercialColumnsVisibility}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Generar Presupuesto" FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Height="42" Style="{StaticResource BrandButton}" Margin="0,0,0,8"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding GenerateOFCommand}"
+                                    Visibility="{Binding CommercialColumnsVisibility}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Generar O. Facturación" FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Height="42" Style="{StaticResource SuccessButton}"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding GenerateOTCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE9F5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Generar O. Trabajo" FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Height="40" Style="{StaticResource GhostButton}" Margin="0,8,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SendByEmailCommand}"
+                                    AutomationProperties.Name="Enviar el último documento por correo"
+                                    ToolTip="Abre un borrador de Outlook con el último documento generado adjunto (y su PDF si se exportó). No envía nada automáticamente.">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE715;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Enviar por mail" FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
-                    </Button>
-                    <Button Height="46" Style="{StaticResource BrandButton}" Padding="18,0" Margin="10,0"
-                            Command="{Binding GenerateOFCommand}"
-                            Visibility="{Binding CommercialColumnsVisibility}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Generar O. Facturación" FontSize="13" VerticalAlignment="Center"/>
+                    </Border>
                         </StackPanel>
-                    </Button>
-                    <Button Height="46" Style="{StaticResource SuccessButton}" Padding="18,0"
-                            Command="{Binding GenerateOTCommand}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE9F5;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Generar O. Trabajo" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>

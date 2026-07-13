@@ -150,6 +150,19 @@
                        FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
                        Margin="4,0,0,10"/>
 
+            <!-- Skeleton mientras se escanea la carpeta (red/carpetas grandes) -->
+            <Border Grid.Row="4" Style="{StaticResource Card}" Padding="16"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"
+                    Panel.ZIndex="1">
+                <StackPanel VerticalAlignment="Top">
+                    <Border Style="{StaticResource SkeletonRow}"/>
+                    <Border Style="{StaticResource SkeletonRow}" Opacity="0.5"/>
+                    <Border Style="{StaticResource SkeletonRow}" Opacity="0.45"/>
+                    <Border Style="{StaticResource SkeletonRow}" Opacity="0.4"/>
+                    <Border Style="{StaticResource SkeletonRow}" Opacity="0.3"/>
+                </StackPanel>
+            </Border>
+
             <!-- DataGrid -->
             <Border Grid.Row="4" Style="{StaticResource Card}">
                 <DataGrid x:Name="FilesGrid"

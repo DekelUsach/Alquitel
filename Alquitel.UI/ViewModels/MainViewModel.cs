@@ -62,10 +62,51 @@ namespace Alquitel.UI.ViewModels
 
         /// <summary>Etiqueta de la barra de estado: base local o servidor compartido.</summary>
         public string DatabaseModeLabel => _remoteSyncService.IsRemoteConfigured
-            ? "Servidor compartido (Supabase)"
+            ? (IsConnectionHealthy
+                ? "Servidor compartido (Supabase)"
+                : "Sin conexión al servidor — reintentando…")
             : "Base de datos local (SQLite)";
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService)
+        /// <summary>
+        /// Estado vivo de la conexión al servidor. Con SQLite local siempre true.
+        /// Lo actualiza el chequeo periódico de <see cref="StartConnectionMonitor"/>.
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DatabaseModeLabel))]
+        private bool _isConnectionHealthy = true;
+
+        /// <summary>
+        /// Chequeo periódico de conectividad en modo servidor: si se cae internet la
+        /// barra de estado lo muestra en claro en lugar de dejar que la app falle con
+        /// timeouts crudos sin explicación.
+        /// </summary>
+        private void StartConnectionMonitor()
+        {
+            if (!_remoteSyncService.IsRemoteConfigured) return;
+
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        var status = await _remoteSyncService.TestConnectionAsync();
+                        IsConnectionHealthy = status.IsReachable;
+                    }
+                    catch
+                    {
+                        IsConnectionHealthy = false;
+                    }
+                    // Caído: reintento rápido para avisar la recuperación; sano: chequeo liviano por minuto.
+                    await Task.Delay(TimeSpan.FromSeconds(IsConnectionHealthy ? 60 : 15));
+                }
+            });
+        }
+
+        /// <summary>Host de toasts: MainWindow bindea Toasts.Items para el overlay.</summary>
+        public Alquitel.UI.Services.ToastService Toasts { get; }
+
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService)
         {
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
@@ -73,6 +114,7 @@ namespace Alquitel.UI.ViewModels
             _appSettings = appSettings;
             _currentUserService = currentUserService;
             _remoteSyncService = remoteSyncService;
+            Toasts = toastService;
 
             // Load theme preference from settings
             LoadThemePreference();
@@ -91,6 +133,27 @@ namespace Alquitel.UI.ViewModels
                 NavigateToWorkOrders();
             else
                 NavigateToDashboard();
+
+            StartConnectionMonitor();
+        }
+
+        // ── Paleta de comandos (Ctrl+K) ──────────────────────────────
+
+        [RelayCommand]
+        private void OpenCommandPalette()
+        {
+            var palette = new Views.CommandPaletteWindow(this, _dbContextFactory)
+            {
+                Owner = System.Windows.Application.Current.MainWindow
+            };
+            palette.ShowDialog();
+        }
+
+        /// <summary>Navega al armador con un VM ya cargado (presupuesto abierto desde la paleta).</summary>
+        public void NavigateToLoadedBuilder(BudgetBuilderViewModel builder)
+        {
+            ActiveSection = "Presupuesto";
+            _navigationService.NavigateTo(builder);
         }
 
         // ── Navigation Commands ──────────────────────────────────────

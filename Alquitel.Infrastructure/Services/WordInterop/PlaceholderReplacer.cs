@@ -58,10 +58,19 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
             ReplaceText(doc, "{{CONTACTO}}", contacto);
 
-            // Sin campo de comentarios en el modelo todavía: la línea queda en blanco
-            // para completar a mano en Word, igual que en las OT históricas.
-            ReplaceText(doc, "{{COMENTARIOS}}", string.Empty);
+            ReplaceText(doc, "{{COMENTARIOS}}", order.Comments ?? string.Empty);
             ReplaceText(doc, "{{DIRECCION}}",   string.Empty);
+
+            // ── Motor comercial: totales con descuento e IVA ──────────
+            // Solo tienen efecto si la plantilla incluye los tags; una plantilla vieja
+            // sin ellos sigue imprimiendo el total por producto como siempre.
+            ReplaceText(doc, "{{SUBTOTAL}}", order.Total.ToString("C"));
+            ReplaceText(doc, "{{DESCUENTO}}", order.DiscountValue > 0
+                ? $"-{order.DiscountValue.ToString("C")}"
+                : string.Empty);
+            ReplaceText(doc, "{{IVA}}", order.AddVat ? order.VatValue.ToString("C") : string.Empty);
+            ReplaceText(doc, "{{TOTAL}}", order.GrandTotal.ToString("C"));
+            ReplaceText(doc, "{{TOTAL_FINAL}}", order.GrandTotal.ToString("C"));
 
             ReplaceBookmark(doc, "BK_CLIENT_NAME",  order.Client?.CompanyName ?? "N/A");
             ReplaceBookmark(doc, "BK_CUIT",         order.Client?.Cuit ?? "N/A");

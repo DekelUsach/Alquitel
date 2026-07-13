@@ -15,6 +15,7 @@ namespace Alquitel.UI.ViewModels
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDialogService _dialogService;
+        private readonly IDispatcher _dispatcher;
 
         public ObservableCollection<Location> Locations { get; } = new();
 
@@ -30,10 +31,11 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _statusMessage = string.Empty;
 
-        public LocationsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService)
+        public LocationsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService, IDispatcher dispatcher)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
+            _dispatcher = dispatcher;
         }
 
         public async Task InitializeAsync()
@@ -51,7 +53,8 @@ namespace Alquitel.UI.ViewModels
                 using var db = await _dbContextFactory.CreateDbContextAsync();
                 var locations = await db.Locations.OrderBy(l => l.Name).ToListAsync();
                 
-                App.Current.Dispatcher.Invoke(() =>
+                // IDispatcher en lugar de App.Current.Dispatcher: permite testear el VM sin WPF.
+                _dispatcher.InvokeAsync(() =>
                 {
                     Locations.Clear();
                     foreach (var l in locations) Locations.Add(l);
@@ -118,25 +121,63 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        /// <summary>Nombre de la ubicación centinela que recibe las órdenes de ubicaciones borradas.</summary>
+        private const string FallbackLocationName = "(Sin ubicación)";
+
         [RelayCommand]
         private async Task DeleteLocationAsync()
         {
             if (SelectedLocation == null) return;
 
-            if (!_dialogService.ShowConfirm("Confirmar", $"¿Estás seguro de que deseas eliminar la ubicación {SelectedLocation.Name}?"))
-                return;
-
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
+
+                // La FK Order→Location es Cascade: borrar sin reasignar eliminaría
+                // en silencio todos los presupuestos que usan esta ubicación.
+                var orderCount = await db.Orders.CountAsync(o => o.LocationId == SelectedLocation.Id);
+
+                string prompt = orderCount == 0
+                    ? $"¿Eliminar la ubicación \"{SelectedLocation.Name}\"?"
+                    : $"La ubicación \"{SelectedLocation.Name}\" está usada por {orderCount} presupuesto(s).\n\n" +
+                      $"Si la eliminás, esos presupuestos pasan a \"{FallbackLocationName}\" y no se pierden.\n\n¿Continuar?";
+
+                if (!_dialogService.ShowConfirm("Eliminar ubicación", prompt))
+                    return;
+
                 var location = await db.Locations.FindAsync(SelectedLocation.Id);
                 if (location != null)
                 {
+                    if (orderCount > 0)
+                    {
+                        if (string.Equals(location.Name, FallbackLocationName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _dialogService.ShowWarning("Eliminar ubicación",
+                                $"\"{FallbackLocationName}\" no puede eliminarse mientras tenga presupuestos asociados.");
+                            return;
+                        }
+
+                        var fallback = await db.Locations
+                            .FirstOrDefaultAsync(l => l.Name == FallbackLocationName);
+                        if (fallback == null)
+                        {
+                            fallback = new Location { Name = FallbackLocationName };
+                            db.Locations.Add(fallback);
+                            await db.SaveChangesAsync();
+                        }
+
+                        await db.Orders
+                            .Where(o => o.LocationId == location.Id)
+                            .ExecuteUpdateAsync(s => s.SetProperty(o => o.LocationId, fallback.Id));
+                    }
+
                     db.Locations.Remove(location);
                     await db.SaveChangesAsync();
                 }
 
-                StatusMessage = "Ubicación eliminada.";
+                StatusMessage = orderCount > 0
+                    ? $"Ubicación eliminada. {orderCount} presupuesto(s) reasignados a \"{FallbackLocationName}\"."
+                    : "Ubicación eliminada.";
                 SelectedLocation = null;
                 await LoadLocationsAsync();
             }

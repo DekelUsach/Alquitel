@@ -69,11 +69,51 @@ namespace Alquitel.UI.ViewModels
             new NamedColor("#F68787", "Rojo Suave"),
             new NamedColor("#1F6FEB", "Azul"),
         };
+
+        /// <summary>
+        /// Segmentos que la vista previa Word renderiza para este campo, replicando
+        /// ProductRenderer: la etiqueta con su negrita/subrayado/color, seguida del
+        /// valor parseado con TagParser (soporta tags [red], [b], etc. embebidos).
+        /// </summary>
+        public IReadOnlyList<TextSegment> PreviewSegments
+        {
+            get
+            {
+                string colorHex = string.IsNullOrEmpty(ColorHex) ? "#000000" : ColorHex;
+                var segments = new List<TextSegment>();
+                if (!string.IsNullOrEmpty(Label))
+                {
+                    segments.Add(new TextSegment
+                    {
+                        Text = string.IsNullOrEmpty(Value) ? Label : Label + ": ",
+                        ColorHex = colorHex,
+                        Bold = IsBold,
+                        Underline = IsUnderline
+                    });
+                }
+                if (!string.IsNullOrEmpty(Value))
+                    segments.AddRange(TagParser.Parse(Value, colorHex));
+                return segments;
+            }
+        }
+
+        partial void OnLabelChanged(string value) => OnPropertyChanged(nameof(PreviewSegments));
+        partial void OnValueChanged(string value) => OnPropertyChanged(nameof(PreviewSegments));
+        partial void OnIsBoldChanged(bool value) => OnPropertyChanged(nameof(PreviewSegments));
+        partial void OnIsUnderlineChanged(bool value) => OnPropertyChanged(nameof(PreviewSegments));
+        partial void OnColorHexChanged(string value) => OnPropertyChanged(nameof(PreviewSegments));
     }
+
+    /// <summary>Celda de un día del calendario de disponibilidad de stock.</summary>
+    public sealed record StockDayCell(string DayLabel, string CountLabel, string Tone);
+
+    /// <summary>Fila de orden activa que compromete stock del producto seleccionado.</summary>
+    public sealed record CommitmentRow(string BudgetNumber, string ClientName, string RangeLabel, int Quantity);
 
     public partial class ProductEditorViewModel : ObservableObject, Alquitel.Core.Interfaces.IAsyncInitialization
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
+        private readonly Alquitel.Core.Interfaces.Repositories.IOrderRepository _orderRepository;
 
         public ObservableCollection<Product> Products { get; } = new();
 
@@ -100,10 +140,86 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty] private string _editStockQuantity = string.Empty;
         [ObservableProperty] private string _editCost = string.Empty;
 
+        // Stepper del stock: +1 / −1 sobre el texto numérico. Bajar de 0 vuelve a
+        // "vacío" (= sin control de stock), el mismo significado que el campo en blanco.
+        [RelayCommand]
+        private void IncrementStock()
+        {
+            int current = int.TryParse(EditStockQuantity?.Trim(), out var v) && v >= 0 ? v : 0;
+            EditStockQuantity = (current + 1).ToString();
+        }
+
+        [RelayCommand]
+        private void DecrementStock()
+        {
+            if (!int.TryParse(EditStockQuantity?.Trim(), out var v) || v <= 0)
+            {
+                EditStockQuantity = string.Empty;
+                return;
+            }
+            EditStockQuantity = v == 1 ? "0" : (v - 1).ToString();
+        }
+
         // Segments that compose the product title (serialized to tagged string)
         public ObservableCollection<DescriptionSegmentViewModel> DescriptionSegments { get; } = new();
 
         public ObservableCollection<CustomFieldViewModel> CustomFields { get; } = new();
+
+        // ── Vista previa Word (panel lateral) ────────────────────
+
+        [ObservableProperty] private bool _isPreviewVisible;
+        [ObservableProperty] private bool _isZoomedPreviewVisible;
+
+        [RelayCommand]
+        private void ToggleWordPreview() => IsPreviewVisible = !IsPreviewVisible;
+
+        [RelayCommand]
+        private void OpenZoomedPreview() => IsZoomedPreviewVisible = true;
+
+        [RelayCommand]
+        private void CloseZoomedPreview() => IsZoomedPreviewVisible = false;
+
+        /// <summary>
+        /// Segmentos del título tal como los renderiza ProductRenderer en Word: el
+        /// título completo va siempre en negrita (defaultBold: true al parsear), la
+        /// cursiva y el color se respetan por segmento.
+        /// </summary>
+        public IReadOnlyList<TextSegment> TitlePreviewSegments =>
+            DescriptionSegments
+                .Where(s => !string.IsNullOrEmpty(s.Text))
+                .Select(s => new TextSegment { Text = s.Text, ColorHex = s.ColorHex, Bold = true, Italic = s.IsItalic })
+                .ToList();
+
+        // Celdas de la tabla resumen 1×4 con valores de ejemplo (Cant=1, Días=1,
+        // precio = Precio Base). Mismo formato que ProductRenderer (es-AR, N0).
+        public string PreviewCostCell => $"Costo U.:  {FormatPreviewMoney(EditBasePrice)}";
+        public string PreviewTotalCell => $"Total: $   {EditBasePrice.ToString("N0", new System.Globalization.CultureInfo("es-AR"))}";
+
+        private static string FormatPreviewMoney(decimal value) =>
+            value == 0 ? "   -----" : value.ToString("N0", new System.Globalization.CultureInfo("es-AR"));
+
+        partial void OnEditBasePriceChanged(decimal value)
+        {
+            OnPropertyChanged(nameof(PreviewCostCell));
+            OnPropertyChanged(nameof(PreviewTotalCell));
+        }
+
+        private void NotifyTitlePreviewChanged() => OnPropertyChanged(nameof(TitlePreviewSegments));
+
+        private void OnDescriptionSegmentPropertyChanged(object? sender, PropertyChangedEventArgs e)
+            => NotifyTitlePreviewChanged();
+
+        private void OnDescriptionSegmentsCollectionChanged(object? sender,
+            System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+                foreach (DescriptionSegmentViewModel item in e.OldItems)
+                    item.PropertyChanged -= OnDescriptionSegmentPropertyChanged;
+            if (e.NewItems != null)
+                foreach (DescriptionSegmentViewModel item in e.NewItems)
+                    item.PropertyChanged += OnDescriptionSegmentPropertyChanged;
+            NotifyTitlePreviewChanged();
+        }
 
         // ── Serialization helpers ────────────────────────────────
 
@@ -157,11 +273,14 @@ namespace Alquitel.UI.ViewModels
             return result;
         }
 
-        public ProductEditorViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory)
+        public ProductEditorViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory,
+            Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository)
         {
             _dbContextFactory = dbContextFactory;
+            _orderRepository = orderRepository;
             _productsView = CollectionViewSource.GetDefaultView(Products);
             _productsView.Filter = FilterProduct;
+            DescriptionSegments.CollectionChanged += OnDescriptionSegmentsCollectionChanged;
         }
 
         // Loading happens here (invoked by NavigationService) instead of the constructor,
@@ -207,10 +326,92 @@ namespace Alquitel.UI.ViewModels
             if (value == null)
             {
                 IsEditing = false;
+                HasAvailability = false;
                 return;
             }
             PopulateForm(value);
             IsEditing = true;
+            _ = LoadAvailabilityAsync(value);
+        }
+
+        // ── Calendario de disponibilidad de stock (§ próximos 30 días) ──
+
+        /// <summary>Celdas por día: fecha + unidades libres, coloreadas por severidad.</summary>
+        public ObservableCollection<StockDayCell> AvailabilityDays { get; } = new();
+
+        /// <summary>Órdenes activas que comprometen stock en la ventana.</summary>
+        public ObservableCollection<CommitmentRow> AvailabilityOrders { get; } = new();
+
+        [ObservableProperty]
+        private bool _hasAvailability;
+
+        [ObservableProperty]
+        private string _availabilitySummary = string.Empty;
+
+        private async System.Threading.Tasks.Task LoadAvailabilityAsync(Product product)
+        {
+            AvailabilityDays.Clear();
+            AvailabilityOrders.Clear();
+            HasAvailability = false;
+
+            // Sin control de stock (servicios, ítems sin cantidad) no hay calendario.
+            if (product.StockQuantity is not int stock) return;
+
+            var from = DateTime.Today;
+            var to = from.AddDays(30);
+
+            List<Alquitel.Core.Interfaces.Repositories.ProductCommitment> commitments;
+            try
+            {
+                commitments = await _orderRepository.GetCommitmentsAsync(product.Id, from, to);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "LoadAvailabilityAsync failed for product {ProductId}", product.Id);
+                return;
+            }
+
+            // El usuario pudo cambiar de producto durante el await.
+            if (SelectedProduct?.Id != product.Id) return;
+
+            var culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+            for (int d = 0; d < 30; d++)
+            {
+                var day = from.AddDays(d);
+                int committed = commitments
+                    .Where(c => c.Start <= day && day < c.End)
+                    .Sum(c => c.Quantity);
+                int free = stock - committed;
+
+                string tone = committed == 0 ? "none"
+                    : free > 0 ? "ok"
+                    : free == 0 ? "tight"
+                    : "over";
+
+                AvailabilityDays.Add(new StockDayCell(
+                    day.ToString("ddd d/M", culture),
+                    free < 0 ? $"−{-free}" : free.ToString(),
+                    tone));
+            }
+
+            foreach (var group in commitments.GroupBy(c => c.OrderId))
+            {
+                var first = group.First();
+                var endInclusive = first.End.AddDays(-1);
+                string range = first.Start == endInclusive
+                    ? first.Start.ToString("dd/MM")
+                    : $"{first.Start:dd/MM} → {endInclusive:dd/MM}";
+                AvailabilityOrders.Add(new CommitmentRow(
+                    first.BudgetNumber,
+                    string.IsNullOrWhiteSpace(first.ClientName) ? "(sin cliente)" : first.ClientName!,
+                    range,
+                    group.Sum(c => c.Quantity)));
+            }
+
+            AvailabilitySummary = commitments.Count == 0
+                ? $"Stock total: {stock} u. Sin compromisos en los próximos 30 días."
+                : $"Stock total: {stock} u. — unidades libres por día (próximos 30 días):";
+            HasAvailability = true;
         }
 
         private void PopulateForm(Product p)

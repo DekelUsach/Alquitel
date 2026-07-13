@@ -1,0 +1,24 @@
+#!/bin/sh
+# Bloquea commits que agreguen secretos: JWTs de Supabase (eyJ...) o API keys (sk_...).
+# Instalación (una vez por clon): git config core.hooksPath .githooks
+# Bypass consciente (NO para secretos reales): git commit --no-verify
+
+PATTERN='eyJ[A-Za-z0-9_-]\{20,\}\|sk_[A-Za-z0-9]\{16,\}\|service_role'
+
+# Solo líneas AGREGADAS en el diff staged, excluyendo este hook y los .example.
+# La AnonKey de Supabase es pública por diseño (viaja en el binario) — se permite.
+leaks=$(git diff --cached --unified=0 -- . ':(exclude).githooks/*' ':(exclude)*.example.json' |
+    grep '^+' | grep -v '^+++' | grep -v 'AnonKey' | grep -n "$PATTERN")
+
+if [ -n "$leaks" ]; then
+    echo "═══════════════════════════════════════════════════════════════"
+    echo " COMMIT BLOQUEADO: posible secreto detectado en el diff staged."
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "$leaks" | head -10
+    echo ""
+    echo "Mover el secreto a appsettings.local.json (gitignoreado) o a"
+    echo "variables de entorno ALQUITEL_*. Si es un falso positivo:"
+    echo "  git commit --no-verify"
+    exit 1
+fi
+exit 0

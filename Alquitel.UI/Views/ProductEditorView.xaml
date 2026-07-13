@@ -10,11 +10,12 @@
         <local:StripTagsConverter x:Key="StripTagsConverter"/>
     </UserControl.Resources>
 
-    <Grid Margin="32,28,32,28">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid Margin="32,28,32,28">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
         <!-- ═══════════ HEADER ═══════════ -->
         <Grid Grid.Row="0" Margin="0,0,0,24">
@@ -24,6 +25,16 @@
                            Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource SecondaryButton}" Command="{Binding ToggleWordPreviewCommand}"
+                        Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Mostrar u ocultar la vista previa de cómo quedará el producto en el documento Word"
+                        Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Vista Word" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAsyncCommand}"
                         ToolTip="Recargar catálogo de productos" Margin="0,0,10,0">
                     <StackPanel Orientation="Horizontal">
@@ -135,7 +146,13 @@
 
             <!-- ═══════════ DERECHA: EDITOR ═══════════ -->
             <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="4,0,4,20">
 
                         <!-- ── Información general ── -->
@@ -171,8 +188,25 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,12,0">
                                         <TextBlock Text="Stock total (vacío = sin control)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditStockQuantity, UpdateSourceTrigger=PropertyChanged}"
-                                                 ToolTip="Cantidad física total disponible. Dejalo vacío para servicios o ítems sin control de disponibilidad."/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Button Grid.Column="0" Style="{StaticResource StepperButton}" Content="&#x2212;"
+                                                    Command="{Binding DecrementStockCommand}"
+                                                    AutomationProperties.Name="Restar una unidad de stock"
+                                                    ToolTip="Restar una unidad"/>
+                                            <TextBox Grid.Column="1" Height="42" Margin="4,0"
+                                                     TextAlignment="Center"
+                                                     Text="{Binding EditStockQuantity, UpdateSourceTrigger=PropertyChanged}"
+                                                     ToolTip="Cantidad física total disponible. Dejalo vacío para servicios o ítems sin control de disponibilidad."/>
+                                            <Button Grid.Column="2" Style="{StaticResource StepperButton}" Content="+"
+                                                    Command="{Binding IncrementStockCommand}"
+                                                    AutomationProperties.Name="Sumar una unidad de stock"
+                                                    ToolTip="Sumar una unidad"/>
+                                        </Grid>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="Costo interno x día (vacío = sin costo)" Style="{StaticResource FieldLabel}"/>
@@ -180,6 +214,100 @@
                                                  ToolTip="Costo por unidad por día. Solo se usa en Reportes para calcular margen; nunca se imprime en documentos."/>
                                     </StackPanel>
                                 </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ── Calendario de disponibilidad de stock (30 días) ── -->
+                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16"
+                                Visibility="{Binding HasAvailability, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE787;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Disponibilidad de stock" Style="{StaticResource SectionTitle}"/>
+                                        <TextBlock Text="{Binding AvailabilitySummary}" FontSize="11"
+                                                   Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Grilla de días: unidades libres por fecha -->
+                                <ItemsControl ItemsSource="{Binding AvailabilityDays}" Margin="0,4,0,8">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="8" Padding="8,6" Margin="0,0,6,6" MinWidth="58"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <!-- Sin compromisos: chip neutro -->
+                                                        <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                                        <Style.Triggers>
+                                                            <!-- Comprometido pero con unidades libres -->
+                                                            <DataTrigger Binding="{Binding Tone}" Value="ok">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SuccessBrush}"/>
+                                                            </DataTrigger>
+                                                            <!-- Justo: 0 unidades libres -->
+                                                            <DataTrigger Binding="{Binding Tone}" Value="tight">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                                            </DataTrigger>
+                                                            <!-- Sobrevendido -->
+                                                            <DataTrigger Binding="{Binding Tone}" Value="over">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                                                                <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DayLabel}" FontSize="10"
+                                                               Foreground="{DynamicResource MutedTextBrush}"
+                                                               HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding CountLabel}" FontSize="13" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextBrush}"
+                                                               HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Órdenes activas que usan el producto -->
+                                <ItemsControl ItemsSource="{Binding AvailabilityOrders}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CardInner}" Padding="12,8" Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding BudgetNumber}" FontWeight="Bold"
+                                                               FontSize="12" Foreground="{DynamicResource SecondaryColorBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding ClientName}" FontSize="12"
+                                                               Foreground="{DynamicResource TextBrush}" Margin="10,0"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding RangeLabel}" FontSize="11"
+                                                               Foreground="{DynamicResource MutedTextBrush}"
+                                                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                    <TextBlock Grid.Column="3" FontSize="12" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center">
+                                                        <Run Text="{Binding Quantity, Mode=OneWay}"/><Run Text=" u."/>
+                                                    </TextBlock>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </Border>
 
@@ -428,7 +556,212 @@
                                    Foreground="{DynamicResource SecondaryColorBrush}"/>
                     </StackPanel>
                 </ScrollViewer>
+
+                <!-- ═══════════ VISTA PREVIA WORD ═══════════
+                     Hoja "papel" que replica la geometría de ProductRenderer.cs:
+                     1 cm ≈ 37.8 px (96 DPI), 1 pt ≈ 1.333 px. Fondo blanco fijo
+                     (independiente del tema) porque simula papel real. -->
+                <Border Grid.Column="1" Width="470" Margin="16,0,0,0"
+                        Visibility="{Binding IsPreviewVisible, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Vista previa — documento Word"
+                                   Style="{StaticResource FieldLabel}" Margin="4,0,0,8"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <Grid Cursor="Hand" ToolTip="Hacé click para ver la vista previa en tamaño completo">
+                                <Grid.InputBindings>
+                                    <MouseBinding MouseAction="LeftClick" Command="{Binding OpenZoomedPreviewCommand}"/>
+                                </Grid.InputBindings>
+
+                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Left" VerticalAlignment="Top">
+                                <!-- Hoja A4: 21 cm ≈ 794 px de ancho; márgenes ~70 px -->
+                                <Border Width="794" MinHeight="420" Background="White"
+                                        CornerRadius="2" Padding="70,60" Margin="4,2,10,14">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.25"/>
+                                    </Border.Effect>
+                                    <StackPanel>
+
+                                        <!-- 1. Título (12pt bold, sangría 1.9 cm) + miniatura 1.6 cm -->
+                                        <Grid>
+                                            <Image Width="60" Height="60" Stretch="Uniform"
+                                                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                   Source="{Binding EditImagePath, Converter={x:Static local:PathToImageSourceConverter.Instance}}"/>
+                                            <TextBlock Margin="72,0,0,0" FontFamily="Montserrat, Calibri"
+                                                       FontSize="16" TextWrapping="Wrap"
+                                                       local:WordPreviewInlines.Segments="{Binding TitlePreviewSegments}"/>
+                                        </Grid>
+
+                                        <!-- 2. Campos personalizados (9pt, justificado, sangrías 0.66+1.25/0.81 cm).
+                                             WPF no soporta sangría de primera línea en TextBlock: se aproxima
+                                             con margen izquierdo fijo a 1.9 cm (donde arranca la primera línea). -->
+                                        <ItemsControl ItemsSource="{Binding CustomFields}" Margin="0,8,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Margin="72,2,31,0" FontFamily="Montserrat, Calibri"
+                                                               FontSize="12" TextWrapping="Wrap" TextAlignment="Justify"
+                                                               local:WordPreviewInlines.Segments="{Binding PreviewSegments}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- 3. Tabla resumen 1×4 (sangría 5.25 cm; anchos 2.0/1.75/3.44/4.81 cm;
+                                             alto 0.63 cm; fondo azul WD_BLUE #1F68C7, texto blanco bold) -->
+                                        <Grid Margin="198,20,0,0" Height="24" HorizontalAlignment="Left"
+                                              Background="#1F68C7">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="76"/>
+                                                <ColumnDefinition Width="66"/>
+                                                <ColumnDefinition Width="130"/>
+                                                <ColumnDefinition Width="182"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.Resources>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="FontFamily" Value="Montserrat, Calibri"/>
+                                                    <Setter Property="FontSize" Value="13"/>
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    <Setter Property="Margin" Value="4,0,0,0"/>
+                                                    <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                                </Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="White"/>
+                                                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                                                </Style>
+                                            </Grid.Resources>
+                                            <Border Grid.Column="0"><TextBlock Text="Cant.:  1"/></Border>
+                                            <Border Grid.Column="1"><TextBlock Text="Días:  1"/></Border>
+                                            <Border Grid.Column="2"><TextBlock Text="{Binding PreviewCostCell}"/></Border>
+                                            <Border Grid.Column="3" BorderThickness="0">
+                                                <TextBlock Text="{Binding PreviewTotalCell}" FontSize="16"/>
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </Viewbox>
+
+                            <!-- Capa de hover (sutil oscurecimiento e indicador de zoom) -->
+                            <Border x:Name="HoverOverlay" CornerRadius="2" Margin="4,2,10,14" Opacity="0" IsHitTestVisible="False">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                                <Setter Property="Background" Value="#1A000000"/>
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Border Background="#CC1E293B" CornerRadius="20" Padding="12,8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE71E;" FontFamily="{StaticResource IconFont}" Foreground="White" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Ver más grande" Foreground="White" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </ScrollViewer>
+                    </DockPanel>
+                </Border>
+                </Grid>
             </Border>
         </Grid>
     </Grid>
+
+    <!-- Overlay de vista previa ampliada (Modal) -->
+    <Grid Visibility="{Binding IsZoomedPreviewVisible, Converter={StaticResource BoolToVis}}" Panel.ZIndex="1000">
+        <!-- Background (Clickable backdrop) -->
+        <Grid Background="#CC0B0F19">
+            <Grid.InputBindings>
+                <MouseBinding MouseAction="LeftClick" Command="{Binding CloseZoomedPreviewCommand}"/>
+            </Grid.InputBindings>
+        </Grid>
+        
+        <!-- Foreground (Zoomed A4 preview sheet and close button) -->
+        <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            
+            <!-- Hoja A4 ampliada -->
+            <Border Grid.Row="0" Background="White" CornerRadius="4" Padding="70,60" Margin="10"
+                    Width="794" Height="800" MaxHeight="750">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="25" ShadowDepth="4" Opacity="0.4"/>
+                </Border.Effect>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <!-- 1. Título (12pt bold, sangría 1.9 cm) + miniatura 1.6 cm -->
+                        <Grid>
+                            <Image Width="80" Height="80" Stretch="Uniform"
+                                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   Source="{Binding EditImagePath, Converter={x:Static local:PathToImageSourceConverter.Instance}}"/>
+                            <TextBlock Margin="96,0,0,0" FontFamily="Montserrat, Calibri"
+                                       FontSize="20" TextWrapping="Wrap"
+                                       local:WordPreviewInlines.Segments="{Binding TitlePreviewSegments}"/>
+                        </Grid>
+
+                        <!-- 2. Campos personalizados -->
+                        <ItemsControl ItemsSource="{Binding CustomFields}" Margin="0,16,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Margin="96,4,31,0" FontFamily="Montserrat, Calibri"
+                                               FontSize="14" TextWrapping="Wrap" TextAlignment="Justify"
+                                               local:WordPreviewInlines.Segments="{Binding PreviewSegments}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 3. Tabla resumen 1×4 -->
+                        <Grid Margin="240,30,0,0" Height="32" HorizontalAlignment="Left"
+                              Background="#1F68C7">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="240"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontFamily" Value="Montserrat, Calibri"/>
+                                    <Setter Property="FontSize" Value="15"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Margin" Value="6,0,0,0"/>
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                </Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="White"/>
+                                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                                </Style>
+                            </Grid.Resources>
+                            <Border Grid.Column="0"><TextBlock Text="Cant.:  1"/></Border>
+                            <Border Grid.Column="1"><TextBlock Text="Días:  1"/></Border>
+                            <Border Grid.Column="2"><TextBlock Text="{Binding PreviewCostCell}"/></Border>
+                            <Border Grid.Column="3" BorderThickness="0">
+                                <TextBlock Text="{Binding PreviewTotalCell}" FontSize="18"/>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+            
+            <!-- Botón de Cerrar -->
+            <Button Grid.Row="1" Style="{StaticResource SecondaryButton}" 
+                    Command="{Binding CloseZoomedPreviewCommand}" 
+                    HorizontalAlignment="Center" Margin="0,16,0,0" Height="40" Width="120">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource IconFont}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Cerrar" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+    </Grid>
+</Grid>
 </UserControl>

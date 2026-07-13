@@ -11,13 +11,80 @@
             <!-- ════════════════ TIPOGRAFÍA ════════════════ -->
             <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
             <FontFamily x:Key="AppDisplayFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
-            <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
+            <!-- Windows 11 trae Segoe Fluent Icons (mismos codepoints, trazo moderno);
+                 en Windows 10 la lista compuesta cae automáticamente a Segoe MDL2 Assets. -->
+            <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+            <!-- ════════════════ MARCA ════════════════ -->
+            <!-- Monograma "A" geométrico (viewbox 40x40): pico con travesaño flotante.
+                 El gradiente BrandGradientBrush vive en cada tema (Light/Dark). -->
+            <Geometry x:Key="BrandMarkGeometry">F1 M20,8.5 L31,31.5 H26.4 L20,17.6 L13.6,31.5 H9 Z M16.4,25.4 H23.6 L25.1,28.4 H14.9 Z</Geometry>
 
             <!-- ════════════════ SOMBRAS ════════════════ -->
             <DropShadowEffect x:Key="StandardShadow" Color="#000000" Direction="270"
                               ShadowDepth="2" BlurRadius="10" Opacity="0.06"/>
             <DropShadowEffect x:Key="CardShadow" Color="#000000" Direction="270"
                               ShadowDepth="1" BlurRadius="14" Opacity="0.08"/>
+
+            <!-- ════════════════ STEPPER Y MINI-LABEL (compartidos) ════════════════ -->
+            <!-- Botón de stepper (+ / −) compacto: 36px de lado para target de click cómodo -->
+            <Style x:Key="StepperButton" TargetType="Button">
+                <Setter Property="Width" Value="36"/>
+                <Setter Property="Height" Value="36"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Etiqueta chica sobre controles compactos -->
+            <Style x:Key="MiniLabel" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                <Setter Property="Margin" Value="2,0,0,4"/>
+            </Style>
+
+            <!-- ════════════════ SKELETON (estado de carga) ════════════════ -->
+            <!-- Fila fantasma con pulso de opacidad para listas que cargan de la red
+                 (crítico en modo Supabase). Usar dentro de un panel visible solo
+                 mientras IsLoading del VM sea true. -->
+            <Style x:Key="SkeletonRow" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Height" Value="44"/>
+                <Setter Property="Margin" Value="0,0,0,8"/>
+                <Setter Property="Opacity" Value="0.55"/>
+                <Style.Triggers>
+                    <EventTrigger RoutedEvent="Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 From="0.35" To="0.8" Duration="0:0:0.9"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Style.Triggers>
+            </Style>
 
             <!-- ════════════════ SUPERFICIES ════════════════ -->
             <Style x:Key="Card" TargetType="Border">
@@ -146,41 +213,6 @@
                                 </Trigger>
                                 <Trigger Property="IsPressed" Value="True">
                                     <Setter TargetName="bg" Property="Background" Value="{DynamicResource SelectionBrush}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
-            <!-- Botón Pill legado — se mantiene por compatibilidad -->
-            <Style x:Key="DarkPillButton" TargetType="Button">
-                <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                <Setter Property="Foreground" Value="White"/>
-                <Setter Property="Padding" Value="15,10"/>
-                <Setter Property="Margin" Value="5"/>
-                <Setter Property="FontSize" Value="13"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="Cursor" Value="Hand"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="border"
-                                    Background="{TemplateBinding Background}"
-                                    CornerRadius="12"
-                                    Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="border" Property="Opacity" Value="0.85"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="border" Property="Opacity" Value="0.70"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.4"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

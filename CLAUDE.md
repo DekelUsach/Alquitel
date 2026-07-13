@@ -6,9 +6,9 @@ Este archivo sirve como referencia completa y mapa de navegación para la IA (**
 
 ## 🏗️ 1. Resumen del Proyecto y Arquitectura
 
-**Alquitel** es un sistema de escritorio para Windows desarrollado con **.NET 8.0**, **WPF (XAML)**, **SQLite** (a través de **Entity Framework Core**) y automatización de **Microsoft Word via COM Interop**. Su función principal es gestionar catálogos de equipamiento técnico (visuales, sonido, computación) y automatizar en segundos la creación de presupuestos comerciales y órdenes técnicas de trabajo (OT) a partir de descripciones naturales o estructuradas.
+**Alquitel** es un sistema de escritorio para Windows desarrollado con **.NET 8.0**, **WPF (XAML)**, **Entity Framework Core** con doble proveedor de base de datos (**SQLite** local o **Supabase/PostgreSQL** compartida, según `Database:Provider` en `appsettings.json`) y automatización de **Microsoft Word via COM Interop** (con motor alternativo **OpenXML** experimental sin Word). Su función principal es gestionar catálogos de equipamiento técnico (visuales, sonido, computación) y automatizar en segundos la creación de presupuestos comerciales y órdenes técnicas de trabajo (OT) a partir de descripciones naturales o estructuradas.
 
-Aplica los principios de **Clean Architecture** estructurado en 3 proyectos principales vinculados en la solución [Alquitel.sln](file:///c:/Proyects/alqui/Alquitel/Alquitel.sln):
+Aplica los principios de **Clean Architecture** estructurado en 3 proyectos principales más uno de tests, vinculados en la solución [Alquitel.sln](file:///c:/Proyects/alqui/Alquitel/Alquitel.sln):
 
 1. **[Alquitel.Core](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Alquitel.Core.csproj) (Capa de Dominio/Lógica Pura)**:
    - Contiene las entidades base del negocio.
@@ -20,6 +20,7 @@ Aplica los principios de **Clean Architecture** estructurado en 3 proyectos prin
 3. **[Alquitel.UI](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Alquitel.UI.csproj) (Capa de Presentación - WPF)**:
    - Implementa el patrón **MVVM** mediante `CommunityToolkit.Mvvm`.
    - Contiene las vistas (XAML), conversores, temas de interfaz (Claro/Oscuro) y los ViewModels controladores.
+4. **Alquitel.Core.Tests (xUnit)**: pruebas unitarias de la lógica pura de Core (`CuitValidator`, `TagParser`, `BudgetNumberHelper`, `SpanishDateFormatter`, `ProductMatcher`, totales de `Order`). Corre en CI en cada push/PR a `main`.
 
 ```mermaid
 graph TD
@@ -48,6 +49,9 @@ A continuación se detalla la ubicación y propósito de cada archivo fuente cla
 * **Algoritmos y Helpers**:
   * [TagParser.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Parsing/TagParser.cs): Motor de parsing de texto BBCode-style (`[red]`, `[b]`, `[i]`, `[u]`) que descompone strings en listas de segmentos con estilos para su renderizado posterior en Word y la interfaz gráfica.
   * [CuitValidator.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Helpers/CuitValidator.cs): Validación matemática con algoritmo Modulo 11 del CUIT argentino frente a las normativas de la AFIP.
+  * [ProductMatcher.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Search/ProductMatcher.cs): Motor de Smart Search extraído del ViewModel — segmentación, extracción de cantidades, scoring por tokens/trigramas/Dice y filtro de ambigüedad (ver §3.A).
+  * [BudgetNumberHelper.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Helpers/BudgetNumberHelper.cs) y [SpanishDateFormatter.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Helpers/SpanishDateFormatter.cs): numeración de presupuestos y formato de fechas en español.
+  * [PasswordHasher.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Helpers/PasswordHasher.cs): PBKDF2 (Rfc2898, SHA-256, salt) para las contraseñas del login multiusuario.
 * **Contratos / Interfaces**:
   * [IAppSettings.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Interfaces/IAppSettings.cs): Configuración global de directorios, plantillas, tema visual y parámetros de Smart Search.
   * [IDocumentService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Interfaces/IDocumentService.cs): Firma del servicio de generación de documentos de Word.
@@ -70,6 +74,13 @@ A continuación se detalla la ubicación y propósito de cada archivo fuente cla
   * [DataInitializationService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/DataInitializationService.cs): Orquestador del inicio de base de datos. Aplica migraciones pendientes y actualiza de manera segura bases de datos de legado generadas con `EnsureCreated()` agregando columnas, índices e insertando la tabla de historial de migraciones de EF. Adicionalmente inyecta semillas de datos de demostración si la DB está vacía.
   * [DatabaseBackupService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/DatabaseBackupService.cs): Hilo en segundo plano que realiza una copia de seguridad física de la DB SQLite cada 6 horas, conservando únicamente las últimas 20 copias cronológicas.
   * [VelopackUpdateService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/VelopackUpdateService.cs): Validador de actualizaciones de la aplicación vía web por medio del framework Velopack.
+  * [OrderPersistenceService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/OrderPersistenceService.cs): Persistencia de órdenes/presupuestos (antes vivía en `BudgetBuilderViewModel`).
+  * [DraftService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/DraftService.cs): Autosave del carrito (JSON en `%AppData%\Alquitel\Drafts\`) y recuperación/borrado de drafts.
+  * [EfOrderAuditService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/EfOrderAuditService.cs): Auditoría de cambios de órdenes (entidad `OrderAuditEvent`).
+  * [PollinationsOrderParser.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/PollinationsOrderParser.cs) / [PollinationsTextAssistant.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/PollinationsTextAssistant.cs): Parsing de pedidos con IA vía gen.pollinations.ai (modelo nova-fast). Requiere `Ai:Pollinations:ApiKey` en `appsettings.local.json`; sin key la app cae al motor local (`ProductMatcher`).
+  * [OpenXmlDocumentService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/OpenXmlDocumentService.cs): Motor alternativo de generación de `.docx` sin Word instalado (flag `Documents:Engine = "openxml"`; no exporta PDF). Default: `"com"` (Word Interop).
+  * [PostgresSyncService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/PostgresSyncService.cs) / [LocalOnlySyncService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/LocalOnlySyncService.cs): Sincronización según provider de DB. [SupabaseTemplateStorageService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/SupabaseTemplateStorageService.cs): descarga/publicación de plantillas `.docx` desde el bucket `templates` de Supabase (publicar requiere ServiceKey, solo equipo Admin).
+  * [OutlookEmailService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/OutlookEmailService.cs): Envío de presupuestos por email vía Outlook COM. [CurrentUserService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/CurrentUserService.cs): usuario logueado actual.
 * **Motor Documental de Word (COM Interop)**:
   * [WordDocumentService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/WordDocumentService.cs): Orquestador principal de la generación del documento en un hilo dedicado con estado de apartamento de un solo hilo (**STA Thread**) de Windows. Aplica políticas de reintentos exponenciales con **Polly** si el archivo objetivo está bloqueado temporalmente por Office.
   * [WordComSession.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/WordInterop/WordComSession.cs): Administrador del ciclo de vida del proceso COM de `Word.Application`. Previene diálogos bloqueantes de Word (`DisplayAlerts = 0`), deshabilita aceleración por hardware, evade bloqueos de la vista protegida (`ProtectedViewOptions`) y libera las instancias COM de forma segura usando `Marshal.ReleaseComObject`.
@@ -92,6 +103,9 @@ A continuación se detalla la ubicación y propósito de cada archivo fuente cla
   * [LocationsViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/LocationsViewModel.cs): CRUD simplificado de ubicaciones de eventos.
   * [PresupuestosViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/PresupuestosViewModel.cs): Explorador de documentos generados. Lee e interpreta por expresiones regulares los nombres de archivos `.docx` para catalogarlos en una grilla visual con filtros de búsqueda interactivos y detección de cambios de directorio reactivos mediante `FileSystemWatcher`.
   * [SettingsViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/SettingsViewModel.cs): Asignador de rutas de salida y plantillas para presupuestos comerciales, OF y OT.
+  * [OrderPoolViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/OrderPoolViewModel.cs) / [WorkOrdersViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/WorkOrdersViewModel.cs) / [ReportsViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/ReportsViewModel.cs): Pool de pedidos con estados, órdenes de trabajo técnicas y reportes.
+  * [LoginWindow](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Views/LoginWindow.xaml) / [CommandPaletteWindow](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Views/CommandPaletteWindow.xaml): login multiusuario y paleta de comandos.
+  * [ToastService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Services/ToastService.cs): Notificaciones toast no bloqueantes (`IToastService`), preferibles a `MessageBox` para confirmaciones de éxito.
 * **Componentes de Servicios de la UI**:
   * [NavigationService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Services/NavigationService.cs): Instancia los ViewModels a través de la inyección de dependencias y cambia la propiedad expuesta en el Shell de WPF, disparando la carga asíncrona de datos en la UI.
   * [DialogService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/Services/DialogService.cs): Implementa diálogos de información, error y confirmación encapsulando las APIs gráficas de Windows.
@@ -102,7 +116,7 @@ A continuación se detalla la ubicación y propósito de cada archivo fuente cla
 ## 🧠 3. Subsystemas Clave y Algoritmos Detallados
 
 ### A. El Motor de Búsqueda Inteligente (Smart Search Engine)
-El sistema permite copiar bloques de correos electrónicos de clientes desestructurados (ej: *"Necesito 2 pantallas de leds y 1 notebook i9 por 3 días"*) y analizarlos para cargar el carro de compras automáticamente. Se encuentra codificado en [BudgetBuilderViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/BudgetBuilderViewModel.cs#L590-L715).
+El sistema permite copiar bloques de correos electrónicos de clientes desestructurados (ej: *"Necesito 2 pantallas de leds y 1 notebook i9 por 3 días"*) y analizarlos para cargar el carro de compras automáticamente. El motor vive en [ProductMatcher.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Search/ProductMatcher.cs) (Core, testeable); `BudgetBuilderViewModel` solo lo orquesta. Si hay API key de Pollinations configurada, el parsing lo hace primero la IA (`PollinationsOrderParser`) con fallback al motor local.
 
 1. **Segmentación de Párrafos (`BuildSmartSegments`)**: Separa el texto usando signos de puntuación (`.`, `;`, `,`, `\n`) y luego subdivide cada segmento por la conjunción `" y "`.
 2. **Extracción de Cantidad (`ExtractQuantityFromSegment`)**: Aplica expresiones regulares para buscar números que antecedan a palabras clave de equipamiento o multiplicadores comunes (ej: `"x 2"`, `"2 u"`, `"2 pantallas"`, `"3 notebooks"`). Si no detecta ninguna cantidad válida, asume por defecto `1`.
@@ -181,6 +195,20 @@ dotnet build
 dotnet run --project Alquitel.UI\Alquitel.UI.csproj
 ```
 
+### Tests
+```powershell
+# Correr todos los tests unitarios (xUnit, solo lógica de Core)
+dotnet test Alquitel.Core.Tests\Alquitel.Core.Tests.csproj
+
+# Correr un test o clase específica por filtro
+dotnet test Alquitel.Core.Tests\Alquitel.Core.Tests.csproj --filter "FullyQualifiedName~TagParserTests"
+dotnet test Alquitel.Core.Tests\Alquitel.Core.Tests.csproj --filter "DisplayName~NombreDelTest"
+```
+
+### CI y Hooks de Git
+- **CI** ([.github/workflows/ci.yml](file:///c:/Proyects/alqui/Alquitel/.github/workflows/ci.yml)): en cada push/PR a `main` compila la solución en `windows-latest` y corre los tests de Core. Al taggear `vX.Y.Z` publica el ejecutable self-contained como artifact.
+- **Hook anti-secretos** ([.githooks/pre-commit](file:///c:/Proyects/alqui/Alquitel/.githooks/pre-commit)): bloquea commits con JWTs (`eyJ...`), keys `sk_...` o `service_role` en el diff staged (la `AnonKey` de Supabase se permite, es pública por diseño). Activarlo una vez por clon: `git config core.hooksPath .githooks`.
+
 ### Administración de Base de Datos y Migraciones
 Las migraciones de Entity Framework deben realizarse sobre el proyecto de infraestructura especificando el proyecto de UI como ensamblado de inicio:
 ```powershell
@@ -209,6 +237,10 @@ Si vas a agregar código, realizar cambios o corregir bugs, ten en cuenta los si
    - Cualquier método que acceda al motor COM debe correr en un **STA Thread** independiente.
    - Siempre debes implementar un bloque `try/finally` asegurándote de llamar a `Marshal.ReleaseComObject` para todas las referencias de documentos, aplicaciones y hojas abiertas. Si no lo haces, los procesos de Word (`WINWORD.EXE`) quedarán huérfanos en segundo plano, saturando el administrador de tareas del usuario.
 3. **Soporte de Colores y Formatos**: Al renderizar el texto o agregar estilos para el catálogo de Word, ten en cuenta que el formato interno de Word es BGR (Azul, Verde, Rojo). Si usas colores hexadecimales estándar de CSS, debes procesarlos con `TagParserInterop.HexToBgr` antes de pasarlos a la propiedad `Font.Color` de los rangos de Word.
-4. **Draft Autosave**: El motor de carrito realiza un guardado de seguridad automático cada 30 segundos en formato JSON bajo la ruta `%AppData%\Alquitel\Drafts\`. Si añades propiedades nuevas a `OrderItem` u `Order`, debes verificar que se serialicen correctamente en el DTO interno del método `AutosaveLoopAsync` en [BudgetBuilderViewModel.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/ViewModels/BudgetBuilderViewModel.cs#L129).
+4. **Draft Autosave**: El carrito se guarda automáticamente cada 30 segundos en JSON bajo `%AppData%\Alquitel\Drafts\` vía [DraftService.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.Infrastructure/Services/DraftService.cs) (`IDraftService`). Si añades propiedades nuevas a `OrderItem` u `Order`, verifica que se serialicen correctamente en su DTO interno.
 5. **Path Sanitization**: Para cualquier método que abra documentos del sistema mediante `Process.Start`, utiliza el validador `PathValidator.IsDocxWithinRoot` para asegurar que el usuario no pueda ejecutar rutas maliciosas, archivos ejecutables externos o realizar escalada de directorios mediante nombres de archivos manipulados.
 6. **Inyección de Dependencias**: Todos los ViewModels y servicios deben registrarse de forma explícita en el método `ConfigureServices` de [App.xaml.cs](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/App.xaml.cs#L81). No instancies ViewModels de forma manual con el operador `new` dentro de MainViewModel, ya que romperías el ciclo de inversión de control y harías imposible la inyección de dependencias y pruebas unitarias de los mismos.
+7. **Secretos fuera del repo**: `appsettings.json` solo lleva valores públicos (URL de Supabase, `AnonKey`). ConnectionString del pooler, `ServiceKey` y la API key de Pollinations van en `appsettings.local.json` (gitignoreado, ver [appsettings.local.example.json](file:///c:/Proyects/alqui/Alquitel/Alquitel.UI/appsettings.local.example.json)) o en variables de entorno con prefijo `ALQUITEL_` (ej. `ALQUITEL_Database__Supabase__ConnectionString`). El hook pre-commit bloquea filtraciones.
+8. **Doble proveedor de DB y migraciones**: `Database:Provider` (`supabase` con fallback automático a SQLite si la ConnectionString está vacía). Las migraciones de EF son específicas de proveedor — al cambiar el modelo hay que verificar que la migración funcione en ambos (SQLite local y PostgreSQL/Supabase). Las FKs de `Order` → `Client`/`Location` están en `DeleteBehavior.Restrict` (migración `RestrictOrderFks`): la UI reasigna antes de borrar padres.
+9. **Smart Search vive en Core**: el scoring/segmentación está en `Alquitel.Core/Search/ProductMatcher.cs`, no en el ViewModel. Cambios al algoritmo van ahí con sus tests en `ProductMatcherTests`; el VM solo orquesta.
+10. **FKs y borrado**: nunca reintroducir Cascade en las FK de `Order`. Auditoría de cambios de órdenes vía `IOrderAuditService` — registrar eventos al modificar estados u órdenes.

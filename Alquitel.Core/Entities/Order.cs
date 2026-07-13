@@ -47,9 +47,53 @@ namespace Alquitel.Core.Entities
         /// </summary>
         public DateTime? EventEndDate { get; set; }
         public OrderStatus Status { get; set; } = OrderStatus.Draft;
+
+        /// <summary>
+        /// Comentarios libres del pedido. Se imprimen en el documento donde la
+        /// plantilla tenga el tag {{COMENTARIOS}} (sección Comentarios de la OT).
+        /// </summary>
+        public string? Comments { get; set; }
+
         public List<OrderItem> Items { get; set; } = new();
 
+        // ── Motor comercial ──────────────────────────────────────────
+        /// <summary>Alícuota de IVA general vigente en Argentina.</summary>
+        public const decimal VatRate = 0.21m;
+
+        /// <summary>Descuento global porcentual sobre el subtotal (0-100).</summary>
+        public decimal DiscountPercent { get; set; }
+
+        /// <summary>Descuento global en monto fijo, adicional al porcentual.</summary>
+        public decimal DiscountAmount { get; set; }
+
+        /// <summary>
+        /// True: los precios son netos y el documento discrimina IVA (21%).
+        /// False (default histórico): los precios son finales, sin discriminar.
+        /// </summary>
+        public bool AddVat { get; set; }
+
+        /// <summary>Suma lineal de los subtotales de los ítems (histórico "Total").</summary>
         public decimal Total => Items?.Sum(i => i.Total) ?? 0m;
+
+        /// <summary>Descuento efectivo: porcentual + monto fijo, nunca mayor al subtotal.</summary>
+        public decimal DiscountValue
+        {
+            get
+            {
+                var raw = Total * Math.Clamp(DiscountPercent, 0m, 100m) / 100m
+                          + Math.Max(0m, DiscountAmount);
+                return Math.Min(raw, Total);
+            }
+        }
+
+        /// <summary>Subtotal menos descuentos (base imponible si AddVat).</summary>
+        public decimal NetTotal => Total - DiscountValue;
+
+        /// <summary>IVA discriminado (0 cuando AddVat es false).</summary>
+        public decimal VatValue => AddVat ? Math.Round(NetTotal * VatRate, 2) : 0m;
+
+        /// <summary>Total final del presupuesto: neto + IVA.</summary>
+        public decimal GrandTotal => NetTotal + VatValue;
     }
 
     public class OrderItem : INotifyPropertyChanged

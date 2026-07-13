@@ -100,10 +100,13 @@ namespace Alquitel.UI.ViewModels
         /// <summary>Pintura del texto de la leyenda (los charts la toman por binding).</summary>
         public SolidColorPaint LegendPaint { get; } = TextPaint();
 
-        public ReportsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService)
+        private readonly IToastService _toastService;
+
+        public ReportsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService, IToastService toastService)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
+            _toastService = toastService;
 
             // Rango inicial: últimos 12 meses calendario incluyendo el actual.
             var today = DateTime.Today;
@@ -352,7 +355,7 @@ namespace Alquitel.UI.ViewModels
         {
             if (ClientBilling.Count == 0 && MonthlyBilling.Count == 0 && ProductProfit.Count == 0)
             {
-                _dialogService.ShowInfo("Exportar", "No hay datos para exportar. Actualizá el reporte primero.");
+                _toastService.ShowInfo("No hay datos para exportar. Actualizá el reporte primero.");
                 return;
             }
 

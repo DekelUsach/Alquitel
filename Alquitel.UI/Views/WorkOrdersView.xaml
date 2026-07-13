@@ -103,17 +103,30 @@
                                    FontSize="15" FontWeight="Bold"
                                    Foreground="{DynamicResource TextBrush}"
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        <Button Grid.Column="1" Style="{StaticResource PrimaryButton}"
-                                Height="40" Padding="16,0"
-                                Command="{Binding OpenFileCommand}"
-                                ToolTip="Abre el documento original en Word">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8E5;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <TextBlock Text="Abrir en Word" FontWeight="SemiBold" FontSize="13"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button Style="{StaticResource GhostDangerButton}"
+                                    Height="40" Padding="14,0" Margin="0,0,8,0"
+                                    Command="{Binding DeleteFileCommand}"
+                                    ToolTip="Eliminar este documento de la carpeta de OT">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Eliminar" FontWeight="SemiBold" FontSize="13"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource PrimaryButton}"
+                                    Height="40" Padding="16,0"
+                                    Command="{Binding OpenFileCommand}"
+                                    ToolTip="Abre el documento original en Word">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8E5;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Abrir en Word" FontWeight="SemiBold" FontSize="13"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                     </Grid>
 
                     <ProgressBar Grid.Row="1" IsIndeterminate="True" Height="4"

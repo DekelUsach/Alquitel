@@ -145,12 +145,29 @@ namespace Alquitel.UI
             services.AddSingleton<IUpdateService>(new VelopackUpdateService(updateUrl));
             services.AddSingleton<DataInitializationService>();
             services.AddSingleton<DatabaseBackupService>();
-            services.AddSingleton<IDocumentService, WordDocumentService>();
+            // Feature flag del motor documental: "com" (default, Word Interop completo)
+            // u "openxml" (experimental: genera .docx sin Word instalado, sin PDF).
+            // Permite probar el motor nuevo y volver atrás con solo tocar appsettings.
+            var documentEngine = configuration["Documents:Engine"] ?? "com";
+            if (documentEngine.Equals("openxml", StringComparison.OrdinalIgnoreCase))
+            {
+                AppLog.Information("Motor documental: OpenXML (experimental, sin Word)");
+                services.AddSingleton<IDocumentService, OpenXmlDocumentService>();
+            }
+            else
+            {
+                services.AddSingleton<IDocumentService, WordDocumentService>();
+            }
             
             // Core Services
             services.AddSingleton<IAppSettings>(sp => new AppSettings(AppPaths.SettingsFilePath));
             services.AddSingleton<IDispatcher, WpfDispatcher>();
             services.AddSingleton<IDialogService, DialogService>();
+
+            // Toasts no bloqueantes para éxitos/avisos; misma instancia expuesta como
+            // colección bindeable (MainWindow) y como servicio (ViewModels).
+            services.AddSingleton<ToastService>();
+            services.AddSingleton<IToastService>(sp => sp.GetRequiredService<ToastService>());
             services.AddSingleton<INavigationService, NavigationService>();
 
             // Capa de repositorios: abstracción de datos para la futura migración a un
@@ -169,6 +186,29 @@ namespace Alquitel.UI
 
             // Multi-usuario: usuario logueado de la sesión actual.
             services.AddSingleton<ICurrentUserService, CurrentUserService>();
+
+            // Persistencia de órdenes y borradores del armador (extraídos del VM).
+            services.AddSingleton<IOrderPersistenceService, OrderPersistenceService>();
+            services.AddSingleton<IDraftService, DraftService>();
+
+            // Borradores de correo con Outlook COM (botón "Enviar por mail").
+            services.AddSingleton<IEmailService, OutlookEmailService>();
+
+            // Bitácora multi-usuario de presupuestos (quién generó/editó/cambió estado).
+            services.AddSingleton<IOrderAuditService, EfOrderAuditService>();
+
+            // Pedido automático con IA (Pollinations.ai). Sin ApiKey el servicio queda
+            // no-configurado y el armador usa el motor de coincidencia local de siempre.
+            // Key por máquina: appsettings.local.json o ALQUITEL_Ai__Pollinations__ApiKey.
+            services.AddSingleton<IAiOrderParser>(sp => new PollinationsOrderParser(
+                configuration["Ai:Pollinations:ApiKey"],
+                configuration["Ai:Pollinations:Model"]));
+
+            // Asistente de texto para los quick-wins de IA (notas OT, resumen de cliente,
+            // detección de datos de contacto). Misma key barata de Pollinations.
+            services.AddSingleton<IAiTextAssistant>(sp => new PollinationsTextAssistant(
+                configuration["Ai:Pollinations:ApiKey"],
+                configuration["Ai:Pollinations:Model"]));
 
             // Plantillas centralizadas en Supabase Storage (bucket "templates").
             // - Url/AnonKey: solo LECTURA (viajan en el binario) -> descargar plantillas.

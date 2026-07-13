@@ -37,7 +37,23 @@ namespace Alquitel.Core.Interfaces.Repositories
         /// Excluye <paramref name="excludeOrderId"/> para no contar la orden en edición.
         /// </summary>
         Task<int> GetCommittedQuantityAsync(Guid productId, DateTime from, DateTime to, Guid excludeOrderId);
+
+        /// <summary>
+        /// Detalle de compromisos de un producto en órdenes activas cuyo rango se solapa
+        /// con [from, to): qué órdenes lo usan, cuántas unidades y en qué fechas. Base del
+        /// calendario de disponibilidad de stock.
+        /// </summary>
+        Task<List<ProductCommitment>> GetCommitmentsAsync(Guid productId, DateTime from, DateTime to);
     }
+
+    /// <summary>Compromiso de stock de un producto en una orden activa: [Start, End) exclusivo.</summary>
+    public record ProductCommitment(
+        Guid OrderId,
+        string BudgetNumber,
+        string? ClientName,
+        DateTime Start,
+        DateTime End,
+        int Quantity);
 
     /// <summary>Resumen de actividad de un usuario sobre las órdenes del sistema.</summary>
     public record UserOrderStats(

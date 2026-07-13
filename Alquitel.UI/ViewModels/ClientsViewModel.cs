@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Alquitel.Core.Entities;
+using Alquitel.Infrastructure;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
 using Alquitel.Core.Helpers;
@@ -54,6 +55,38 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _editCuit = string.Empty;
 
+        /// <summary>Feedback inline del CUIT en la ficha ("✓ válido" / motivo del error).</summary>
+        [ObservableProperty]
+        private string _cuitFeedback = string.Empty;
+
+        [ObservableProperty]
+        private bool _cuitFeedbackIsError;
+
+        partial void OnEditCuitChanged(string value)
+        {
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+            if (digits.Length == 0)
+            {
+                CuitFeedback = string.Empty;
+                CuitFeedbackIsError = false;
+            }
+            else if (CuitValidator.IsValid(value))
+            {
+                CuitFeedback = "✓ CUIT válido (verificación AFIP)";
+                CuitFeedbackIsError = false;
+            }
+            else if (digits.Length >= 11)
+            {
+                CuitFeedback = "✗ El CUIT no supera la verificación de AFIP (Módulo 11).";
+                CuitFeedbackIsError = true;
+            }
+            else
+            {
+                CuitFeedback = string.Empty;
+                CuitFeedbackIsError = false;
+            }
+        }
+
         [ObservableProperty]
         private string _editContactName = string.Empty;
 
@@ -66,13 +99,24 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _editInternalNotes = string.Empty;
 
+        /// <summary>% de descuento acordado con el cliente (texto; vacío = sin acuerdo).</summary>
+        [ObservableProperty]
+        private string _editSpecialDiscount = string.Empty;
+
         [ObservableProperty]
         private string _statusMessage = string.Empty;
 
-        public ClientsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService)
+        private readonly IToastService _toastService;
+        private readonly IDispatcher _dispatcher;
+        private readonly IAiTextAssistant _aiAssistant;
+
+        public ClientsViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDialogService dialogService, IToastService toastService, IDispatcher dispatcher, IAiTextAssistant aiAssistant)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
+            _toastService = toastService;
+            _dispatcher = dispatcher;
+            _aiAssistant = aiAssistant;
 
             ClientsCollectionView = CollectionViewSource.GetDefaultView(Clients);
             ClientsCollectionView.Filter = FilterClient;
@@ -86,14 +130,19 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task RefreshAsync() => await LoadClientsAsync();
 
+        /// <summary>True mientras llegan los datos: la vista muestra skeleton rows.</summary>
+        [ObservableProperty]
+        private bool _isLoading;
+
         private async Task LoadClientsAsync()
         {
+            IsLoading = true;
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
                 var clients = await db.Clients.OrderBy(c => c.CompanyName).ToListAsync();
-                
-                App.Current.Dispatcher.Invoke(() =>
+
+                _dispatcher.InvokeAsync(() =>
                 {
                     Clients.Clear();
                     foreach (var c in clients) Clients.Add(c);
@@ -102,6 +151,10 @@ namespace Alquitel.UI.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"Error al cargar clientes: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
             }
         }
 
@@ -119,7 +172,79 @@ namespace Alquitel.UI.ViewModels
             EditPhone = value.Phone ?? string.Empty;
             EditEmail = value.Email ?? string.Empty;
             EditInternalNotes = value.InternalNotes ?? string.Empty;
+            EditSpecialDiscount = value.SpecialDiscountPercent?.ToString("0.##") ?? string.Empty;
+            ClientAiSummary = string.Empty; // el resumen es del cliente anterior
             IsEditing = true;
+        }
+
+        // ── Quick-win IA: resumen del historial del cliente ──────────
+
+        [ObservableProperty]
+        private string _clientAiSummary = string.Empty;
+
+        [ObservableProperty]
+        private bool _isSummarizing;
+
+        /// <summary>
+        /// Resume con IA el historial de pedidos del cliente seleccionado: qué alquila,
+        /// con qué frecuencia y monto acumulado. Solo lectura, no toca datos.
+        /// </summary>
+        [RelayCommand]
+        private async Task SummarizeClientHistoryAsync()
+        {
+            if (SelectedClient == null) return;
+            if (!_aiAssistant.IsConfigured)
+            {
+                _toastService.ShowInfo("La IA no está configurada (falta la API key de Pollinations).");
+                return;
+            }
+
+            IsSummarizing = true;
+            ClientAiSummary = "Analizando historial…";
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var orders = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+                    .Where(o => o.ClientId == SelectedClient.Id)
+                    .Include(o => o.Items).ThenInclude(i => i.Product)
+                    .OrderByDescending(o => o.CreatedDate)
+                    .Take(30)
+                    .ToListAsync();
+
+                if (orders.Count == 0)
+                {
+                    ClientAiSummary = "Este cliente todavía no tiene presupuestos registrados.";
+                    return;
+                }
+
+                var sb = new StringBuilder();
+                foreach (var o in orders)
+                {
+                    var items = string.Join(", ", o.Items.Take(6).Select(i =>
+                        $"{i.Quantity}x {Alquitel.Core.Parsing.TagParser.StripTags(i.DescriptionSnapshot ?? i.Product?.Description) ?? "equipo"}"));
+                    sb.AppendLine($"{o.CreatedDate:yyyy-MM-dd} | {o.Status} | total {o.GrandTotal:0} | {items}");
+                }
+
+                const string system =
+                    "Sos el analista comercial de una empresa argentina de alquiler audiovisual. " +
+                    "Resumí el historial de pedidos de este cliente en 3-4 oraciones en español: " +
+                    "qué suele alquilar, frecuencia, monto aproximado acumulado y cualquier patrón útil " +
+                    "para el vendedor. Texto plano, sin markdown ni listas.";
+
+                var summary = await _aiAssistant.CompleteAsync(system, sb.ToString());
+                ClientAiSummary = string.IsNullOrWhiteSpace(summary)
+                    ? "La IA no devolvió un resumen. Reintentá en unos segundos."
+                    : summary.Trim();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "SummarizeClientHistoryAsync failed");
+                ClientAiSummary = "No se pudo generar el resumen.";
+            }
+            finally
+            {
+                IsSummarizing = false;
+            }
         }
 
         [RelayCommand]
@@ -180,6 +305,12 @@ namespace Alquitel.UI.ViewModels
                 client.Phone = EditPhone;
                 client.Email = EditEmail;
                 client.InternalNotes = string.IsNullOrWhiteSpace(EditInternalNotes) ? null : EditInternalNotes.Trim();
+                client.SpecialDiscountPercent =
+                    decimal.TryParse(EditSpecialDiscount?.Trim().Replace("%", ""),
+                        System.Globalization.NumberStyles.Number,
+                        System.Globalization.CultureInfo.CurrentCulture, out var disc) && disc > 0
+                    ? Math.Min(disc, 100m)
+                    : null;
 
                 await db.SaveChangesAsync();
 
@@ -236,7 +367,7 @@ namespace Alquitel.UI.ViewModels
         {
             if (Clients.Count == 0)
             {
-                _dialogService.ShowInfo("Exportar", "No hay clientes para exportar.");
+                _toastService.ShowInfo("No hay clientes para exportar.");
                 return;
             }
 

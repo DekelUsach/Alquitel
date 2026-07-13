@@ -57,6 +57,10 @@ package-lock.json
 # Archivos de trabajo locales
 youtube-screenshot.png
 
+# Lock files temporales de Word (quedan huérfanos si Word se cierra mal)
+~$*.docx
+~$*.doc
+
 # Configuración de usuario (paths locales, no committear)
 /settings.json
 

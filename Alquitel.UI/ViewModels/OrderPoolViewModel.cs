@@ -130,14 +130,17 @@ namespace Alquitel.UI.ViewModels
             new StatusOption(OrderStatus.Archived, "Archivado"),
         };
 
+        private readonly Alquitel.Core.Interfaces.IOrderAuditService _auditService;
+
         public OrderPoolViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory,
             IDialogService dialogService, INavigationService navigationService,
-            IServiceProvider serviceProvider)
+            IServiceProvider serviceProvider, Alquitel.Core.Interfaces.IOrderAuditService auditService)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
             _navigationService = navigationService;
             _serviceProvider = serviceProvider;
+            _auditService = auditService;
 
             _rowsView = CollectionViewSource.GetDefaultView(Rows);
             _rowsView.Filter = FilterRow;
@@ -215,6 +218,7 @@ namespace Alquitel.UI.ViewModels
                 await db.SaveChangesAsync();
                 AppLog.Information("Order {Budget} status: {Old} → {New}",
                     row.BudgetNumber, oldStatus, newStatus);
+                await _auditService.LogAsync(row.OrderId, $"Estado: {oldStatus} → {newStatus}");
 
                 RefreshCounts();
                 _rowsView.Refresh();
@@ -239,6 +243,26 @@ namespace Alquitel.UI.ViewModels
         {
             FilterText = string.Empty;
             SelectedFilter = FilterOptions[0];
+        }
+
+        /// <summary>Bitácora de la orden: quién generó, editó o cambió estado y cuándo.</summary>
+        [RelayCommand]
+        private async Task ShowHistoryAsync(OrderPoolRow? row)
+        {
+            if (row == null) return;
+            var events = await _auditService.GetForOrderAsync(row.OrderId);
+            if (events.Count == 0)
+            {
+                _dialogService.ShowInfo($"Historial de {row.BudgetNumber}",
+                    "Sin eventos registrados todavía. La bitácora registra generaciones, " +
+                    "ediciones y cambios de estado desde que se activó la auditoría.");
+                return;
+            }
+
+            var lines = events.Select(e =>
+                $"{e.Timestamp.ToLocalTime():dd/MM/yyyy HH:mm}  ·  {e.UserName}  ·  {e.EventType}" +
+                (string.IsNullOrWhiteSpace(e.Detail) ? "" : $"\n      {e.Detail}"));
+            _dialogService.ShowInfo($"Historial de {row.BudgetNumber}", string.Join("\n\n", lines));
         }
 
         /// <summary>Abre la orden en el armador de presupuestos para editarla.</summary>
