@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.LoginPage"
+             x:DataType="vm:LoginViewModel"
+             Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,48,24,32" Spacing="16" VerticalOptions="Center">
+
+            <!-- Marca -->
+            <Label Text="ALQUITEL"
+                   FontSize="34" FontAttributes="Bold"
+                   TextColor="{StaticResource Primary}"
+                   HorizontalOptions="Center" CharacterSpacing="4" />
+            <Label Text="Gestión corporativa y documental"
+                   Style="{StaticResource MutedLabel}"
+                   HorizontalOptions="Center" Margin="0,-8,0,24" />
+
+            <!-- Configuración inicial de conexión -->
+            <Border Style="{StaticResource Card}" IsVisible="{Binding NeedsConfiguration}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="CONFIGURAR CONEXIÓN" Style="{StaticResource SectionLabel}" />
+                    <Label Text="Pegá la cadena de conexión de Supabase (pooler). Se guarda cifrada en el dispositivo."
+                           Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding ConnectionString}"
+                               Placeholder="Host=aws-1-sa-east-1...;Port=5432;..."
+                               IsPassword="True" />
+                    </Border>
+                    <Button Text="Guardar y conectar" Command="{Binding SaveConnectionCommand}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Login -->
+            <Border Style="{StaticResource Card}" IsVisible="{Binding UsersLoaded}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="INGRESO" Style="{StaticResource SectionLabel}" />
+
+                    <Label Text="Usuario" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Picker ItemsSource="{Binding Users}"
+                                SelectedItem="{Binding SelectedUser}"
+
+                                Title="Elegí tu usuario" />
+                    </Border>
+
+                    <Label Text="Contraseña" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding Password}" IsPassword="True"
+                               Placeholder="Vacía si tu usuario no tiene" />
+                    </Border>
+
+                    <Button Text="Entrar" Command="{Binding LoginCommand}" Margin="0,8,0,0" />
+                </VerticalStackLayout>
+            </Border>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}"
+                   HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

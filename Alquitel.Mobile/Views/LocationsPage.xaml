@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.LocationsPage"
+             x:DataType="vm:LocationsViewModel"
+             Title="Ubicaciones">
+
+    <Grid RowDefinitions="Auto,*" Padding="16,8,16,16" RowSpacing="12">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <Border Style="{StaticResource InputBorder}">
+                <Entry Text="{Binding NewLocationName}" Placeholder="Nueva ubicación…" />
+            </Border>
+            <Button Grid.Column="1" Text="Agregar" Command="{Binding AddCommand}" />
+        </Grid>
+
+        <RefreshView Grid.Row="1" IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+            <CollectionView ItemsSource="{Binding Locations}" SelectionMode="None">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout Padding="24" Spacing="8">
+                        <Label Text="Sin ubicaciones cargadas." Style="{StaticResource MutedLabel}" HorizontalOptions="Center" />
+                        <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}" HorizontalTextAlignment="Center"
+                               IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="entities:Location">
+                        <Grid Padding="0,4">
+                            <Border Style="{StaticResource Card}" Padding="14,10">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                    <Label Text="{Binding Name}" VerticalOptions="Center" LineBreakMode="TailTruncation" />
+                                    <Button Grid.Column="1" Text="Editar" Style="{StaticResource SecondaryButton}"
+                                            FontSize="12" Padding="10,0" MinimumHeightRequest="38" BorderWidth="1"
+                                            Command="{Binding RenameCommand, Source={RelativeSource AncestorType={x:Type vm:LocationsViewModel}}}"
+                                            CommandParameter="{Binding .}" />
+                                    <Button Grid.Column="2" Text="✕" Style="{StaticResource DangerButton}"
+                                            FontSize="14" Padding="10,0" MinimumHeightRequest="38" BorderWidth="0"
+                                            Command="{Binding DeleteCommand, Source={RelativeSource AncestorType={x:Type vm:LocationsViewModel}}}"
+                                            CommandParameter="{Binding .}" />
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

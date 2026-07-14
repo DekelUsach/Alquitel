@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.ReportsPage"
+             x:DataType="vm:ReportsViewModel"
+             Title="Reportes">
+
+    <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <Label Text="Últimos 6 meses" Style="{StaticResource TitleLabel}" FontSize="20" />
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Border Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="PRESUPUESTOS" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding TotalOrders}" Style="{StaticResource MetricValueLabel}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="CONVERSIÓN" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding ConversionText}" FontSize="17" FontAttributes="Bold"
+                                   TextColor="{StaticResource Success}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <Label Text="FACTURACIÓN POR MES" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Months}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MonthRow">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                                    <Label Text="{Binding Month}" />
+                                    <Label Grid.Column="1" Text="{Binding Count, StringFormat='{0} ped.'}"
+                                           Style="{StaticResource MutedLabel}" />
+                                    <Label Grid.Column="2" Text="{Binding TotalText}" FontAttributes="Bold" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                        <BindableLayout.EmptyView>
+                            <Label Text="Sin datos en el período." Style="{StaticResource MutedLabel}" />
+                        </BindableLayout.EmptyView>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label Text="TOP 5 PRODUCTOS" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding TopProducts}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TopProductRow">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <Label Text="{Binding Description}" LineBreakMode="TailTruncation" />
+                                    <Label Grid.Column="1" Text="{Binding Quantity, StringFormat='{0} u.'}"
+                                           FontAttributes="Bold" TextColor="{StaticResource Primary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                        <BindableLayout.EmptyView>
+                            <Label Text="Sin datos en el período." Style="{StaticResource MutedLabel}" />
+                        </BindableLayout.EmptyView>
+                    </VerticalStackLayout>
+                </Border>
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+                <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

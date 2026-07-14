@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="Alquitel.Mobile.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:views="clr-namespace:Alquitel.Mobile.Views"
+    Shell.FlyoutBehavior="Disabled">
+
+    <!-- Login: fuera de las tabs -->
+    <ShellContent
+        Route="login"
+        Shell.NavBarIsVisible="False"
+        ContentTemplate="{DataTemplate views:LoginPage}"
+        FlyoutItemIsVisible="False" />
+
+    <TabBar Route="main">
+        <ShellContent Route="dashboard" Title="Inicio" Icon="icon_home.png"
+                      ContentTemplate="{DataTemplate views:DashboardPage}" />
+        <ShellContent Route="budget" Title="Nuevo" Icon="icon_new.png"
+                      ContentTemplate="{DataTemplate views:BudgetBuilderPage}" />
+        <ShellContent Route="orders" Title="Pedidos" Icon="icon_orders.png"
+                      ContentTemplate="{DataTemplate views:OrdersPage}" />
+        <ShellContent Route="clients" Title="Clientes" Icon="icon_clients.png"
+                      ContentTemplate="{DataTemplate views:ClientsPage}" />
+        <ShellContent Route="more" Title="Más" Icon="icon_more.png"
+                      ContentTemplate="{DataTemplate views:MorePage}" />
+    </TabBar>
+</Shell>

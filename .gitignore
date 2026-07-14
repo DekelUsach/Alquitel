@@ -67,3 +67,5 @@ youtube-screenshot.png
 # Secretos por máquina (connection string real, service key de Supabase).
 # NUNCA committear: sobreescriben appsettings.json solo en el equipo desplegado.
 appsettings.local.json
+# Config local de la app mobile (secretos embebidos en el APK de distribucion)
+appsettings.mobile.json

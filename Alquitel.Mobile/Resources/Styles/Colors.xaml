@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- ══ Identidad Alquitel ══ -->
+    <Color x:Key="Primary">#1F68C7</Color>
+    <Color x:Key="PrimaryDark">#174F99</Color>
+    <Color x:Key="PrimaryLight">#4A87D6</Color>
+    <Color x:Key="OnPrimary">#FFFFFF</Color>
+
+    <!-- ══ Superficies (dark institucional) ══ -->
+    <Color x:Key="BgDark">#0F172A</Color>
+    <Color x:Key="SurfaceDark">#1E293B</Color>
+    <Color x:Key="SurfaceAltDark">#243044</Color>
+    <Color x:Key="BorderDark">#334155</Color>
+    <Color x:Key="TextDark">#F1F5F9</Color>
+    <Color x:Key="TextSecondaryDark">#94A3B8</Color>
+
+    <!-- ══ Superficies (light) ══ -->
+    <Color x:Key="BgLight">#F8FAFC</Color>
+    <Color x:Key="SurfaceLight">#FFFFFF</Color>
+    <Color x:Key="SurfaceAltLight">#EEF2F7</Color>
+    <Color x:Key="BorderLight">#E2E8F0</Color>
+    <Color x:Key="TextLight">#0F172A</Color>
+    <Color x:Key="TextSecondaryLight">#475569</Color>
+
+    <!-- ══ Semánticos ══ -->
+    <Color x:Key="Success">#16A34A</Color>
+    <Color x:Key="SuccessSoft">#1E3A2B</Color>
+    <Color x:Key="Warning">#D97706</Color>
+    <Color x:Key="WarningSoft">#3B2E1A</Color>
+    <Color x:Key="Danger">#DC2626</Color>
+    <Color x:Key="DangerSoft">#3B1F22</Color>
+    <Color x:Key="Info">#0369A1</Color>
+
+    <!-- ══ Estados de orden ══ -->
+    <Color x:Key="StatusDraft">#64748B</Color>
+    <Color x:Key="StatusApproved">#16A34A</Color>
+    <Color x:Key="StatusSentToOF">#0369A1</Color>
+    <Color x:Key="StatusSentToOT">#7C3AED</Color>
+    <Color x:Key="StatusArchived">#475569</Color>
+    <Color x:Key="StatusRejected">#DC2626</Color>
+
+    <Color x:Key="Gray100">#E1E1E1</Color>
+    <Color x:Key="Gray200">#C8C8C8</Color>
+    <Color x:Key="Gray500">#6E6E6E</Color>
+    <Color x:Key="Gray900">#212121</Color>
+    <Color x:Key="White">#FFFFFF</Color>
+    <Color x:Key="Black">#000000</Color>
+</ResourceDictionary>

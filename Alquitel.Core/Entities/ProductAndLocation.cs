@@ -42,5 +42,8 @@ namespace Alquitel.Core.Entities
         public Guid Id { get; set; } = Guid.NewGuid();
         [Required]
         public string Name { get; set; } = string.Empty;
+
+        /// <summary>Los Pickers de MAUI muestran ToString(); WPF usa DisplayMemberPath.</summary>
+        public override string ToString() => Name;
     }
 }

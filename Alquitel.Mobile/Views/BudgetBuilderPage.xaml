@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.BudgetBuilderPage"
+             x:DataType="vm:BudgetBuilderViewModel"
+             Title="Nuevo presupuesto">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- ═ Análisis inteligente ═ -->
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="PEDIDO DEL CLIENTE" Style="{StaticResource SectionLabel}" />
+                    <Label Text="Pegá el mail o WhatsApp del cliente y la app arma el carrito."
+                           Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}" Padding="12,8">
+                        <Editor Text="{Binding SmartText}" AutoSize="TextChanges" MinimumHeightRequest="80"
+                                Placeholder="Ej: Necesito 2 pantallas de leds y 1 notebook por 3 días" />
+                    </Border>
+                    <Button Text="Analizar y cargar carrito" Command="{Binding AnalyzeCommand}" />
+                    <Label Text="{Binding AnalysisMessage}" Style="{StaticResource MutedLabel}"
+                           IsVisible="{Binding AnalysisMessage, Converter={StaticResource NotNullConverter}}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- ═ Agregado manual ═ -->
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="AGREGAR PRODUCTO" Style="{StaticResource SectionLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding ProductSearch}" Placeholder="Buscar en el catálogo…" />
+                    </Border>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding SearchResults}" Spacing="6">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="entities:Product">
+                                <Border Style="{StaticResource InputBorder}" Padding="12,10">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer
+                                            Command="{Binding AddProductCommand, Source={RelativeSource AncestorType={x:Type vm:BudgetBuilderViewModel}}}"
+                                            CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label Text="{Binding Description}" LineBreakMode="TailTruncation" />
+                                        <Label Grid.Column="1" Text="{Binding BasePrice, StringFormat='$ {0:N0}'}"
+                                               Style="{StaticResource MutedLabel}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- ═ Carrito ═ -->
+            <Label Text="CARRITO" Style="{StaticResource SectionLabel}" />
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Cart}" Spacing="10">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CartItemViewModel">
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <VerticalStackLayout Spacing="10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label FormattedText="{Binding FormattedDescription}" LineBreakMode="WordWrap" />
+                                    <Button Grid.Column="1" Text="✕" Style="{StaticResource DangerButton}"
+                                            BorderWidth="0" FontSize="16" Padding="8,0"
+                                            MinimumHeightRequest="36" MinimumWidthRequest="36"
+                                            Command="{Binding RemoveItemCommand, Source={RelativeSource AncestorType={x:Type vm:BudgetBuilderViewModel}}}"
+                                            CommandParameter="{Binding .}" />
+                                </Grid>
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                    <VerticalStackLayout Spacing="2">
+                                        <Label Text="Cantidad" Style="{StaticResource MutedLabel}" FontSize="11" />
+                                        <Border Style="{StaticResource InputBorder}">
+                                            <Entry Text="{Binding Quantity}" Keyboard="Numeric" HorizontalTextAlignment="Center" />
+                                        </Border>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                        <Label Text="Días" Style="{StaticResource MutedLabel}" FontSize="11" />
+                                        <Border Style="{StaticResource InputBorder}">
+                                            <Entry Text="{Binding Dias}" Keyboard="Numeric" HorizontalTextAlignment="Center" />
+                                        </Border>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="2" Spacing="2">
+                                        <Label Text="Precio U." Style="{StaticResource MutedLabel}" FontSize="11" />
+                                        <Border Style="{StaticResource InputBorder}">
+                                            <Entry Text="{Binding UnitPrice}" Keyboard="Numeric" HorizontalTextAlignment="Center" />
+                                        </Border>
+                                    </VerticalStackLayout>
+                                </Grid>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Border Style="{StaticResource InputBorder}">
+                                        <Entry Text="{Binding RequestedMeasure}" Placeholder="Medida solicitada (opcional)" FontSize="13" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="{Binding Total, StringFormat='$ {0:N0}'}"
+                                           FontAttributes="Bold" VerticalOptions="Center" Margin="12,0,0,0" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+                <BindableLayout.EmptyView>
+                    <Label Text="El carrito está vacío. Analizá un pedido o agregá productos."
+                           Style="{StaticResource MutedLabel}" HorizontalOptions="Center" Margin="0,8" />
+                </BindableLayout.EmptyView>
+            </VerticalStackLayout>
+
+            <!-- ═ Datos del pedido ═ -->
+            <Border Style="{StaticResource Card}" IsVisible="{Binding HasItems}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="DATOS DEL PEDIDO" Style="{StaticResource SectionLabel}" />
+
+                    <Label Text="Cliente" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Picker ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}"
+ Title="Elegí el cliente" />
+                    </Border>
+
+                    <Label Text="Ubicación del evento" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Picker ItemsSource="{Binding Locations}" SelectedItem="{Binding SelectedLocation}"
+ Title="Elegí la ubicación" />
+                    </Border>
+
+                    <Label Text="Fecha del evento" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <DatePicker Date="{Binding EventDate}" />
+                    </Border>
+
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Switch IsToggled="{Binding HasEndDate}" />
+                        <Label Grid.Column="1" Text="Evento de varios días" VerticalOptions="Center" />
+                    </Grid>
+                    <Border Style="{StaticResource InputBorder}" IsVisible="{Binding HasEndDate}">
+                        <DatePicker Date="{Binding EventEndDate}" />
+                    </Border>
+
+                    <Label Text="Comentarios (van a la OT)" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}" Padding="12,8">
+                        <Editor Text="{Binding Comments}" AutoSize="TextChanges" MinimumHeightRequest="60"
+                                Placeholder="Notas del pedido…" />
+                    </Border>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Descuento %" Style="{StaticResource MutedLabel}" />
+                            <Border Style="{StaticResource InputBorder}">
+                                <Entry Text="{Binding DiscountPercentText}" Keyboard="Numeric" />
+                            </Border>
+                        </VerticalStackLayout>
+                        <Grid Grid.Column="1" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="End" Margin="0,0,0,10">
+                            <Switch IsToggled="{Binding AddVat}" />
+                            <Label Grid.Column="1" Text="Discriminar IVA (21%)" VerticalOptions="Center" FontSize="13" />
+                        </Grid>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- ═ Totales y guardado ═ -->
+            <Border Style="{StaticResource Card}" IsVisible="{Binding HasItems}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceAltLight}, Dark={StaticResource SurfaceAltDark}}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Subtotal" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding CartTotal, StringFormat='$ {0:N2}'}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="TOTAL" FontAttributes="Bold" FontSize="18" />
+                        <Label Grid.Column="1" Text="{Binding GrandTotal, StringFormat='$ {0:N2}'}"
+                               FontAttributes="Bold" FontSize="18" TextColor="{StaticResource Primary}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Guardar presupuesto" Command="{Binding SaveCommand}" IsVisible="{Binding HasItems}" />
+            <Button Text="Vaciar carrito" Style="{StaticResource DangerButton}"
+                    Command="{Binding ClearCartCommand}" IsVisible="{Binding HasItems}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

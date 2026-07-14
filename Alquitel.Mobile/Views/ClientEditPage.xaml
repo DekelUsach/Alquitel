@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.ClientEditPage"
+             x:DataType="vm:ClientEditViewModel"
+             Title="{Binding PageTitle}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="DATOS DE LA EMPRESA" Style="{StaticResource SectionLabel}" />
+
+                    <Label Text="Razón social *" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding CompanyName}" Placeholder="Empresa S.A." />
+                    </Border>
+
+                    <Label Text="CUIT" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding Cuit}" Placeholder="30-12345678-9" Keyboard="Numeric" />
+                    </Border>
+                    <Label Text="{Binding CuitFeedback}" FontSize="12"
+                           TextColor="{Binding CuitValid, Converter={StaticResource CuitFeedbackColorConverter}}"
+                           IsVisible="{Binding CuitFeedback, Converter={StaticResource NotNullConverter}}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="CONTACTO" Style="{StaticResource SectionLabel}" />
+
+                    <Label Text="Nombre de contacto" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding ContactName}" />
+                    </Border>
+
+                    <Label Text="Email" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding Email}" Keyboard="Email" />
+                    </Border>
+
+                    <Label Text="Teléfono" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding Phone}" Keyboard="Telephone" />
+                    </Border>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="CONDICIONES" Style="{StaticResource SectionLabel}" />
+
+                    <Label Text="Descuento acordado % (opcional)" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding SpecialDiscountText}" Keyboard="Numeric" Placeholder="Ej: 10" />
+                    </Border>
+
+                    <Label Text="Notas internas (no se imprimen)" Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}" Padding="12,8">
+                        <Editor Text="{Binding InternalNotes}" AutoSize="TextChanges" MinimumHeightRequest="60" />
+                    </Border>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Guardar" Command="{Binding SaveCommand}" />
+            <Button Text="Archivar cliente" Style="{StaticResource DangerButton}"
+                    Command="{Binding ArchiveCommand}" IsVisible="{Binding IsExisting}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

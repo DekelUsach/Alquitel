@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.ProductDetailPage"
+             x:DataType="vm:ProductDetailViewModel"
+             Title="Producto">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="10">
+                    <Label FormattedText="{Binding FormattedDescription}" LineBreakMode="WordWrap" />
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                        <Label Text="Categoría" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding Category}" />
+                        <Label Grid.Row="1" Text="Precio base" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding PriceText}" FontAttributes="Bold"
+                               TextColor="{StaticResource Primary}" />
+                        <Label Grid.Row="2" Text="Stock" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding StockText}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Label Text="ESPECIFICACIONES" Style="{StaticResource SectionLabel}" />
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding CustomFields}" Spacing="8">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CustomFieldRow">
+                            <Label Text="{Binding Display}" FontSize="14" />
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                    <BindableLayout.EmptyView>
+                        <Label Text="Sin campos técnicos configurados." Style="{StaticResource MutedLabel}" />
+                    </BindableLayout.EmptyView>
+                </VerticalStackLayout>
+            </Border>
+
+            <Label Text="La edición del catálogo (descripción segmentada, campos dinámicos e imágenes) se hace desde la app de escritorio."
+                   Style="{StaticResource MutedLabel}" FontSize="12" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

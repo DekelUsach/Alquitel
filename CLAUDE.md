@@ -8,7 +8,7 @@ Este archivo sirve como referencia completa y mapa de navegación para la IA (**
 
 **Alquitel** es un sistema de escritorio para Windows desarrollado con **.NET 8.0**, **WPF (XAML)**, **Entity Framework Core** con doble proveedor de base de datos (**SQLite** local o **Supabase/PostgreSQL** compartida, según `Database:Provider` en `appsettings.json`) y automatización de **Microsoft Word via COM Interop** (con motor alternativo **OpenXML** experimental sin Word). Su función principal es gestionar catálogos de equipamiento técnico (visuales, sonido, computación) y automatizar en segundos la creación de presupuestos comerciales y órdenes técnicas de trabajo (OT) a partir de descripciones naturales o estructuradas.
 
-Aplica los principios de **Clean Architecture** estructurado en 3 proyectos principales más uno de tests, vinculados en la solución [Alquitel.sln](file:///c:/Proyects/alqui/Alquitel/Alquitel.sln):
+Aplica los principios de **Clean Architecture** estructurado en 3 proyectos principales más uno de tests, vinculados en la solución [Alquitel.sln](file:///c:/Proyects/alqui/Alquitel/Alquitel.sln). Existe además un cuarto proyecto **fuera de la solución**: [Alquitel.Mobile](file:///c:/Proyects/alqui/Alquitel/Alquitel.Mobile/README.md) (app Android .NET MAUI, branch `mobile`) que referencia solo `Alquitel.Core` y comparte la base de Supabase — todas las funcionalidades que no dependen de archivos locales (sin Word/OneDrive). No está en el .sln a propósito: el CI compila la solución sin el workload de MAUI; compilalo por csproj (ver su README).
 
 1. **[Alquitel.Core](file:///c:/Proyects/alqui/Alquitel/Alquitel.Core/Alquitel.Core.csproj) (Capa de Dominio/Lógica Pura)**:
    - Contiene las entidades base del negocio.

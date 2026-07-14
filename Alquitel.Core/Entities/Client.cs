@@ -31,5 +31,8 @@ namespace Alquitel.Core.Entities
         /// por defecto al seleccionarlo (editable por presupuesto). Null = sin acuerdo.
         /// </summary>
         public decimal? SpecialDiscountPercent { get; set; }
+
+        /// <summary>Los Pickers de MAUI muestran ToString(); WPF usa DisplayMemberPath.</summary>
+        public override string ToString() => CompanyName;
     }
 }

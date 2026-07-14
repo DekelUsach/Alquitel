@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.DashboardPage"
+             x:DataType="vm:DashboardViewModel"
+             Title="Inicio">
+
+    <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <Label Text="{Binding Greeting}" Style="{StaticResource TitleLabel}" />
+
+                <!-- Métricas -->
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                    <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="PRESUPUESTOS DEL MES" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding MonthOrders}" Style="{StaticResource MetricValueLabel}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="FACTURACIÓN DEL MES" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding MonthTotal, StringFormat='$ {0:N0}'}" Style="{StaticResource MetricValueLabel}"
+                                   TextColor="{StaticResource Primary}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="APROBACIONES PENDIENTES" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding PendingApprovals}" Style="{StaticResource MetricValueLabel}"
+                                   TextColor="{StaticResource Warning}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Card}">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="APROBADOS" Style="{StaticResource SectionLabel}" FontSize="11" />
+                            <Label Text="{Binding ApprovedOrders}" Style="{StaticResource MetricValueLabel}"
+                                   TextColor="{StaticResource Success}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <Button Text="+ Nuevo presupuesto" Command="{Binding NewBudgetCommand}" />
+
+                <!-- Pedidos recientes -->
+                <Label Text="PEDIDOS RECIENTES" Style="{StaticResource SectionLabel}" Margin="0,8,0,0" />
+
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding RecentOrders}" Spacing="10">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="entities:Order">
+                            <Border Style="{StaticResource Card}" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding OpenOrderCommand, Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}}"
+                                        CommandParameter="{Binding .}" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+                                    <Label Grid.Row="0" Grid.Column="0" FontAttributes="Bold" LineBreakMode="TailTruncation">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding BudgetNumber, StringFormat='Nº {0}  '}" TextColor="{StaticResource Primary}" FontAttributes="Bold" />
+                                                <Span Text="{Binding Client.CompanyName}" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource ChipBorder}"
+                                            BackgroundColor="{Binding Status, Converter={StaticResource StatusColorConverter}}">
+                                        <Label Text="{Binding Status, Converter={StaticResource StatusDisplayConverter}}"
+                                               TextColor="White" FontSize="11" FontAttributes="Bold" />
+                                    </Border>
+                                    <Label Grid.Row="1" Grid.Column="0"
+                                           Text="{Binding CreatedDate, StringFormat='{0:dd/MM/yyyy}'}"
+                                           Style="{StaticResource MutedLabel}" />
+                                    <Label Grid.Row="1" Grid.Column="1"
+                                           Text="{Binding GrandTotal, StringFormat='$ {0:N0}'}"
+                                           FontAttributes="Bold" HorizontalOptions="End" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                    <BindableLayout.EmptyView>
+                        <Label Text="Todavía no hay pedidos cargados." Style="{StaticResource MutedLabel}" HorizontalOptions="Center" Margin="0,16" />
+                    </BindableLayout.EmptyView>
+                </VerticalStackLayout>
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+                <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

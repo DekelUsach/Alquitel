@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.SettingsPage"
+             x:DataType="vm:SettingsViewModel"
+             Title="Ajustes">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="APARIENCIA" Style="{StaticResource SectionLabel}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Tema oscuro" VerticalOptions="Center" />
+                        <Switch Grid.Column="1" IsToggled="{Binding IsDarkTheme}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="BASE DE DATOS" Style="{StaticResource SectionLabel}" />
+                    <Label Text="Cadena de conexión al pooler de Supabase. Se guarda cifrada en el dispositivo."
+                           Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding ConnectionString}" IsPassword="True"
+                               Placeholder="Host=…;Port=5432;Database=postgres;…" />
+                    </Border>
+                    <Button Text="Guardar conexión" Command="{Binding SaveConnectionCommand}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="INTELIGENCIA ARTIFICIAL" Style="{StaticResource SectionLabel}" />
+                    <Label Text="API key de Pollinations para el análisis de pedidos. Sin key, la app usa el buscador local."
+                           Style="{StaticResource MutedLabel}" />
+                    <Border Style="{StaticResource InputBorder}">
+                        <Entry Text="{Binding PollinationsKey}" IsPassword="True" Placeholder="API key (opcional)" />
+                    </Border>
+                    <Button Text="Guardar API key" Command="{Binding SaveAiKeyCommand}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Label Text="Las rutas de plantillas y carpetas de salida de Word solo aplican a la app de escritorio."
+                   Style="{StaticResource MutedLabel}" FontSize="12" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

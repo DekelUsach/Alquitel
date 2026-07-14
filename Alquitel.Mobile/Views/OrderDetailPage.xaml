@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.OrderDetailPage"
+             x:DataType="vm:OrderDetailViewModel"
+             Title="Detalle del pedido">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Cabecera -->
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="{Binding Order.BudgetNumber, StringFormat='Presupuesto Nº {0}'}"
+                               Style="{StaticResource TitleLabel}" FontSize="20" />
+                        <Border Grid.Column="1" Style="{StaticResource ChipBorder}" BackgroundColor="{Binding StatusColor}">
+                            <Label Text="{Binding StatusDisplay}" TextColor="White" FontSize="12" FontAttributes="Bold" />
+                        </Border>
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                        <Label Text="Cliente" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding ClientName}" FontAttributes="Bold" />
+                        <Label Grid.Row="1" Text="Ubicación" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding LocationName}" />
+                        <Label Grid.Row="2" Text="Evento" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding EventDateText}" />
+                        <Label Grid.Row="3" Text="Armado por" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Row="3" Grid.Column="1" Text="{Binding Order.AdminName}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Acciones -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Button Text="Cambiar estado" Command="{Binding ChangeStatusCommand}" />
+                <Button Grid.Column="1" Text="Link de aprobación" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding ShareApprovalLinkCommand}" />
+            </Grid>
+
+            <!-- Ítems -->
+            <Label Text="EQUIPAMIENTO" Style="{StaticResource SectionLabel}" />
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Items}" Spacing="10">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OrderItemRow">
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <VerticalStackLayout Spacing="6">
+                                <Label FormattedText="{Binding FormattedDescription}" LineBreakMode="WordWrap" />
+                                <Label Text="{Binding Measure}" TextColor="{StaticResource Danger}" FontSize="13"
+                                       IsVisible="{Binding Measure, Converter={StaticResource NotNullConverter}}" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Text="{Binding QuantityLine}" Style="{StaticResource MutedLabel}" />
+                                    <Label Grid.Column="1" Text="{Binding TotalText}" FontAttributes="Bold" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <!-- Totales -->
+            <Border Style="{StaticResource Card}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceAltLight}, Dark={StaticResource SurfaceAltDark}}">
+                <VerticalStackLayout Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Subtotal" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding Order.Total, StringFormat='$ {0:N2}'}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Descuento" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding Order.DiscountValue, StringFormat='- $ {0:N2}'}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="IVA (21%)" Style="{StaticResource MutedLabel}" />
+                        <Label Grid.Column="1" Text="{Binding Order.VatValue, StringFormat='$ {0:N2}'}" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="TOTAL" FontAttributes="Bold" FontSize="17" />
+                        <Label Grid.Column="1" Text="{Binding Order.GrandTotal, StringFormat='$ {0:N2}'}"
+                               FontAttributes="Bold" FontSize="17" TextColor="{StaticResource Primary}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Comentarios -->
+            <Border Style="{StaticResource Card}"
+                    IsVisible="{Binding Order.Comments, Converter={StaticResource NotNullConverter}}">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="COMENTARIOS" Style="{StaticResource SectionLabel}" />
+                    <Label Text="{Binding Order.Comments}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Aprobaciones -->
+            <Label Text="LINKS DE APROBACIÓN" Style="{StaticResource SectionLabel}" />
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Approvals}" Spacing="8">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="entities:OrderApproval">
+                        <Border Style="{StaticResource Card}" Padding="12">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
+                                <Label Text="{Binding CreatedAt, StringFormat='Creado {0:dd/MM/yyyy HH:mm}'}" FontSize="13" />
+                                <Label Grid.Column="1" Text="{Binding Status, Converter={StaticResource ApprovalStatusConverter}}"
+                                       FontAttributes="Bold" FontSize="13" />
+                                <Label Grid.Row="1" Grid.ColumnSpan="2"
+                                       Text="{Binding RespondedAt, StringFormat='Respondido {0:dd/MM/yyyy HH:mm}'}"
+                                       Style="{StaticResource MutedLabel}" FontSize="12"
+                                       IsVisible="{Binding RespondedAt, Converter={StaticResource NotNullConverter}}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+                <BindableLayout.EmptyView>
+                    <Label Text="Sin links generados." Style="{StaticResource MutedLabel}" />
+                </BindableLayout.EmptyView>
+            </VerticalStackLayout>
+
+            <!-- Bitácora -->
+            <Label Text="BITÁCORA" Style="{StaticResource SectionLabel}" />
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding AuditEvents}" Spacing="8">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="entities:OrderAuditEvent">
+                        <Grid ColumnDefinitions="4,*" ColumnSpacing="10">
+                            <BoxView Color="{StaticResource Primary}" CornerRadius="2" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="1">
+                                <Label Text="{Binding EventType}" FontAttributes="Bold" FontSize="14" />
+                                <Label Style="{StaticResource MutedLabel}" FontSize="12">
+                                    <Label.FormattedText>
+                                        <FormattedString>
+                                            <Span Text="{Binding UserName}" />
+                                            <Span Text=" · " />
+                                            <Span Text="{Binding Timestamp, StringFormat='{0:dd/MM/yyyy HH:mm}'}" />
+                                        </FormattedString>
+                                    </Label.FormattedText>
+                                </Label>
+                            </VerticalStackLayout>
+                        </Grid>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+                <BindableLayout.EmptyView>
+                    <Label Text="Sin eventos registrados." Style="{StaticResource MutedLabel}" />
+                </BindableLayout.EmptyView>
+            </VerticalStackLayout>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -41,5 +41,8 @@ namespace Alquitel.Core.Entities
 
         /// <summary>Borrado lógico, mismo patrón que Client/Product.</summary>
         public bool IsArchived { get; set; } = false;
+
+        /// <summary>Los Pickers de MAUI muestran ToString(); WPF usa DisplayMemberPath.</summary>
+        public override string ToString() => Name;
     }
 }

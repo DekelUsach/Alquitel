@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.MorePage"
+             x:DataType="vm:MoreViewModel"
+             Title="Más">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="{Binding UserName}" FontSize="18" FontAttributes="Bold" />
+                    <Label Text="{Binding RoleName}" Style="{StaticResource MutedLabel}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Label Text="SECCIONES" Style="{StaticResource SectionLabel}" />
+
+            <Border Style="{StaticResource Card}" Padding="0">
+                <VerticalStackLayout>
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoCatalogCommand}" />
+                        </Grid.GestureRecognizers>
+                        <Label Text="Catálogo de productos" />
+                        <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoLocationsCommand}" />
+                        </Grid.GestureRecognizers>
+                        <Label Text="Ubicaciones de eventos" />
+                        <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoReportsCommand}" />
+                        </Grid.GestureRecognizers>
+                        <Label Text="Reportes" />
+                        <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoSettingsCommand}" />
+                        </Grid.GestureRecognizers>
+                        <Label Text="Ajustes" />
+                        <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Cerrar sesión" Style="{StaticResource DangerButton}" Command="{Binding LogoutCommand}" />
+
+            <Label Text="La generación de documentos Word, plantillas y carpetas OneDrive viven en la app de escritorio."
+                   Style="{StaticResource MutedLabel}" FontSize="12" HorizontalTextAlignment="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

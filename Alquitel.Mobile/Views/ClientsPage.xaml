@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             xmlns:entities="clr-namespace:Alquitel.Core.Entities;assembly=Alquitel.Core"
+             x:Class="Alquitel.Mobile.Views.ClientsPage"
+             x:DataType="vm:ClientsViewModel"
+             Title="Clientes">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16,8,16,16" RowSpacing="10">
+
+        <SearchBar Grid.Row="0" Text="{Binding SearchText}" Placeholder="Buscar por nombre, CUIT o contacto…" />
+
+        <RefreshView Grid.Row="1" IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+            <CollectionView ItemsSource="{Binding Clients}" SelectionMode="None">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout Padding="24" Spacing="8">
+                        <Label Text="No hay clientes cargados." Style="{StaticResource MutedLabel}" HorizontalOptions="Center" />
+                        <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}" HorizontalTextAlignment="Center"
+                               IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="entities:Client">
+                        <Grid Padding="0,5">
+                            <Border Style="{StaticResource Card}" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding EditClientCommand, Source={RelativeSource AncestorType={x:Type vm:ClientsViewModel}}}"
+                                        CommandParameter="{Binding .}" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="3">
+                                    <Label Text="{Binding CompanyName}" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                    <Label Text="{Binding Cuit, StringFormat='CUIT {0}'}" Style="{StaticResource MutedLabel}"
+                                           IsVisible="{Binding Cuit, Converter={StaticResource NotNullConverter}}" />
+                                    <Label Style="{StaticResource MutedLabel}" FontSize="12" LineBreakMode="TailTruncation"
+                                           IsVisible="{Binding ContactName, Converter={StaticResource NotNullConverter}}">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding ContactName}" />
+                                                <Span Text=" · " />
+                                                <Span Text="{Binding Phone}" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <Button Grid.Row="2" Text="+ Nuevo cliente" Command="{Binding NewClientCommand}" />
+    </Grid>
+</ContentPage>
