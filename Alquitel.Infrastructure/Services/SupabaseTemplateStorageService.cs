@@ -100,6 +100,10 @@ namespace Alquitel.Infrastructure.Services
             {
                 Directory.CreateDirectory(AppPaths.TemplatesCacheFolder);
                 await File.WriteAllBytesAsync(CachePath(kind), bytes);
+                // El ETag guardado quedó viejo: se borra para que el próximo Resolve
+                // valide contra el servidor y traiga el ETag de la versión nueva.
+                var etagPath = CachePath(kind) + ".etag";
+                if (File.Exists(etagPath)) File.Delete(etagPath);
             }
             catch (Exception ex) { AppLog.Warning(ex, "No se pudo actualizar el cache local de plantillas tras publicar"); }
 
@@ -109,13 +113,27 @@ namespace Alquitel.Infrastructure.Services
         public async Task<string?> ResolveTemplateAsync(TemplateKind kind)
         {
             string cache = CachePath(kind);
+            string etagPath = cache + ".etag";
             if (!IsConfigured)
                 return File.Exists(cache) ? cache : null;
 
             try
             {
                 using var req = NewRequest(HttpMethod.Get, $"object/{Bucket}/{ObjectName(kind)}", _anonKey);
+
+                // Cache condicional: si tenemos la versión vigente, el servidor responde
+                // 304 sin cuerpo en lugar de mandar el .docx completo en cada generación.
+                if (File.Exists(cache) && File.Exists(etagPath))
+                {
+                    var cachedEtag = (await File.ReadAllTextAsync(etagPath)).Trim();
+                    if (cachedEtag.Length > 0)
+                        req.Headers.TryAddWithoutValidation("If-None-Match", cachedEtag);
+                }
+
                 using var resp = await _http.SendAsync(req);
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.NotModified)
+                    return cache;
 
                 if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
                     return File.Exists(cache) ? cache : null;
@@ -128,6 +146,17 @@ namespace Alquitel.Infrastructure.Services
                 string tmp = cache + ".tmp";
                 await File.WriteAllBytesAsync(tmp, bytes);
                 File.Move(tmp, cache, overwrite: true);
+
+                try
+                {
+                    var etag = resp.Headers.ETag?.ToString();
+                    if (!string.IsNullOrEmpty(etag))
+                        await File.WriteAllTextAsync(etagPath, etag);
+                    else if (File.Exists(etagPath))
+                        File.Delete(etagPath);
+                }
+                catch (Exception ex) { AppLog.Warning(ex, "No se pudo guardar el ETag de la plantilla {Kind}", kind); }
+
                 return cache;
             }
             catch (Exception ex)

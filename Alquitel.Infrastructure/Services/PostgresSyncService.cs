@@ -62,6 +62,10 @@ namespace Alquitel.Infrastructure.Services
             using var local = new AlquitelDbContext(localOptions);
             using var remote = await _remoteFactory.CreateDbContextAsync();
 
+            // Transacción única: una carga inicial que falla a mitad no debe dejar el
+            // servidor en estado parcial (clientes subidos sin sus órdenes, etc.).
+            await using var tx = await remote.Database.BeginTransactionAsync();
+
             // Orden por dependencias de FK: primero las tablas referenciadas.
             var clients = await local.Clients.IgnoreQueryFilters().AsNoTracking().ToListAsync();
             var products = await local.Products.IgnoreQueryFilters().AsNoTracking().ToListAsync();
@@ -93,6 +97,8 @@ namespace Alquitel.Infrastructure.Services
                 return i.Id;
             });
 
+            await tx.CommitAsync();
+
             AppLog.Information(
                 "Carga inicial al servidor completada: {Clients} clientes, {Products} productos, {Locations} ubicaciones, {Users} usuarios, {Orders} órdenes, {Items} items",
                 clients.Count, products.Count, locations.Count, users.Count, orders.Count, items.Count);
@@ -103,15 +109,28 @@ namespace Alquitel.Infrastructure.Services
         {
             if (rows.Count == 0) return;
 
+            // Un solo round-trip para saber qué IDs ya existen: el FirstOrDefault por
+            // fila era un N+1 contra el servidor (5.000 items = 5.000 viajes a sa-east-1).
+            var ids = rows.Select(keyOf).ToList();
+            var existingIds = (await remote.Set<T>().IgnoreQueryFilters()
+                    .Where(e => ids.Contains(EF.Property<Guid>(e, "Id")))
+                    .Select(e => EF.Property<Guid>(e, "Id"))
+                    .ToListAsync())
+                .ToHashSet();
+
             foreach (var row in rows)
             {
                 var id = keyOf(row);
-                var existing = await remote.Set<T>().IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(e => EF.Property<Guid>(e, "Id") == id);
-                if (existing == null)
+                if (!existingIds.Contains(id))
+                {
                     remote.Set<T>().Add(row);
+                }
                 else
-                    remote.Entry(existing).CurrentValues.SetValues(row);
+                {
+                    // Attach + marcar modificado: actualiza sin releer la fila remota.
+                    var entry = remote.Set<T>().Attach(row);
+                    entry.State = EntityState.Modified;
+                }
             }
             await remote.SaveChangesAsync();
             remote.ChangeTracker.Clear();

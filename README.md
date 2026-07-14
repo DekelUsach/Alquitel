@@ -25,11 +25,12 @@ Sistema integral de gestión interna diseñado específicamente para **Alquitel*
 1. [🎯 Casos de Uso y Valor de Negocio](#-casos-de-uso-y-valor-de-negocio)
 2. [✨ Novedades y Evolución del Sistema (v2.0)](#-novedades-y-evolución-del-sistema-v20)
 3. [🏗️ Arquitectura del Sistema](#️-arquitectura-del-sistema)
-4. [📂 Estructura de Directorios](#-estructura-de-directorios)
-5. [🚀 Requisitos de Ejecución e Instalación](#-requisitos-de-ejecución-e-instalación)
-6. [📄 Funcionamiento del Motor de Documentos](#-funcionamiento-del-motor-de-documentos)
-7. [🛠️ Stack Tecnológico Completo](#️-stack-tecnológico-completo)
-8. [⚠️ Resolución de Problemas (Troubleshooting)](#️-resolución-de-problemas-troubleshooting)
+4. [🌐 Flujo de Aprobación de Presupuestos (Online)](#-flujo-de-aprobación-de-presupuestos-online)
+5. [📂 Estructura de Directorios](#-estructura-de-directorios)
+6. [🚀 Requisitos de Ejecución e Instalación](#-requisitos-de-ejecución-e-instalación)
+7. [📄 Funcionamiento del Motor de Documentos](#-funcionamiento-del-motor-de-documentos)
+8. [🛠️ Stack Tecnológico Completo](#️-stack-tecnológico-completo)
+9. [⚠️ Resolución de Problemas (Troubleshooting)](#️-resolución-de-problemas-troubleshooting)
 
 ---
 
@@ -40,6 +41,7 @@ La plataforma Alquitel no es solo un gestor de bases de datos, es un **acelerado
 - **Cotizaciones en Segundos**: Copiando un correo de un cliente ("Necesito 3 pantallas y 2 notebooks por 3 días"), el **Buscador Inteligente** inserta los productos en el carrito de manera automática.
 - **Doble Perfil de Documentos**: Con un solo clic se genera la cotización para el cliente (con precios de alquiler) y la **Orden de Trabajo (OT)** técnica (ocultando precios, mostrando especificaciones de cableado o logística).
 - **Adiós a los Errores de Tipeo**: Al conectar la base de datos de SQLite directamente con el archivo `.docx` corporativo, los errores de importes y matemáticas en presupuestos desaparecen por completo.
+- **Aprobación del Cliente a un Clic**: Generación automática de links secretos de aprobación. El cliente abre el link, visualiza la cotización en su navegador (móvil o PC) y puede aprobar o rechazar directamente, actualizando el estado del pedido al instante en la app de escritorio.
 
 ---
 
@@ -67,6 +69,11 @@ Aplicación de un diseño sobrio, oscuro e institucional. Incluye animaciones fl
 ### 5. ⚙️ Configurador de Rutas Flexibles
 Panel integrado para asignar la carpeta de destino y el archivo Plantilla (`template.docx`). Ideal para trabajar sobre una cuenta compartida de **OneDrive** sin que las rutas queden bloqueadas.
 
+### 6. 🌐 Portal de Aprobación de Presupuestos (Online & Cloud Sync)
+Integración asíncrona con **Supabase** que permite generar links únicos de aprobación para presupuestos:
+- **Bypass de Restricciones del Gateway**: Emplea una cabecera especializada `text/HTML` (case-sensitive) para burlar la reescritura de Kong a `text/plain`, asegurando que el navegador renderice la página con sus estilos y scripts interactivos intactos.
+- **Transiciones Automáticas**: Al aprobar, actualiza concurrentemente el registro y el estatus de la orden (`Orders.Status`) en la nube, sincronizando los datos con la app local del vendedor de forma automática.
+
 ---
 
 ## 🏗️ Arquitectura del Sistema
@@ -79,15 +86,58 @@ graph TD
     Infra["⚙️ Alquitel.Infrastructure"] --> Core
     UI --> Infra
     
-    subgraph Capa de Infraestructura
-        DB[(SQLite)] <--> EF["Entity Framework 8"]
+    subgraph Capa de Infraestructura (Local)
+        DB_Local[(SQLite)] <--> EF_Local["EF Core (SQLite)"]
         Word["Word Document Service"] <--> COM["Word.Application COM"]
         Polly["Polly Resiliency"] --> Word
     end
     
-    EF --> |JSON & Meta-Data| Core
+    subgraph Capa Nube e Interacción (Supabase)
+        SupaDB[(PostgreSQL / Supabase)] <--> EF_Supa["EF Core (PostgreSql)"]
+        EdgeFn["⚡ Edge Function: aprobar"] <--> SupaDB
+        Browser["📱 Cliente Final (Navegador)"] <--> |GET / POST| EdgeFn
+    end
+    
+    UI -.-> |Sincroniza Estado| EF_Supa
+    EF_Local --> Core
     COM -.-> |Genera Archivos| Docs["Presupuesto_Final.docx"]
 ```
+
+---
+
+## 🌐 Flujo de Aprobación de Presupuestos (Online)
+
+La plataforma utiliza un ecosistema híbrido local-nube para procesar la interacción con el cliente final sin comprometer la base de datos de escritorio.
+
+```mermaid
+sequenceDiagram
+    participant Empleado as 👤 Vendedor (WPF)
+    participant SupaDB as ☁️ Base de Datos (Supabase)
+    participant Cliente as 📱 Cliente Final (Browser)
+    participant EdgeFn as ⚡ Edge Function (Deno)
+
+    Empleado->>SupaDB: Crea Presupuesto y genera Link de Aprobación (Token UUID)
+    SupaDB-->>Empleado: Retorna URL de aprobación secreta
+    Empleado->>Cliente: Comparte link (ej: por WhatsApp o Email)
+    
+    Cliente->>EdgeFn: Hace clic en el link (solicitud GET)
+    EdgeFn->>SupaDB: Valida Token y obtiene detalles del Presupuesto
+    SupaDB-->>EdgeFn: Retorna datos del Presupuesto
+    EdgeFn-->>Cliente: Retorna página XHTML con bypass text/HTML (Diseño nativo Grupo Alquitel)
+    
+    Cliente->>EdgeFn: Clic en "Aprobar" / "Rechazar" (solicitud POST)
+    EdgeFn->>SupaDB: Actualiza estado del Token, IP de procedencia e indica Order.Status (Aprobado/Rechazado)
+    SupaDB-->>EdgeFn: Confirmado
+    EdgeFn-->>Cliente: Recarga página y muestra estado final "✔ Ya aprobado"
+    
+    Note over Empleado, SupaDB: El vendedor ve el cambio de estado en la app de escritorio al instante.
+```
+
+### Componentes Involucrados:
+1. **Generación del Link (WPF / C#):** El servicio `EfApprovalLinkService` inserta una tupla en `OrderApprovals` con un token único de tipo `UUID` y genera el link público apuntando a la Edge Function de Supabase.
+2. **Servicio Edge Function (`aprobar` en Deno/TS):** Alojado en el directorio local `supabase/functions/aprobar/index.ts` y desplegado en la nube. Escucha llamadas `GET` para renderizar el portal e interacciones `POST` para registrar la decisión del cliente.
+3. **Bypass de Visualización de Código Fuente (Kong Gateway):**
+   Para evitar que el gateway reescriba la página a `text/plain`, se devuelve la cabecera `Content-Type: text/HTML; charset=utf-8`. El gateway de Supabase procesa de forma sensible a mayúsculas y no detecta `"text/html"`, mientras que el navegador lo recibe y normaliza, renderizando el portal nativo interactivo.
 
 ---
 
@@ -101,6 +151,9 @@ Alquitel/
 ├── Alquitel.Core/           # Capa de Dominio (Modelos: Order, Product, Client)
 ├── Alquitel.Infrastructure/ # Capa de Datos (DbSet) y Servicios Externos (Word)
 ├── Alquitel.UI/             # Capa Visual (Ventanas WPF, ViewModels)
+├── supabase/                # Configuraciones de Base de Datos y Edge Functions
+│   ├── functions/aprobar/   # Código fuente Deno/TypeScript del portal de aprobación
+│   └── migrations/          # Migraciones SQL para PostgreSQL en Supabase
 ├── 1_PRESUPUESTOS/          # Salida recomendada para cotizaciones comerciales
 ├── 2_OF/                    # Salida recomendada para Órdenes de Facturación
 └── 3_OT/                    # Salida recomendada para Órdenes de Trabajo técnicas

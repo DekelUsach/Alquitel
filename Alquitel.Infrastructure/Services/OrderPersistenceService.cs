@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Alquitel.Core.Entities;
+using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
 using Alquitel.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,10 +11,15 @@ namespace Alquitel.Infrastructure.Services
 {
     /// <summary>
     /// Implementación EF de <see cref="IOrderPersistenceService"/>. Lógica movida tal
-    /// cual desde BudgetBuilderViewModel.PersistOrderAsync/ResolveClientIdAsync.
+    /// cual desde BudgetBuilderViewModel.PersistOrderAsync/ResolveClientIdAsync, más:
+    /// - Reintento con renumeración ante colisión del índice único de BudgetNumber
+    ///   (dos usuarios creando presupuestos a la vez sobre la base compartida).
+    /// - Concurrencia optimista vía Order.RowVersion (edición simultánea de la misma orden).
     /// </summary>
     public class OrderPersistenceService : IOrderPersistenceService
     {
+        private const int MaxBudgetNumberRetries = 3;
+
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IOrderAuditService _audit;
 
@@ -23,104 +29,179 @@ namespace Alquitel.Infrastructure.Services
             _audit = audit;
         }
 
-        public async Task<bool> PersistAsync(Order order)
+        public async Task<OrderPersistResult> PersistAsync(Order order, bool forceOverwrite = false)
         {
-            try
+            for (int attempt = 0; ; attempt++)
             {
-                using var db = await _dbContextFactory.CreateDbContextAsync();
-                await using var tx = await db.Database.BeginTransactionAsync();
-
-                // ── Location: find-or-create so Order.LocationId always references a real row.
-                // A Guid.Empty FK violated the constraint and silently failed the whole persist. ──
-                var locName = (order.Location?.Name ?? string.Empty).Trim();
-                var location = await db.Locations.FirstOrDefaultAsync(l => l.Name == locName);
-                if (location == null)
+                try
                 {
-                    location = new Location { Name = locName };
-                    db.Locations.Add(location);
-                    await db.SaveChangesAsync();
+                    return await PersistOnceAsync(order, forceOverwrite);
                 }
-
-                // ── Client: reuse existing (by Id, then by CUIT) or create it.
-                // A client typed manually never existed in the DB and broke the FK. ──
-                var clientId = await ResolveClientIdAsync(db, order);
-                var locationId = location.Id;
-
-                var orderExists = await db.Orders.AnyAsync(o => o.Id == order.Id);
-
-                if (!orderExists)
+                catch (DbUpdateException ex) when (attempt < MaxBudgetNumberRetries && IsBudgetNumberCollision(ex))
                 {
-                    var orderToSave = new Order
-                    {
-                        Id = order.Id,
-                        BudgetNumber = order.BudgetNumber,
-                        AdminName = order.AdminName,
-                        CreatedByUserId = order.CreatedByUserId,
-                        ClientId = clientId,
-                        LocationId = locationId,
-                        CreatedDate = order.CreatedDate,
-                        EventDate = order.EventDate,
-                        EventEndDate = order.EventEndDate,
-                        Status = order.Status,
-                        Comments = order.Comments,
-                        DiscountPercent = order.DiscountPercent,
-                        DiscountAmount = order.DiscountAmount,
-                        AddVat = order.AddVat,
-                    };
-                    db.Orders.Add(orderToSave);
-                    await db.SaveChangesAsync();
-
-                    foreach (var item in order.Items)
-                    {
-                        db.OrderItems.Add(CloneForInsert(item, orderToSave.Id, keepId: true));
-                    }
-                    await db.SaveChangesAsync();
+                    // Otro usuario tomó el mismo número entre la asignación y el guardado.
+                    // Se renumera (misma serie si es versión, próximo serial si no) y se
+                    // reintenta. El VM detecta el cambio comparando BudgetNumber pre/post.
+                    var oldNumber = order.BudgetNumber;
+                    order.BudgetNumber = await NextAvailableNumberAsync(order.BudgetNumber);
+                    AppLog.Warning(
+                        "Colisión de número de presupuesto {Old} (índice único): renumerado a {New}, reintento {Attempt}",
+                        oldNumber, order.BudgetNumber, attempt + 1);
                 }
-                else
+                catch (Exception ex)
                 {
-                    var tracked = await db.Orders.FindAsync(order.Id);
-                    if (tracked != null)
-                    {
-                        tracked.BudgetNumber = order.BudgetNumber;
-                        tracked.AdminName = order.AdminName;
-                        // No pisar al creador original al editar una orden ajena.
-                        tracked.CreatedByUserId ??= order.CreatedByUserId;
-                        tracked.ClientId = clientId;
-                        tracked.LocationId = locationId;
-                        tracked.EventDate = order.EventDate;
-                        tracked.EventEndDate = order.EventEndDate;
-                        tracked.Status = order.Status;
-                        tracked.Comments = order.Comments;
-                        tracked.DiscountPercent = order.DiscountPercent;
-                        tracked.DiscountAmount = order.DiscountAmount;
-                        tracked.AddVat = order.AddVat;
-                    }
-
-                    var oldItems = await db.OrderItems.Where(i => i.OrderId == order.Id).ToListAsync();
-                    db.OrderItems.RemoveRange(oldItems);
-                    await db.SaveChangesAsync();
-
-                    foreach (var item in order.Items)
-                    {
-                        db.OrderItems.Add(CloneForInsert(item, order.Id, keepId: false));
-                    }
-                    await db.SaveChangesAsync();
+                    AppLog.Error(ex, "PersistAsync failed for order {OrderId}", order.Id);
+                    return OrderPersistResult.Error;
                 }
-
-                await tx.CommitAsync();
-                AppLog.Information("Order persisted: {OrderId} ({Budget})", order.Id, order.BudgetNumber);
-
-                // Bitácora: fuera de la transacción (un fallo de auditoría no revierte la orden).
-                await _audit.LogAsync(order.Id,
-                    orderExists ? "Editado" : "Creado",
-                    $"Presupuesto {order.BudgetNumber} · {order.Items.Count} ítem(s) · total {order.GrandTotal:C}");
-                return true;
             }
-            catch (Exception ex)
+        }
+
+        private async Task<OrderPersistResult> PersistOnceAsync(Order order, bool forceOverwrite)
+        {
+            using var db = await _dbContextFactory.CreateDbContextAsync();
+            await using var tx = await db.Database.BeginTransactionAsync();
+
+            // ── Location: find-or-create so Order.LocationId always references a real row.
+            // A Guid.Empty FK violated the constraint and silently failed the whole persist. ──
+            var locName = (order.Location?.Name ?? string.Empty).Trim();
+            var location = await db.Locations.FirstOrDefaultAsync(l => l.Name == locName);
+            if (location == null)
             {
-                AppLog.Error(ex, "PersistAsync failed for order {OrderId}", order.Id);
-                return false;
+                location = new Location { Name = locName };
+                db.Locations.Add(location);
+                await db.SaveChangesAsync();
             }
+
+            // ── Client: reuse existing (by Id, then by CUIT) or create it.
+            // A client typed manually never existed in the DB and broke the FK. ──
+            var clientId = await ResolveClientIdAsync(db, order);
+            var locationId = location.Id;
+
+            var orderExists = await db.Orders.AnyAsync(o => o.Id == order.Id);
+
+            if (!orderExists)
+            {
+                var orderToSave = new Order
+                {
+                    Id = order.Id,
+                    BudgetNumber = order.BudgetNumber,
+                    AdminName = order.AdminName,
+                    CreatedByUserId = order.CreatedByUserId,
+                    ClientId = clientId,
+                    LocationId = locationId,
+                    CreatedDate = order.CreatedDate,
+                    EventDate = order.EventDate,
+                    EventEndDate = order.EventEndDate,
+                    Status = order.Status,
+                    Comments = order.Comments,
+                    DiscountPercent = order.DiscountPercent,
+                    DiscountAmount = order.DiscountAmount,
+                    AddVat = order.AddVat,
+                    RowVersion = order.RowVersion == Guid.Empty ? Guid.NewGuid() : order.RowVersion,
+                };
+                db.Orders.Add(orderToSave);
+                await db.SaveChangesAsync();
+                order.RowVersion = orderToSave.RowVersion;
+
+                foreach (var item in order.Items)
+                {
+                    db.OrderItems.Add(CloneForInsert(item, orderToSave.Id, keepId: true));
+                }
+                await db.SaveChangesAsync();
+            }
+            else
+            {
+                var tracked = await db.Orders.FindAsync(order.Id);
+                if (tracked != null)
+                {
+                    // ── Concurrencia optimista: si la fila cambió desde que este usuario
+                    // la cargó, no pisar en silencio. Guid.Empty = fila legada sin token.
+                    if (!forceOverwrite &&
+                        tracked.RowVersion != Guid.Empty &&
+                        order.RowVersion != Guid.Empty &&
+                        tracked.RowVersion != order.RowVersion)
+                    {
+                        await tx.RollbackAsync();
+                        AppLog.Warning(
+                            "Conflicto de concurrencia en orden {OrderId}: RowVersion base {Db} ≠ cargada {Loaded}",
+                            order.Id, tracked.RowVersion, order.RowVersion);
+                        return OrderPersistResult.Conflict;
+                    }
+
+                    tracked.BudgetNumber = order.BudgetNumber;
+                    tracked.AdminName = order.AdminName;
+                    // No pisar al creador original al editar una orden ajena.
+                    tracked.CreatedByUserId ??= order.CreatedByUserId;
+                    tracked.ClientId = clientId;
+                    tracked.LocationId = locationId;
+                    tracked.EventDate = order.EventDate;
+                    tracked.EventEndDate = order.EventEndDate;
+                    tracked.Status = order.Status;
+                    tracked.Comments = order.Comments;
+                    tracked.DiscountPercent = order.DiscountPercent;
+                    tracked.DiscountAmount = order.DiscountAmount;
+                    tracked.AddVat = order.AddVat;
+
+                    // Rotar el token: los guardados posteriores de OTRO usuario con la
+                    // versión vieja caerán en Conflict. El de este usuario sigue en sync.
+                    tracked.RowVersion = Guid.NewGuid();
+                    order.RowVersion = tracked.RowVersion;
+                }
+
+                var oldItems = await db.OrderItems.Where(i => i.OrderId == order.Id).ToListAsync();
+                db.OrderItems.RemoveRange(oldItems);
+                await db.SaveChangesAsync();
+
+                foreach (var item in order.Items)
+                {
+                    db.OrderItems.Add(CloneForInsert(item, order.Id, keepId: false));
+                }
+                await db.SaveChangesAsync();
+            }
+
+            await tx.CommitAsync();
+            AppLog.Information("Order persisted: {OrderId} ({Budget})", order.Id, order.BudgetNumber);
+
+            // Bitácora: fuera de la transacción (un fallo de auditoría no revierte la orden).
+            await _audit.LogAsync(order.Id,
+                orderExists ? "Editado" : "Creado",
+                $"Presupuesto {order.BudgetNumber} · {order.Items.Count} ítem(s) · total {order.GrandTotal:C}");
+            return OrderPersistResult.Saved;
+        }
+
+        /// <summary>
+        /// True si la excepción es una violación del índice único de Orders.BudgetNumber
+        /// (SQLite error 19 / PostgreSQL 23505).
+        /// </summary>
+        private static bool IsBudgetNumberCollision(DbUpdateException ex)
+        {
+            return ex.InnerException switch
+            {
+                Microsoft.Data.Sqlite.SqliteException sq =>
+                    sq.SqliteErrorCode == 19 &&
+                    sq.Message.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase),
+                Npgsql.PostgresException pg =>
+                    pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation &&
+                    (pg.ConstraintName?.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase) ?? false),
+                _ => false,
+            };
+        }
+
+        /// <summary>
+        /// Próximo número libre tras una colisión: si el número era una versión
+        /// ("31294/2") se calcula la próxima versión de esa serie; si era un serial
+        /// se toma el próximo serial global.
+        /// </summary>
+        private async Task<string> NextAvailableNumberAsync(string collidedNumber)
+        {
+            using var db = await _dbContextFactory.CreateDbContextAsync();
+            var numbers = await db.Orders.IgnoreQueryFilters().AsNoTracking()
+                .Select(o => o.BudgetNumber)
+                .ToListAsync();
+
+            return BudgetNumberHelper.VersionPart(collidedNumber) > 1
+                ? BudgetNumberHelper.NextVersion(collidedNumber, numbers)
+                : BudgetNumberHelper.NextSerial(numbers);
         }
 
         private static OrderItem CloneForInsert(OrderItem item, Guid orderId, bool keepId) => new()

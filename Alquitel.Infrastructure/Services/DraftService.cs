@@ -55,6 +55,7 @@ namespace Alquitel.Infrastructure.Services
                 DiscountPercent = order.DiscountPercent,
                 DiscountAmount = order.DiscountAmount,
                 AddVat = order.AddVat,
+                RowVersion = order.RowVersion,
                 Items = items.Select(i => new DraftItem
                 {
                     ProductId = i.ProductId,

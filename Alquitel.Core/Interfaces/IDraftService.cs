@@ -41,6 +41,9 @@ namespace Alquitel.Core.Interfaces
         public decimal DiscountPercent { get; set; }
         public decimal DiscountAmount { get; set; }
         public bool AddVat { get; set; }
+
+        /// <summary>Token de concurrencia de la orden al momento del autosave (ver Order.RowVersion).</summary>
+        public Guid RowVersion { get; set; }
         public List<DraftItem> Items { get; set; } = new();
     }
 

@@ -32,15 +32,17 @@ namespace Alquitel.UI.Services
 
         private MainViewModel MainViewModel => _mainViewModel ??= _serviceProvider.GetRequiredService<MainViewModel>();
 
-        public void NavigateTo<T>() where T : ObservableObject
+        public void NavigateTo<T>() where T : class
         {
             var viewModel = _serviceProvider.GetRequiredService<T>();
-            SetCurrentViewModel(viewModel);
+            SetCurrentViewModel(viewModel as ObservableObject
+                ?? throw new InvalidOperationException($"{typeof(T).Name} no es un ViewModel (ObservableObject)."));
         }
 
-        public void NavigateTo<T>(T viewModel) where T : ObservableObject
+        public void NavigateTo<T>(T viewModel) where T : class
         {
-            SetCurrentViewModel(viewModel);
+            SetCurrentViewModel(viewModel as ObservableObject
+                ?? throw new InvalidOperationException($"{typeof(T).Name} no es un ViewModel (ObservableObject)."));
         }
 
         private void SetCurrentViewModel(ObservableObject viewModel)

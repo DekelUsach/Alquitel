@@ -36,6 +36,27 @@ namespace Alquitel.Infrastructure.Services
                     AppLog.Warning(exception, $"Error generating document (Retry {retryCount} due to file lock)");
                 });
 
+        /// <summary>
+        /// Mata el WINWORD lanzado por la última sesión COM (si sigue vivo). Se usa solo
+        /// en el camino de timeout: el hilo STA quedó bloqueado dentro de Word y nunca va
+        /// a llegar al Dispose de la sesión.
+        /// </summary>
+        private static void KillOrphanWinword()
+        {
+            if (WordComSession.LastLaunchedPid is not int pid) return;
+            try
+            {
+                using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                if (!proc.HasExited && proc.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase))
+                {
+                    proc.Kill();
+                    AppLog.Warning("WINWORD colgado (PID {Pid}) terminado por timeout de generación", pid);
+                }
+            }
+            catch (ArgumentException) { /* ya salió */ }
+            catch (Exception ex) { AppLog.Warning(ex, "KillOrphanWinword failed for PID {Pid}", pid); }
+        }
+
         public async Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical, bool exportPdf = false)
         {
             await _retryPolicy.ExecuteAsync(async () =>
@@ -99,6 +120,17 @@ namespace Alquitel.Infrastructure.Services
                 staThread.IsBackground = true;
                 staThread.Start();
 
+                // Sin timeout, un diálogo modal imprevisto de Word (recuperación de
+                // documento, activación) dejaba el hilo STA bloqueado y este await
+                // colgado para siempre con un WINWORD invisible.
+                var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromMinutes(3)));
+                if (completed != tcs.Task)
+                {
+                    KillOrphanWinword();
+                    throw new TimeoutException(
+                        "Word no respondió en 3 minutos y se abortó la generación del documento. " +
+                        "Cerrá cualquier ventana de Word abierta y reintentá.");
+                }
                 await tcs.Task;
             });
         }

@@ -15,7 +15,10 @@ namespace Alquitel.Core.Interfaces.Repositories
         Task<List<Order>> GetRecentAsync(int count);
         Task<Order?> GetByIdAsync(Guid id);
         Task<Order?> GetByBudgetNumberAsync(string budgetNumber);
-        Task UpsertAsync(Order order);
+        // Nota: el guardado de órdenes pasa EXCLUSIVAMENTE por IOrderPersistenceService
+        // (resolución de cliente/ubicación, transacción, renumeración y concurrencia).
+        // El UpsertAsync que vivía acá era un segundo camino de guardado sin esas
+        // garantías y sin callers; se eliminó para que no vuelva a usarse por error.
 
         /// <summary>
         /// Todos los números de presupuesto existentes (incluye archivados). Base para

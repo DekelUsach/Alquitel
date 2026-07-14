@@ -4,10 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Alquitel.Core.Entities;
+using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
 using Alquitel.Core.Parsing;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using A = DocumentFormat.OpenXml.Drawing;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Alquitel.Infrastructure.Services
@@ -33,17 +37,31 @@ namespace Alquitel.Infrastructure.Services
                 if (!File.Exists(templatePath))
                     throw new FileNotFoundException("No se encontró la plantilla.", templatePath);
 
-                File.Copy(templatePath, outputPath, overwrite: true);
-
-                using (var doc = WordprocessingDocument.Open(outputPath, isEditable: true))
+                // Se trabaja sobre un temporal y se mueve al final: editar in-place sobre
+                // outputPath dejaba un .docx corrupto en la carpeta del usuario (que
+                // PresupuestosView cataloga como válido) si algo fallaba a mitad.
+                string tempPath = Path.Combine(Path.GetTempPath(), $"alquitel_oxml_{Guid.NewGuid():N}.docx");
+                try
                 {
-                    var body = doc.MainDocumentPart?.Document.Body
-                        ?? throw new InvalidOperationException("La plantilla no tiene cuerpo de documento.");
+                    File.Copy(templatePath, tempPath, overwrite: true);
 
-                    ReplacePlaceholders(doc, order, isTechnical);
-                    RenderProducts(body, order, isTechnical);
+                    using (var doc = WordprocessingDocument.Open(tempPath, isEditable: true))
+                    {
+                        var body = doc.MainDocumentPart?.Document.Body
+                            ?? throw new InvalidOperationException("La plantilla no tiene cuerpo de documento.");
 
-                    doc.MainDocumentPart.Document.Save();
+                        ReplacePlaceholders(doc, order, isTechnical);
+                        RenderProducts(doc, body, order, isTechnical);
+
+                        doc.MainDocumentPart!.Document.Save();
+                    }
+
+                    File.Move(tempPath, outputPath, overwrite: true);
+                }
+                finally
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                    catch (Exception ex) { AppLog.Warning(ex, "No se pudo borrar el temporal {Temp}", tempPath); }
                 }
 
                 if (exportPdf)
@@ -94,11 +112,11 @@ namespace Alquitel.Infrastructure.Services
                 ["{{CONTACTO}}"] = contacto,
                 ["{{COMENTARIOS}}"] = order.Comments ?? string.Empty,
                 ["{{DIRECCION}}"] = string.Empty,
-                ["{{SUBTOTAL}}"] = order.Total.ToString("C"),
-                ["{{DESCUENTO}}"] = order.DiscountValue > 0 ? $"-{order.DiscountValue.ToString("C")}" : string.Empty,
-                ["{{IVA}}"] = order.AddVat ? order.VatValue.ToString("C") : string.Empty,
-                ["{{TOTAL}}"] = order.GrandTotal.ToString("C"),
-                ["{{TOTAL_FINAL}}"] = order.GrandTotal.ToString("C"),
+                ["{{SUBTOTAL}}"] = MoneyFormatter.Currency(order.Total),
+                ["{{DESCUENTO}}"] = order.DiscountValue > 0 ? $"-{MoneyFormatter.Currency(order.DiscountValue)}" : string.Empty,
+                ["{{IVA}}"] = order.AddVat ? MoneyFormatter.Currency(order.VatValue) : string.Empty,
+                ["{{TOTAL}}"] = MoneyFormatter.Currency(order.GrandTotal),
+                ["{{TOTAL_FINAL}}"] = MoneyFormatter.Currency(order.GrandTotal),
             };
 
             foreach (var part in EnumerateTextParts(doc))
@@ -134,27 +152,62 @@ namespace Alquitel.Infrastructure.Services
                 foreach (var (key, value) in map)
                     full = full.Replace(key, value);
 
-                texts[0].Text = full;
-                texts[0].Space = SpaceProcessingModeValues.Preserve;
+                SetRunText(texts[0], full);
                 for (int i = 1; i < texts.Count; i++)
                     texts[i].Text = string.Empty;
             }
         }
 
+        /// <summary>
+        /// Vuelca texto (posiblemente multilínea) al run del W.Text dado. Un '\n' dentro
+        /// de un W.Text no genera salto en Word: los valores multilínea (ej. Comments
+        /// en {{COMENTARIOS}}) necesitan elementos W.Break entre líneas.
+        /// </summary>
+        private static void SetRunText(W.Text target, string value)
+        {
+            value = value.Replace("\r\n", "\n");
+            if (!value.Contains('\n'))
+            {
+                target.Text = value;
+                target.Space = SpaceProcessingModeValues.Preserve;
+                return;
+            }
+
+            if (target.Parent is not W.Run run)
+            {
+                target.Text = value.Replace('\n', ' ');
+                target.Space = SpaceProcessingModeValues.Preserve;
+                return;
+            }
+
+            var props = run.RunProperties?.CloneNode(true);
+            run.RemoveAllChildren();
+            if (props != null) run.AppendChild(props);
+
+            var lines = value.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) run.AppendChild(new W.Break());
+                run.AppendChild(new W.Text(lines[i]) { Space = SpaceProcessingModeValues.Preserve });
+            }
+        }
+
         // ── Render de productos ({{PRODUCTOS_AQUI}}) ─────────────────
 
-        private static void RenderProducts(W.Body body, Order order, bool isTechnical)
+        private static void RenderProducts(WordprocessingDocument doc, W.Body body, Order order, bool isTechnical)
         {
             var marker = body.Descendants<W.Paragraph>()
                 .FirstOrDefault(p => string.Concat(p.Descendants<W.Text>().Select(t => t.Text))
                     .Contains("{{PRODUCTOS_AQUI}}"));
             if (marker == null) return;
 
+            uint drawingId = 9000; // IDs únicos para los DocProperties de las imágenes
             var cursor = (OpenXmlElement)marker;
             foreach (var item in order.Items)
             {
                 // Título con estilos BBCode del snapshot
                 var title = new W.Paragraph(new W.ParagraphProperties(
+                    new W.Indentation { Left = "1077" }, // 1.9 cm, mismo margen que el motor COM
                     new W.SpacingBetweenLines { After = "120", Before = "160" }));
                 foreach (var seg in TagParser.Parse(item.DescriptionSnapshot ?? item.Product?.Description, defaultBold: true))
                 {
@@ -166,6 +219,20 @@ namespace Alquitel.Infrastructure.Services
                     title.AppendChild(MakeRun(text,
                         bold: true, italic: seg.Italic, underline: seg.Underline,
                         colorHex: seg.ColorHex, size: 24));
+                }
+
+                // Miniatura flotante anclada al título (detrás del texto, en el margen que
+                // deja la sangría de 1.9 cm), paridad con Shapes.AddPicture del motor COM.
+                if (!string.IsNullOrEmpty(item.ImagePath) && File.Exists(item.ImagePath))
+                {
+                    try
+                    {
+                        title.AppendChild(BuildFloatingImageRun(doc.MainDocumentPart!, item.ImagePath, ++drawingId));
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warning(ex, "Best-effort image insert (OpenXML) failed for {ImagePath}", item.ImagePath);
+                    }
                 }
                 cursor = InsertAfter(cursor, title);
 
@@ -239,7 +306,7 @@ namespace Alquitel.Infrastructure.Services
             foreach (var text in new[]
                      {
                          item.Quantity.ToString(), item.Dias.ToString(),
-                         item.UnitPrice.ToString("C"), item.Total.ToString("C")
+                         MoneyFormatter.Currency(item.UnitPrice), MoneyFormatter.Currency(item.Total)
                      })
             {
                 var p = new W.Paragraph(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center }));
@@ -273,13 +340,92 @@ namespace Alquitel.Infrastructure.Services
             if (underline) props.AppendChild(new W.Underline { Val = W.UnderlineValues.Single });
             props.AppendChild(new W.Color { Val = (colorHex ?? "#000000").TrimStart('#') });
 
-            return new W.Run(props, new W.Text(text) { Space = SpaceProcessingModeValues.Preserve });
+            var run = new W.Run(props);
+            // '\n' embebido (notas técnicas, comentarios) no genera salto dentro de un
+            // W.Text: cada línea va en su propio W.Text separado por W.Break.
+            var lines = text.Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) run.AppendChild(new W.Break());
+                run.AppendChild(new W.Text(lines[i]) { Space = SpaceProcessingModeValues.Preserve });
+            }
+            return run;
         }
 
         private static OpenXmlElement InsertAfter(OpenXmlElement anchor, OpenXmlElement element)
         {
             anchor.InsertAfterSelf(element);
             return element;
+        }
+
+        // ── Imagen flotante (paridad con el motor COM) ───────────────
+
+        private const long ImageSizeEmu = 576000L; // 1.6 cm (1 cm = 360.000 EMU)
+
+        private static PartTypeInfo ImagePartTypeFor(string path) =>
+            Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".png" => ImagePartType.Png,
+                ".jpg" or ".jpeg" => ImagePartType.Jpeg,
+                ".gif" => ImagePartType.Gif,
+                ".bmp" => ImagePartType.Bmp,
+                _ => ImagePartType.Png,
+            };
+
+        /// <summary>
+        /// Run con un wp:anchor flotante: imagen de 1.6×1.6 cm detrás del texto
+        /// (behindDoc, equivalente al wdWrapBehind del motor COM), anclada al párrafo
+        /// del título en la esquina izquierda de la columna.
+        /// </summary>
+        private static W.Run BuildFloatingImageRun(MainDocumentPart mainPart, string imagePath, uint drawingId)
+        {
+            var imagePart = mainPart.AddImagePart(ImagePartTypeFor(imagePath));
+            using (var stream = File.OpenRead(imagePath))
+                imagePart.FeedData(stream);
+            string relId = mainPart.GetIdOfPart(imagePart);
+
+            var anchor = new DW.Anchor(
+                new DW.SimplePosition { X = 0L, Y = 0L },
+                new DW.HorizontalPosition(new DW.PositionOffset("0"))
+                { RelativeFrom = DW.HorizontalRelativePositionValues.Column },
+                new DW.VerticalPosition(new DW.PositionOffset("0"))
+                { RelativeFrom = DW.VerticalRelativePositionValues.Paragraph },
+                new DW.Extent { Cx = ImageSizeEmu, Cy = ImageSizeEmu },
+                new DW.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
+                new DW.WrapNone(),
+                new DW.DocProperties { Id = drawingId, Name = $"ProductoImg{drawingId}" },
+                new DW.NonVisualGraphicFrameDrawingProperties(
+                    new A.GraphicFrameLocks { NoChangeAspect = true }),
+                new A.Graphic(
+                    new A.GraphicData(
+                        new PIC.Picture(
+                            new PIC.NonVisualPictureProperties(
+                                new PIC.NonVisualDrawingProperties { Id = 0U, Name = $"ProductoImg{drawingId}" },
+                                new PIC.NonVisualPictureDrawingProperties()),
+                            new PIC.BlipFill(
+                                new A.Blip { Embed = relId },
+                                new A.Stretch(new A.FillRectangle())),
+                            new PIC.ShapeProperties(
+                                new A.Transform2D(
+                                    new A.Offset { X = 0L, Y = 0L },
+                                    new A.Extents { Cx = ImageSizeEmu, Cy = ImageSizeEmu }),
+                                new A.PresetGeometry(new A.AdjustValueList())
+                                { Preset = A.ShapeTypeValues.Rectangle })))
+                    { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))
+            {
+                DistanceFromTop = 0U,
+                DistanceFromBottom = 0U,
+                DistanceFromLeft = 0U,
+                DistanceFromRight = 0U,
+                SimplePos = false,
+                RelativeHeight = 0U,
+                BehindDoc = true, // detrás del texto, como wdWrapBehind en COM
+                Locked = false,
+                LayoutInCell = true,
+                AllowOverlap = true,
+            };
+
+            return new W.Run(new W.Drawing(anchor));
         }
 
         private static List<CustomFieldDefinition> DeserializeFields(string? json)

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Alquitel.Core.Entities;
+using Alquitel.Core.Helpers;
 using Alquitel.Core.Parsing;
 
 namespace Alquitel.Infrastructure.Services.WordInterop
@@ -64,13 +65,13 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             // ── Motor comercial: totales con descuento e IVA ──────────
             // Solo tienen efecto si la plantilla incluye los tags; una plantilla vieja
             // sin ellos sigue imprimiendo el total por producto como siempre.
-            ReplaceText(doc, "{{SUBTOTAL}}", order.Total.ToString("C"));
+            ReplaceText(doc, "{{SUBTOTAL}}", MoneyFormatter.Currency(order.Total));
             ReplaceText(doc, "{{DESCUENTO}}", order.DiscountValue > 0
-                ? $"-{order.DiscountValue.ToString("C")}"
+                ? $"-{MoneyFormatter.Currency(order.DiscountValue)}"
                 : string.Empty);
-            ReplaceText(doc, "{{IVA}}", order.AddVat ? order.VatValue.ToString("C") : string.Empty);
-            ReplaceText(doc, "{{TOTAL}}", order.GrandTotal.ToString("C"));
-            ReplaceText(doc, "{{TOTAL_FINAL}}", order.GrandTotal.ToString("C"));
+            ReplaceText(doc, "{{IVA}}", order.AddVat ? MoneyFormatter.Currency(order.VatValue) : string.Empty);
+            ReplaceText(doc, "{{TOTAL}}", MoneyFormatter.Currency(order.GrandTotal));
+            ReplaceText(doc, "{{TOTAL_FINAL}}", MoneyFormatter.Currency(order.GrandTotal));
 
             ReplaceBookmark(doc, "BK_CLIENT_NAME",  order.Client?.CompanyName ?? "N/A");
             ReplaceBookmark(doc, "BK_CUIT",         order.Client?.Cuit ?? "N/A");
@@ -79,7 +80,7 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             ReplaceBookmark(doc, "BK_BUDGET_NUM",   order.BudgetNumber);
 
             string descriptionProducts = string.Join("\n", order.Items.Select(i =>
-                $"- {i.Quantity}x {TagParser.StripTags(i.DescriptionSnapshot ?? i.Product?.Description) ?? "Equipamiento"} | Subtotal: {i.Total:C}"));
+                $"- {i.Quantity}x {TagParser.StripTags(i.DescriptionSnapshot ?? i.Product?.Description) ?? "Equipamiento"} | Subtotal: {MoneyFormatter.Currency(i.Total)}"));
             ReplaceText(doc, "(productos elegidos con sus descripciones, y el valor total)", descriptionProducts);
 
             if (doc.Bookmarks.Exists("BK_EQUIPMENT_TABLE"))
@@ -95,8 +96,8 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
                     if (!isTechnical)
                     {
-                        row.Cells[3].Range.Text = item.UnitPrice.ToString("C");
-                        row.Cells[4].Range.Text = item.Total.ToString("C");
+                        row.Cells[3].Range.Text = MoneyFormatter.Currency(item.UnitPrice);
+                        row.Cells[4].Range.Text = MoneyFormatter.Currency(item.Total);
                     }
                     else
                     {

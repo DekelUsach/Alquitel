@@ -57,6 +57,22 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                 .ToListAsync();
         }
 
+        /// <summary>
+        /// Fin (exclusivo) del rango comprometido de un ítem: lo que sea MAYOR entre
+        /// EventDate + Dias del ítem y EventEndDate + 1 de la orden. Eventos multi-día
+        /// con Dias=1 subestimaban el conflicto antes de considerar EventEndDate.
+        /// </summary>
+        private static DateTime CommitmentEnd(DateTime start, DateTime? eventEndDate, int dias)
+        {
+            var byDias = start.AddDays(Math.Max(1, dias));
+            if (eventEndDate is DateTime end && end.Date >= start)
+            {
+                var byEndDate = end.Date.AddDays(1); // EventEndDate es inclusivo
+                return byEndDate > byDias ? byEndDate : byDias;
+            }
+            return byDias;
+        }
+
         public async Task<int> GetCommittedQuantityAsync(Guid productId, DateTime from, DateTime to, Guid excludeOrderId)
         {
             using var db = await _factory.CreateDbContextAsync();
@@ -75,14 +91,14 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                          o.Status == OrderStatus.SentToOT)),
                     i => i.OrderId,
                     o => o.Id,
-                    (i, o) => new { o.EventDate, i.Dias, i.Quantity })
+                    (i, o) => new { o.EventDate, o.EventEndDate, i.Dias, i.Quantity })
                 .ToListAsync();
 
             return candidates
                 .Where(c =>
                 {
                     var start = c.EventDate!.Value.Date;
-                    var end = start.AddDays(Math.Max(1, c.Dias));
+                    var end = CommitmentEnd(start, c.EventEndDate, c.Dias);
                     return start < to && end > from;
                 })
                 .Sum(c => c.Quantity);
@@ -104,7 +120,7 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                          o.Status == OrderStatus.SentToOT)),
                     i => i.OrderId,
                     o => o.Id,
-                    (i, o) => new { o.Id, o.BudgetNumber, o.ClientId, o.EventDate, i.Dias, i.Quantity })
+                    (i, o) => new { o.Id, o.BudgetNumber, o.ClientId, o.EventDate, o.EventEndDate, i.Dias, i.Quantity })
                 .ToListAsync();
 
             var clientIds = candidates.Select(c => c.ClientId).Distinct().ToList();
@@ -116,7 +132,7 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
                 .Select(c =>
                 {
                     var start = c.EventDate!.Value.Date;
-                    var end = start.AddDays(Math.Max(1, c.Dias));
+                    var end = CommitmentEnd(start, c.EventEndDate, c.Dias);
                     return new ProductCommitment(c.Id, c.BudgetNumber,
                         clientNames.GetValueOrDefault(c.ClientId), start, end, c.Quantity);
                 })
@@ -149,25 +165,5 @@ namespace Alquitel.Infrastructure.Persistence.Repositories
             return new UserOrderStats(count, total, last.CreatedDate, last.BudgetNumber);
         }
 
-        public async Task UpsertAsync(Order order)
-        {
-            using var db = await _factory.CreateDbContextAsync();
-            var existing = await db.Orders.IgnoreQueryFilters()
-                .Include(o => o.Items)
-                .FirstOrDefaultAsync(o => o.Id == order.Id);
-
-            if (existing == null)
-            {
-                db.Orders.Add(order);
-            }
-            else
-            {
-                db.Entry(existing).CurrentValues.SetValues(order);
-                // Sincronización simple de items: reemplaza la colección completa.
-                db.RemoveRange(existing.Items);
-                existing.Items = order.Items;
-            }
-            await db.SaveChangesAsync();
-        }
     }
 }

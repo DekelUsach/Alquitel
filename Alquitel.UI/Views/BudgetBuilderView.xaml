@@ -236,6 +236,10 @@
                             </Button>
                             <ProgressBar Height="3" Margin="0,6,0,0" IsIndeterminate="True"
                                          Visibility="{Binding IsAiParsing, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <Button Height="26" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                    Content="Cancelar análisis" FontSize="11"
+                                    Command="{Binding CancelAiParseCommand}"
+                                    Visibility="{Binding IsAiParsing, Converter={StaticResource BoolToVisibilityConverter}}"/>
                         </StackPanel>
                     </Border>
 
@@ -855,6 +859,17 @@
                                     <TextBlock Text="&#xE715;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                                VerticalAlignment="Center" Margin="0,0,8,0"/>
                                     <TextBlock Text="Enviar por mail" FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Height="40" Style="{StaticResource GhostButton}" Margin="0,8,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding CopyApprovalLinkCommand}"
+                                    AutomationProperties.Name="Copiar link de aprobación del presupuesto"
+                                    ToolTip="Genera un link público para que el cliente apruebe o rechace este presupuesto desde el navegador. El estado se actualiza solo al responder.">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE71B;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Link de aprobación" FontSize="13" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>

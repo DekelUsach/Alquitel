@@ -185,8 +185,8 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
             string c1 = $"Cant.:  {item.Quantity}";
             string c2 = $"Días:  {item.Dias}";
-            string c3 = isTechnical ? "Costo U.:     -----" : $"Costo U.:  {(item.UnitPrice == 0 ? "   -----" : item.UnitPrice.ToString("N0", new System.Globalization.CultureInfo("es-AR")))}";
-            string c4 = isTechnical ? "Total: -----" : $"Total: $   {item.Total.ToString("N0", new System.Globalization.CultureInfo("es-AR"))}";
+            string c3 = isTechnical ? "Costo U.:     -----" : $"Costo U.:  {(item.UnitPrice == 0 ? "   -----" : Alquitel.Core.Helpers.MoneyFormatter.WholeNumber(item.UnitPrice))}";
+            string c4 = isTechnical ? "Total: -----" : $"Total: $   {Alquitel.Core.Helpers.MoneyFormatter.WholeNumber(item.Total)}";
 
             string[] cells = { c1, c2, c3, c4 };
             for (int c = 1; c <= 4; c++)

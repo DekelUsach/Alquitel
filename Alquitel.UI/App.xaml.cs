@@ -53,6 +53,10 @@ namespace Alquitel.UI
                 var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
                 backupService.Start();
 
+                // Reintento en segundo plano de órdenes que quedaron sin persistir
+                // (outbox offline): primer intento al minuto, luego cada 5.
+                ServiceProvider.GetRequiredService<OrderOutboxService>().Start();
+
                 // ── Login multi-usuario ──────────────────────────────────
                 // Bloquea hasta elegir usuario (y contraseña si tiene). Cancelar = salir.
                 // Se cambia temporalmente a OnExplicitShutdown para evitar que la aplicación se cierre al cerrar la ventana de login
@@ -191,6 +195,11 @@ namespace Alquitel.UI
             services.AddSingleton<IOrderPersistenceService, OrderPersistenceService>();
             services.AddSingleton<IDraftService, DraftService>();
 
+            // Outbox offline: órdenes que no pudieron guardarse (sin internet en modo
+            // servidor) quedan encoladas en disco y se reintentan en segundo plano.
+            services.AddSingleton<OrderOutboxService>();
+            services.AddSingleton<IOrderOutboxService>(sp => sp.GetRequiredService<OrderOutboxService>());
+
             // Borradores de correo con Outlook COM (botón "Enviar por mail").
             services.AddSingleton<IEmailService, OutlookEmailService>();
 
@@ -220,6 +229,13 @@ namespace Alquitel.UI
                 configuration["Database:Supabase:Url"],
                 configuration["Database:Supabase:AnonKey"],
                 configuration["Database:Supabase:ServiceKey"]));
+
+            // Portal de aprobación por link (§4 PENDING_FEATURES): genera la URL pública
+            // de la Edge Function "aprobar". Requiere la Url de Supabase; sin ella el
+            // botón queda deshabilitado. Ver docs/APPROVAL_PORTAL.md.
+            services.AddSingleton<IApprovalLinkService>(sp => new EfApprovalLinkService(
+                sp.GetRequiredService<IDbContextFactory<AlquitelDbContext>>(),
+                configuration["Database:Supabase:Url"]));
 
             // Sincronización remota: con provider "supabase" el servicio prueba conexión
             // real y permite subir la base local histórica; con "sqlite" queda el no-op.

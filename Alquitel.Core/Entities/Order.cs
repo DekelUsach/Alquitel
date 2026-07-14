@@ -56,6 +56,15 @@ namespace Alquitel.Core.Entities
 
         public List<OrderItem> Items { get; set; } = new();
 
+        /// <summary>
+        /// Token de concurrencia optimista (rota en cada guardado). Con la base compartida
+        /// (Supabase) dos usuarios pueden editar la misma orden: si al guardar el valor en
+        /// la base ya no coincide con el que se cargó, hubo edición concurrente y el
+        /// guardado se rechaza en vez de pisar silenciosamente. Guid.Empty en filas
+        /// legadas = sin control (se acepta el guardado).
+        /// </summary>
+        public Guid RowVersion { get; set; } = Guid.NewGuid();
+
         // ── Motor comercial ──────────────────────────────────────────
         /// <summary>Alícuota de IVA general vigente en Argentina.</summary>
         public const decimal VatRate = 0.21m;

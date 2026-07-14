@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace Alquitel.Infrastructure.Services.WordInterop
@@ -10,15 +12,40 @@ namespace Alquitel.Infrastructure.Services.WordInterop
         public dynamic? Document { get; private set; }
         private string? _tempPath;
 
+        // PID del WINWORD.EXE lanzado por esta sesión: red de seguridad para poder
+        // matarlo si Quit() no alcanza (RCWs intermedios vivos, diálogo colgado, etc.).
+        private int? _wordPid;
+
+        /// <summary>
+        /// PID de la última sesión iniciada. WordDocumentService lo usa en el camino de
+        /// timeout, donde el hilo STA quedó bloqueado y nunca ejecuta este Dispose.
+        /// La app genera de a un documento por vez, así que un único slot alcanza.
+        /// </summary>
+        public static int? LastLaunchedPid { get; private set; }
+
+        private static HashSet<int> GetWinwordPids() =>
+            System.Diagnostics.Process.GetProcessesByName("WINWORD")
+                .Select(p => { int id = p.Id; p.Dispose(); return id; })
+                .ToHashSet();
+
         public void Initialize()
         {
             Type? wordType = Type.GetTypeFromProgID("Word.Application");
             if (wordType == null)
                 throw new Exception("Microsoft Word no está instalado o no está registrado correctamente en este sistema.");
 
+            var pidsBefore = GetWinwordPids();
+
             WordApp = Activator.CreateInstance(wordType);
             if (WordApp == null)
                 throw new Exception("No se pudo iniciar la instancia de Microsoft Word.");
+
+            try
+            {
+                _wordPid = GetWinwordPids().Except(pidsBefore).Cast<int?>().FirstOrDefault();
+                LastLaunchedPid = _wordPid;
+            }
+            catch (Exception ex) { AppLog.Warning(ex, "Could not capture WINWORD PID"); }
 
             WordApp.Visible = false;
             WordApp.DisplayAlerts = 0;       // wdAlertsNone
@@ -114,6 +141,35 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 try { WordApp.Quit(); } catch (Exception ex) { AppLog.Warning(ex, "Failed to quit Word application"); }
                 try { Marshal.ReleaseComObject(WordApp); } catch (Exception ex) { AppLog.Warning(ex, "Failed to release Word COM object"); }
                 WordApp = null;
+            }
+
+            // El pipeline (PlaceholderReplacer/ProductRenderer) crea RCWs intermedios vía
+            // dynamic (StoryRanges, Find, Tables, Shapes...) imposibles de liberar uno a
+            // uno. Mientras el CLR los retenga, WINWORD.EXE puede sobrevivir a Quit():
+            // forzar la colección finaliza esos RCWs y suelta sus referencias COM.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            // Red de seguridad final: si el proceso de esta sesión sigue vivo, matarlo
+            // para no acumular WINWORD huérfanos en el equipo del usuario.
+            if (_wordPid is int pid)
+            {
+                try
+                {
+                    using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                    if (!proc.HasExited && proc.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!proc.WaitForExit(3000))
+                        {
+                            proc.Kill();
+                            AppLog.Warning("WINWORD huérfano (PID {Pid}) terminado a la fuerza tras Quit()", pid);
+                        }
+                    }
+                }
+                catch (ArgumentException) { /* el proceso ya salió */ }
+                catch (Exception ex) { AppLog.Warning(ex, "No se pudo verificar/terminar WINWORD PID {Pid}", pid); }
+                _wordPid = null;
             }
 
             if (_tempPath != null)

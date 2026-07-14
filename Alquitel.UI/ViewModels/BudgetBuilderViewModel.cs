@@ -43,6 +43,8 @@ namespace Alquitel.UI.ViewModels
         private readonly IEmailService _emailService;
         private readonly IOrderAuditService _auditService;
         private readonly IAiTextAssistant _aiAssistant;
+        private readonly IOrderOutboxService _orderOutbox;
+        private readonly IApprovalLinkService _approvalLinkService;
 
         [ObservableProperty]
         private string _searchText = string.Empty;
@@ -191,8 +193,10 @@ namespace Alquitel.UI.ViewModels
         // repetirla en cada navegación al armador sería intrusivo.
         private static bool _draftRecoveryOffered;
 
-        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService, ICurrentUserService currentUserService, Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository, ITemplateStorageService templateStorage, IAiOrderParser aiOrderParser, IOrderPersistenceService orderPersistence, IDraftService draftService, IToastService toastService, IEmailService emailService, IOrderAuditService auditService, IAiTextAssistant aiAssistant)
+        public BudgetBuilderViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, IAppSettings appSettings, IDialogService dialogService, ICurrentUserService currentUserService, Alquitel.Core.Interfaces.Repositories.IOrderRepository orderRepository, ITemplateStorageService templateStorage, IAiOrderParser aiOrderParser, IOrderPersistenceService orderPersistence, IDraftService draftService, IToastService toastService, IEmailService emailService, IOrderAuditService auditService, IAiTextAssistant aiAssistant, IOrderOutboxService orderOutbox, IApprovalLinkService approvalLinkService)
         {
+            _approvalLinkService = approvalLinkService;
+            _orderOutbox = orderOutbox;
             _toastService = toastService;
             _emailService = emailService;
             _auditService = auditService;
@@ -334,6 +338,9 @@ namespace Alquitel.UI.ViewModels
                 DiscountPercent = draft.DiscountPercent,
                 DiscountAmount = draft.DiscountAmount,
                 AddVat = draft.AddVat,
+                // Drafts viejos sin RowVersion deserializan Guid.Empty: el chequeo de
+                // concurrencia se saltea para ellos (comportamiento legado).
+                RowVersion = draft.RowVersion,
                 Client = new Client { CompanyName = draft.ClientName ?? string.Empty, Cuit = draft.ClientCuit ?? string.Empty },
                 Location = new Location { Name = draft.LocationName ?? string.Empty },
             };
@@ -368,6 +375,10 @@ namespace Alquitel.UI.ViewModels
         {
             _autosaveCts?.Cancel();
             _autosaveCts?.Dispose();
+            _stockRefreshCts?.Cancel();
+            _stockRefreshCts?.Dispose();
+            _aiParseCts?.Cancel();
+            _aiParseCts?.Dispose();
         }
 
         public int GetSelectedQuantity(Guid productId)
@@ -644,6 +655,13 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void ToggleSmartSearchInput() => IsSmartSearchVisible = !IsSmartSearchVisible;
 
+        // CTS del análisis con IA en curso (pedido automático). Ver CancelAiParse.
+        private CancellationTokenSource? _aiParseCts;
+
+        /// <summary>Corta el análisis con IA en curso; el flujo cae al motor local.</summary>
+        [RelayCommand]
+        private void CancelAiParse() => _aiParseCts?.Cancel();
+
         // ── Escalabilidad del pedido automático con IA ──────────────────
         // Con catálogos grandes no se manda todo a la IA: se preseleccionan candidatos
         // con el motor local (tokens + trigramas) y la IA solo desambigua entre ellos.
@@ -687,6 +705,12 @@ namespace Alquitel.UI.ViewModels
 
             if (_aiOrderParser.IsConfigured)
             {
+                // Cancelable: el peor caso de la IA son ~90 s (dos modelos con timeout
+                // de 45 s); el usuario puede cortar y caer al motor local al instante.
+                _aiParseCts?.Cancel();
+                _aiParseCts = new CancellationTokenSource();
+                var aiToken = _aiParseCts.Token;
+
                 IsAiParsing = true;
                 try
                 {
@@ -704,7 +728,7 @@ namespace Alquitel.UI.ViewModels
                         })
                         .ToList();
 
-                    var result = await _aiOrderParser.ParseOrderAsync(SmartSearchText, catalog);
+                    var result = await _aiOrderParser.ParseOrderAsync(SmartSearchText, catalog, aiToken);
                     if (result != null)
                     {
                         foreach (var item in result.Items)
@@ -716,6 +740,10 @@ namespace Alquitel.UI.ViewModels
                         unmatched.AddRange(result.Unmatched);
                         aiSucceeded = resolved.Count > 0 || unmatched.Count > 0;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    _toastService.ShowInfo("Análisis con IA cancelado — se usa el motor local.");
                 }
                 catch (Exception ex)
                 {
@@ -840,6 +868,12 @@ namespace Alquitel.UI.ViewModels
 
                 if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
 
+                // Pre-chequeo de numeración: si otro usuario ya usó este número desde que
+                // se asignó acá, renumerar ANTES de generar el documento (así el .docx
+                // sale con el número definitivo). La colisión residual dentro de la
+                // ventana de segundos la cubre el retry de OrderPersistenceService.
+                await EnsureBudgetNumberAvailableAsync();
+
                 // El documento lo firma quien está logueado (recuadro celeste del final),
                 // aunque el presupuesto cargado sea histórico de otro empleado.
                 if (_currentUserService.Current != null)
@@ -881,25 +915,57 @@ namespace Alquitel.UI.ViewModels
 
                 // Firma multi-usuario: la primera persistencia registra quién creó la orden.
                 CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
-                bool persisted = await _orderPersistence.PersistAsync(CurrentOrder);
 
-                if (persisted)
+                string numberBeforePersist = CurrentOrder.BudgetNumber;
+                var persistResult = await _orderPersistence.PersistAsync(CurrentOrder);
+
+                if (persistResult == OrderPersistResult.Conflict)
+                {
+                    // Otro usuario guardó esta misma orden desde que se cargó acá.
+                    var overwrite = _dialogService.ShowConfirm(
+                        "Conflicto de edición",
+                        "Otro usuario modificó este presupuesto mientras lo editabas.\n\n" +
+                        "¿Querés PISAR sus cambios con tu versión? (Si elegís No, recargá el " +
+                        "presupuesto desde el historial para ver la versión más nueva.)");
+                    if (overwrite)
+                        persistResult = await _orderPersistence.PersistAsync(CurrentOrder, forceOverwrite: true);
+                }
+
+                if (persistResult == OrderPersistResult.Saved)
                 {
                     _draftService.DeleteDraft(CurrentOrder.Id);
                     LastGeneratedPath = outputPath;
                     SendByEmailCommand.NotifyCanExecuteChanged();
+                    CopyApprovalLinkCommand.NotifyCanExecuteChanged();
                     _ = _auditService.LogAsync(CurrentOrder.Id,
                         $"Documento generado ({templateKind})", fileName);
-                    _toastService.ShowSuccess($"Documento guardado: {fileName}", "Abrir carpeta",
-                        () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""));
+
+                    if (!string.Equals(numberBeforePersist, CurrentOrder.BudgetNumber, StringComparison.Ordinal))
+                    {
+                        // Colisión de numeración con otro usuario: la orden quedó guardada
+                        // con un número nuevo, pero el documento ya salió con el viejo.
+                        OnPropertyChanged(nameof(CurrentOrder));
+                        _dialogService.ShowWarning(
+                            "Número de presupuesto renumerado",
+                            $"El número {numberBeforePersist} ya fue usado por otro usuario. " +
+                            $"La orden se guardó como {CurrentOrder.BudgetNumber}.\n\n" +
+                            "El documento generado todavía muestra el número viejo: " +
+                            "volvé a generarlo para que salga con el número correcto.");
+                    }
+                    else
+                    {
+                        _toastService.ShowSuccess($"Documento guardado: {fileName}", "Abrir carpeta",
+                            () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""));
+                    }
                 }
-                else
+                else if (persistResult == OrderPersistResult.Error)
                 {
+                    _orderOutbox.Enqueue(CurrentOrder);
                     _dialogService.ShowWarning(
                         "Documento generado, persistencia falló",
                         $"El documento se generó correctamente:\n{outputPath}\n\n" +
                         "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
-                        "Revisá el archivo de log para más detalles.");
+                        "Quedó encolada y se reintentará automáticamente cuando vuelva la conexión.");
                 }
             }
             catch (Exception ex)
@@ -976,6 +1042,34 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Verifica que el número del presupuesto actual no esté usado por OTRA orden
+        /// (multi-usuario: alguien pudo tomarlo desde que se asignó). Si está tomado,
+        /// renumera y avisa por toast.
+        /// </summary>
+        private async Task EnsureBudgetNumberAvailableAsync()
+        {
+            if (string.IsNullOrWhiteSpace(CurrentOrder.BudgetNumber)) return;
+            try
+            {
+                var existing = await _orderRepository.GetByBudgetNumberAsync(CurrentOrder.BudgetNumber);
+                if (existing == null || existing.Id == CurrentOrder.Id) return;
+
+                var numbers = await _orderRepository.GetAllBudgetNumbersAsync();
+                var oldNumber = CurrentOrder.BudgetNumber;
+                CurrentOrder.BudgetNumber = BudgetNumberHelper.VersionPart(oldNumber) > 1
+                    ? BudgetNumberHelper.NextVersion(oldNumber, numbers)
+                    : BudgetNumberHelper.NextSerial(numbers);
+                OnPropertyChanged(nameof(CurrentOrder));
+                _toastService.ShowInfo(
+                    $"El número {oldNumber} ya fue usado por otro usuario: este presupuesto pasa a ser el {CurrentOrder.BudgetNumber}.");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "EnsureBudgetNumberAvailableAsync failed");
+            }
+        }
+
         [RelayCommand]
         private async Task CreateNewVersionAsync()
         {
@@ -1001,6 +1095,7 @@ namespace Alquitel.UI.ViewModels
                 // Identidad nueva, contenido idéntico: misma mecánica que "Repetir pedido"
                 // pero conservando cliente, lugar, fecha de evento y la serie del número.
                 CurrentOrder.Id = Guid.NewGuid();
+                CurrentOrder.RowVersion = Guid.NewGuid();
                 CurrentOrder.BudgetNumber = newNumber;
                 CurrentOrder.CreatedDate = DateTime.UtcNow;
                 CurrentOrder.Status = OrderStatus.Draft;
@@ -1040,6 +1135,7 @@ namespace Alquitel.UI.ViewModels
             ApplyLoadedOrder(full);
 
             CurrentOrder.Id = Guid.NewGuid();
+            CurrentOrder.RowVersion = Guid.NewGuid();
             CurrentOrder.BudgetNumber = string.Empty;
             CurrentOrder.CreatedDate = DateTime.UtcNow;
             CurrentOrder.EventDate = null; // el evento nuevo tendrá otra fecha; forzar selección
@@ -1141,6 +1237,7 @@ namespace Alquitel.UI.ViewModels
                 DiscountPercent = full.DiscountPercent,
                 DiscountAmount = full.DiscountAmount,
                 AddVat = full.AddVat,
+                RowVersion = full.RowVersion,
                 Client = full.Client ?? new Client(),
                 Location = full.Location ?? new Location(),
             };
@@ -1197,7 +1294,14 @@ namespace Alquitel.UI.ViewModels
                     continue;
                 }
 
+                // Fin del rango pedido: el mayor entre EventDate + Dias y EventEndDate + 1
+                // (mismo criterio que EfOrderRepository al computar lo comprometido).
                 var end = start.AddDays(Math.Max(1, group.Max(i => i.Dias)));
+                if (CurrentOrder.EventEndDate is DateTime evEnd && evEnd.Date >= start)
+                {
+                    var byEndDate = evEnd.Date.AddDays(1);
+                    if (byEndDate > end) end = byEndDate;
+                }
                 int committed;
                 try
                 {
@@ -1402,6 +1506,45 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        // ── Link de aprobación por web (§4 PENDING_FEATURES) ─────────
+
+        private bool CanCopyApprovalLink() =>
+            _approvalLinkService.IsConfigured && !string.IsNullOrEmpty(LastGeneratedPath);
+
+        /// <summary>
+        /// Genera (o reutiliza) el link público de aprobación del presupuesto actual y
+        /// lo copia al portapapeles para pegarlo en el mail al cliente.
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanCopyApprovalLink))]
+        private async Task CopyApprovalLinkAsync()
+        {
+            try
+            {
+                var url = await _approvalLinkService.CreateApprovalLinkAsync(CurrentOrder.Id);
+                if (url == null)
+                {
+                    _dialogService.ShowWarning("Link de aprobación",
+                        "No se pudo generar el link. Verificá que el presupuesto esté guardado " +
+                        "y que haya conexión con el servidor.");
+                    return;
+                }
+
+                Clipboard.SetText(url);
+                _toastService.ShowSuccess(
+                    "Link de aprobación copiado al portapapeles. Pegalo en el mail al cliente: " +
+                    "cuando apruebe o rechace, el estado del presupuesto se actualiza solo.");
+                // La bitácora es visible para todos los usuarios: registrar el evento sin
+                // la URL (el token dentro de la query ES la autorización del link).
+                _ = _auditService.LogAsync(CurrentOrder.Id, "Link de aprobación generado",
+                    "portal público de aprobación");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "CopyApprovalLinkAsync failed");
+                _dialogService.ShowError("Link de aprobación", ex.Message);
+            }
+        }
+
         private string GetInitials(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return "NA";
@@ -1450,7 +1593,7 @@ namespace Alquitel.UI.ViewModels
             SelectionVersion++;
             OnPropertyChanged(nameof(FinalBudget));
             NotifyCommercialTotals();
-            _ = RefreshStockConflictsAsync();
+            ScheduleStockConflictRefresh();
         }
 
         private void OnSelectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1461,7 +1604,37 @@ namespace Alquitel.UI.ViewModels
                 OnPropertyChanged(nameof(FinalBudget));
                 NotifyCommercialTotals();
                 if (e.PropertyName is nameof(OrderItem.Quantity) or nameof(OrderItem.Dias))
-                    _ = RefreshStockConflictsAsync();
+                    ScheduleStockConflictRefresh();
+            }
+        }
+
+        // ── Debounce del chequeo de stock ────────────────────────────
+        // Cargar una orden de N items dispara N CollectionChanged: sin debounce eso eran
+        // N rondas de queries (una por producto cada una) contra la base — y en modo
+        // servidor, decenas de round-trips de red. Además, sin cancelación una ronda
+        // vieja podía completar DESPUÉS de una nueva y pisar los flags con datos stale.
+        private CancellationTokenSource? _stockRefreshCts;
+
+        private void ScheduleStockConflictRefresh()
+        {
+            _stockRefreshCts?.Cancel();
+            _stockRefreshCts = new CancellationTokenSource();
+            var token = _stockRefreshCts.Token;
+            _ = DebouncedStockRefreshAsync(token);
+        }
+
+        private async Task DebouncedStockRefreshAsync(CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(300, token);
+                var warnings = await RefreshStockConflictsAsync();
+                _ = warnings; // los flags por ítem ya quedaron seteados; el modal solo se usa al generar
+            }
+            catch (TaskCanceledException) { /* llegó un cambio más nuevo */ }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "Debounced stock refresh failed");
             }
         }
 

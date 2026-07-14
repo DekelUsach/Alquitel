@@ -27,11 +27,19 @@ namespace Alquitel.UI.Views
             _userRepository = userRepository;
             InitializeComponent();
 
+            // La carga de usuarios va contra la base (que en modo servidor es Supabase
+            // por internet): hacerla sincrónica en el constructor congelaba la ventana
+            // durante todo el timeout de red. Se carga async al mostrarse.
+            ModeText.Text = "Cargando usuarios…";
+            Loaded += OnLoadedAsync;
+        }
+
+        private async void OnLoadedAsync(object sender, RoutedEventArgs e)
+        {
+            Loaded -= OnLoadedAsync;
             try
             {
-                // Bloqueante a propósito: sin usuarios no hay aplicación que mostrar.
-                // Se usa Task.Run para evitar un deadlock en el hilo de UI de WPF al llamar a GetResult().
-                _users = Task.Run(() => userRepository.GetActiveAsync()).GetAwaiter().GetResult();
+                _users = await _userRepository.GetActiveAsync();
             }
             catch (Exception ex)
             {
@@ -57,14 +65,14 @@ namespace Alquitel.UI.Views
             HideError();
         }
 
-        private void PasswordInput_KeyDown(object sender, KeyEventArgs e)
+        private async void PasswordInput_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter) TryLogin();
+            if (e.Key == Key.Enter) await TryLoginAsync();
         }
 
-        private void Login_Click(object sender, RoutedEventArgs e) => TryLogin();
+        private async void Login_Click(object sender, RoutedEventArgs e) => await TryLoginAsync();
 
-        private void TryLogin()
+        private async Task TryLoginAsync()
         {
             var user = SelectedUser;
             if (user == null)
@@ -96,7 +104,7 @@ namespace Alquitel.UI.Views
                 user.PasswordHash = PasswordHasher.Hash(prompt.Password);
                 try
                 {
-                    Task.Run(() => _userRepository.UpsertAsync(user)).GetAwaiter().GetResult();
+                    await _userRepository.UpsertAsync(user);
                 }
                 catch (Exception ex)
                 {

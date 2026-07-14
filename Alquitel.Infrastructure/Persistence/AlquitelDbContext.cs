@@ -12,6 +12,7 @@ namespace Alquitel.Infrastructure.Persistence
         public DbSet<OrderItem> OrderItems { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<OrderAuditEvent> OrderAuditEvents { get; set; }
+        public DbSet<OrderApproval> OrderApprovals { get; set; }
 
         public AlquitelDbContext(DbContextOptions<AlquitelDbContext> options) : base(options) { }
 
@@ -23,6 +24,9 @@ namespace Alquitel.Infrastructure.Persistence
             modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique().HasFilter("\"Cuit\" <> ''");
             modelBuilder.Entity<Order>().HasIndex(o => o.BudgetNumber).IsUnique();
             modelBuilder.Entity<User>().HasIndex(u => u.Name).IsUnique();
+            // El token ES la autorización del link público de aprobación: único siempre.
+            modelBuilder.Entity<OrderApproval>().HasIndex(a => a.Token).IsUnique();
+            modelBuilder.Entity<OrderApproval>().HasIndex(a => a.OrderId);
 
             // ── Performance indices ──────────────────────────────
             modelBuilder.Entity<Order>().HasIndex(o => o.CreatedDate);
