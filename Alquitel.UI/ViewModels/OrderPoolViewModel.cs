@@ -168,8 +168,13 @@ namespace Alquitel.UI.ViewModels
                 || row.AdminName.Contains(text, StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>True mientras se cargan las órdenes: la vista muestra skeleton rows.</summary>
+        [ObservableProperty]
+        private bool _isLoading;
+
         public async Task InitializeAsync()
         {
+            IsLoading = true;
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -193,6 +198,10 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "OrderPool InitializeAsync failed");
                 StatusMessage = $"Error al cargar las órdenes: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
             }
         }
 
@@ -263,6 +272,20 @@ namespace Alquitel.UI.ViewModels
                 $"{e.Timestamp.ToLocalTime():dd/MM/yyyy HH:mm}  ·  {e.UserName}  ·  {e.EventType}" +
                 (string.IsNullOrWhiteSpace(e.Detail) ? "" : $"\n      {e.Detail}"));
             _dialogService.ShowInfo($"Historial de {row.BudgetNumber}", string.Join("\n\n", lines));
+        }
+
+        /// <summary>
+        /// Repetir pedido: abre el armador con una COPIA de la orden (mismos productos y
+        /// cliente, número/fechas en blanco, precios actualizados al catálogo vigente).
+        /// El caso de uso estrella con clientes recurrentes: "lo mismo del año pasado".
+        /// </summary>
+        [RelayCommand]
+        private async Task RepeatOrderAsync(OrderPoolRow? row)
+        {
+            if (row == null) return;
+            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            await builder.LoadOrderCopyByIdAsync(row.OrderId);
+            _navigationService.NavigateTo(builder);
         }
 
         /// <summary>Abre la orden en el armador de presupuestos para editarla.</summary>

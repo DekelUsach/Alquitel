@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Alquitel.UI.ViewModels"
         xmlns:views="clr-namespace:Alquitel.UI.Views"
-        Title="Grupo Alquitel - Sistema Administrativo" Height="900" Width="1440"
+        Title="Grupo Alquitel - Sistema Administrativo" Icon="/Assets/app.ico" Height="900" Width="1440"
         MinHeight="600" MinWidth="1000"
         ResizeMode="CanResize"
         FontFamily="{StaticResource AppFontFamily}"
@@ -132,20 +132,12 @@
                 </Grid.RowDefinitions>
 
                 <!-- Marca -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="20,22,0,10">
-                    <Border Width="40" Height="40" CornerRadius="13"
-                            Background="{DynamicResource BrandGradientBrush}">
-                        <Path Data="{StaticResource BrandMarkGeometry}" Fill="White"
-                              Width="26" Height="26" Stretch="Uniform"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
-                        <TextBlock Text="ALQUITEL" FontSize="15" FontWeight="Black"
-                                   FontFamily="{StaticResource AppDisplayFontFamily}"
-                                   Foreground="{DynamicResource TextBrush}"/>
-                        <TextBlock Text="Gestión Corporativa" FontSize="10"
-                                   Foreground="{DynamicResource MutedTextBrush}"/>
-                    </StackPanel>
+                <StackPanel Grid.Row="0" Margin="20,22,16,14">
+                    <Image Source="/Assets/logo.png" Height="42" Stretch="Uniform"
+                           HorizontalAlignment="Left" SnapsToDevicePixels="True"/>
+                    <TextBlock Text="GESTIÓN CORPORATIVA" FontSize="9.5" FontWeight="Bold"
+                               Foreground="{DynamicResource MutedTextBrush}" Opacity="0.8"
+                               Margin="2,7,0,0"/>
                 </StackPanel>
 
                 <!-- Menú -->
@@ -217,7 +209,7 @@
                             </Button.Style>
                         </Button>
 
-                        <Button Tag="&#xE9D9;" Content="Reportes" ToolTip="Facturación y rentabilidad (Ctrl+8)"
+                        <Button Tag="&#xE9D2;" Content="Reportes" ToolTip="Facturación y rentabilidad (Ctrl+8)"
                                 Command="{Binding NavigateToReportsCommand}"
                                 Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
@@ -233,7 +225,7 @@
                             </Button.Style>
                         </Button>
 
-                        <Button Tag="&#xE9F5;" Content="Órdenes de Trabajo" ToolTip="Ver y previsualizar las OT generadas"
+                        <Button Tag="&#xE90F;" Content="Órdenes de Trabajo" ToolTip="Ver y previsualizar las OT generadas"
                                 Command="{Binding NavigateToWorkOrdersCommand}"
                                 Visibility="{Binding CanSeeWorkOrders, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
@@ -249,12 +241,11 @@
                             </Button.Style>
                         </Button>
 
-                        <TextBlock Text="CATÁLOGO" Style="{StaticResource NavGroupLabel}"
-                                   Visibility="{Binding IsCommercial, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="CATÁLOGO" Style="{StaticResource NavGroupLabel}"/>
 
-                        <Button Tag="&#xE7BF;" Content="Productos" ToolTip="Gestión de productos (Ctrl+3)"
+                        <Button Tag="&#xE7B8;" Content="Productos" ToolTip="Gestión de productos (Ctrl+3)"
                                 Command="{Binding NavigateToProductsCommand}"
-                                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding CanSeeProducts, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
                                     <Style.Triggers>
@@ -337,6 +328,12 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Tag="&#xE7E8;" Content="Cerrar sesión" ToolTip="Cerrar sesión"
+                            Command="{Binding LogoutCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}"/>
                         </Button.Style>
                     </Button>
                 </StackPanel>

@@ -15,5 +15,13 @@ namespace Alquitel.UI.Views
         {
             (DataContext as ViewModels.BudgetBuilderViewModel)?.RefreshDateValidation();
         }
+
+        // Location.Name tampoco notifica (Order/Location son POCOs): al tipear el lugar
+        // se refresca el panel de avisos pre-generación ("Falta el lugar del evento").
+        private void LocationTextBox_TextChanged(object sender,
+            System.Windows.Controls.TextChangedEventArgs e)
+        {
+            (DataContext as ViewModels.BudgetBuilderViewModel)?.RefreshGenerationWarnings();
+        }
     }
 }

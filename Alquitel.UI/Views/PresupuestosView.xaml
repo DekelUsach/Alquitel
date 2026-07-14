@@ -33,7 +33,7 @@
                         Command="{Binding RefreshCommand}"
                         ToolTip="Recargar lista">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock Text="Recargar" FontWeight="SemiBold" FontSize="13"
                                    VerticalAlignment="Center"/>
@@ -44,7 +44,7 @@
                         Command="{Binding ClearFiltersCommand}"
                         ToolTip="Limpiar filtros">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                        <TextBlock Text="&#xE8BB;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock Text="Limpiar filtros" FontWeight="SemiBold" FontSize="13"
                                    VerticalAlignment="Center"/>
@@ -64,7 +64,7 @@
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                                 Margin="4,0,14,0">
-                        <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                        <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource IconFont}" FontSize="16"
                                    Foreground="{DynamicResource SecondaryColorBrush}"
                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBlock Text="Carpeta:" FontSize="12" FontWeight="Bold"
@@ -82,7 +82,7 @@
                             Command="{Binding BrowseFolderCommand}"
                             ToolTip="Elegir carpeta">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xED25;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                            <TextBlock Text="&#xED25;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                        VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock Text="Elegir..." FontWeight="SemiBold" FontSize="13"
                                        VerticalAlignment="Center"/>
@@ -108,7 +108,7 @@
                         <TextBox Height="40"
                                  Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
                                  Padding="40,10,15,10"/>
-                        <TextBlock Text="&#xE71E;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                        <TextBlock Text="&#xE71E;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                    Foreground="{DynamicResource MutedTextBrush}"
                                    VerticalAlignment="Center" Margin="14,0,0,0"
                                    IsHitTestVisible="False"/>
@@ -264,7 +264,7 @@
                             <ControlTemplate TargetType="Button">
                                 <Border x:Name="bg" Background="{TemplateBinding Background}"
                                         CornerRadius="18">
-                                    <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource IconFont}"
                                                FontSize="14" Foreground="{DynamicResource MutedTextBrush}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
@@ -375,7 +375,7 @@
                             Height="46" Margin="0,0,0,8" Padding="0"
                             Command="{Binding OpenFileCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                            <TextBlock Text="&#xE8E5;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBlock Text="Abrir archivo" FontWeight="Bold" FontSize="14"
                                        VerticalAlignment="Center"/>
@@ -386,10 +386,23 @@
                             Command="{Binding CreateVersionCommand}"
                             ToolTip="Crea una rama de este presupuesto (31294 → 31294/2) con un editor rápido de ítems. La versión original no se modifica.">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8F4;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                            <TextBlock Text="&#xE8F4;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                        VerticalAlignment="Center" Margin="0,0,8,0"
                                        Foreground="{DynamicResource TextBrush}"/>
                             <TextBlock Text="Crear nueva versión" FontWeight="SemiBold" FontSize="13"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource SecondaryButton}"
+                            Height="42" Margin="0,0,0,8" Padding="0"
+                            Command="{Binding RepeatOrderCommand}"
+                            ToolTip="Abre el armador con una copia de este presupuesto: mismos productos y cliente, número y fechas nuevos, precios actualizados al catálogo de hoy.">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock Text="Repetir pedido" FontWeight="SemiBold" FontSize="13"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
@@ -400,7 +413,7 @@
                             Height="42" Margin="0,0,0,8" Padding="0"
                             Command="{Binding ShowInExplorerCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE838;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                            <TextBlock Text="&#xE838;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                        VerticalAlignment="Center" Margin="0,0,8,0"
                                        Foreground="{DynamicResource TextBrush}"/>
                             <TextBlock Text="Mostrar en el Explorador" FontWeight="SemiBold" FontSize="13"
@@ -412,7 +425,7 @@
                             Height="42" Padding="0"
                             Command="{Binding DeleteFileCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBlock Text="Eliminar archivo" FontWeight="SemiBold" FontSize="13"
                                        VerticalAlignment="Center"/>

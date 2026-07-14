@@ -5,6 +5,8 @@
 
     <UserControl.Resources>
         <conv:OrderStatusToBrushConverter x:Key="StatusToBrush"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
     </UserControl.Resources>
 
     <Grid Margin="32,26,32,26">
@@ -31,7 +33,7 @@
                     Height="42" Padding="16,0" Margin="0,0,8,0"
                     Command="{Binding RefreshCommand}" ToolTip="Recargar lista">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                    <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBlock Text="Recargar" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
                 </StackPanel>
@@ -40,7 +42,7 @@
                     Height="42" Padding="16,0"
                     Command="{Binding ClearFiltersCommand}" ToolTip="Limpiar filtros">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                    <TextBlock Text="&#xE8BB;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBlock Text="Limpiar filtros" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
                 </StackPanel>
@@ -99,7 +101,18 @@
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold"
-                                           VerticalAlignment="Center"/>
+                                           VerticalAlignment="Center"
+                                           Foreground="{Binding Key, Converter={StaticResource StatusToBrush}}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <Border Background="#30000000" CornerRadius="9" Padding="7,1" Margin="7,0,0,0">
                                     <TextBlock Text="{Binding Count}" FontSize="11" FontWeight="Bold"
                                                VerticalAlignment="Center"/>
@@ -121,8 +134,19 @@
                    FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
                    Margin="4,0,0,10"/>
 
+        <!-- Skeleton mientras se cargan las órdenes (red/base compartida) -->
+        <StackPanel Grid.Row="3" Margin="4,8"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+            <Border Style="{StaticResource SkeletonRow}"/>
+            <Border Style="{StaticResource SkeletonRow}" Opacity="0.5"/>
+            <Border Style="{StaticResource SkeletonRow}" Opacity="0.45"/>
+            <Border Style="{StaticResource SkeletonRow}" Opacity="0.4"/>
+            <Border Style="{StaticResource SkeletonRow}" Opacity="0.3"/>
+        </StackPanel>
+
         <!-- Grilla -->
-        <Border Grid.Row="3" Style="{StaticResource Card}">
+        <Border Grid.Row="3" Style="{StaticResource Card}"
+                Visibility="{Binding IsLoading, Converter={StaticResource InvBoolToVis}}">
             <DataGrid ItemsSource="{Binding RowsView}"
                       AutoGenerateColumns="False"
                       IsReadOnly="True"
@@ -190,7 +214,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <DataGridTemplateColumn Header="" Width="100">
+                    <DataGridTemplateColumn Header="" Width="140">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -200,6 +224,13 @@
                                             Command="{Binding DataContext.OpenOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             CommandParameter="{Binding}">
                                         <TextBlock Text="&#xE70F;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                    </Button>
+                                    <Button Style="{StaticResource IconButton}" Width="36" Height="36" Margin="4,0,0,0"
+                                            ToolTip="Repetir pedido: abre el armador con una copia (precios actualizados, número y fechas nuevos)"
+                                            AutomationProperties.Name="Repetir pedido"
+                                            Command="{Binding DataContext.RepeatOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <TextBlock Text="&#xE8F4;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
                                     </Button>
                                     <Button Style="{StaticResource IconButton}" Width="36" Height="36" Margin="4,0,0,0"
                                             ToolTip="Historial: quién generó, editó o cambió el estado y cuándo"

@@ -49,6 +49,15 @@ namespace Alquitel.UI.ViewModels
         [ObservableProperty]
         private string _searchText = string.Empty;
 
+        // Término y cantidad efectivos del buscador: "3*proyector" filtra por "proyector"
+        // y Enter agrega 3 unidades (ver SearchQueryParser en Core).
+        private string _searchTerm = string.Empty;
+        private int _searchQuantity = 1;
+
+        /// <summary>Estado del autosave para la barra superior ("Borrador guardado 14:32").</summary>
+        [ObservableProperty]
+        private string _autosaveStatus = string.Empty;
+
         [ObservableProperty]
         private bool _isSmartSearchVisible;
 
@@ -175,6 +184,7 @@ namespace Alquitel.UI.ViewModels
             OnPropertyChanged(nameof(DiscountAmount));
             OnPropertyChanged(nameof(AddVat));
             NotifyCommercialTotals();
+            RefreshGenerationWarnings();
         }
         public Visibility CommercialColumnsVisibility =>
             IsTechnicalView ? Visibility.Collapsed : Visibility.Visible;
@@ -247,6 +257,11 @@ namespace Alquitel.UI.ViewModels
                 var clients = await db.Clients.AsNoTracking().OrderBy(c => c.CompanyName).ToListAsync();
                 KnownClients.Clear();
                 foreach (var c in clients) KnownClients.Add(c);
+
+                // Combos de evento: carritos predefinidos ("Casamiento clásico", etc.).
+                var combos = await db.EventTemplates.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+                EventCombos.Clear();
+                foreach (var t in combos) EventCombos.Add(t);
             }
             catch (Exception ex)
             {
@@ -270,7 +285,11 @@ namespace Alquitel.UI.ViewModels
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30), token);
                     if (SelectedItems.Any() && CurrentOrder != null)
+                    {
                         await _draftService.SaveDraftAsync(CurrentOrder, SelectedItems.ToList(), token);
+                        // Feedback visible: el operador sabe que su pedido a medias está a salvo.
+                        AutosaveStatus = $"Borrador guardado {DateTime.Now:HH:mm}";
+                    }
                 }
                 catch (TaskCanceledException) { break; }
                 catch (Exception ex)
@@ -388,20 +407,69 @@ namespace Alquitel.UI.ViewModels
 
         partial void OnSearchTextChanged(string value)
         {
+            (_searchQuantity, _searchTerm) = SearchQueryParser.Parse(value);
             _productsView.Refresh();
         }
 
         private bool FilterProduct(object item)
         {
             if (item is not Product product) return false;
-            if (string.IsNullOrWhiteSpace(SearchText)) return true;
-            return product.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
-                || product.Category.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(_searchTerm)) return true;
+            return product.Description.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)
+                || product.Category.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
         }
+
+        /// <summary>
+        /// Enter en el buscador: agrega al pedido el primer producto visible del filtro,
+        /// con la cantidad del prefijo ("3*proyector" = 3 unidades). Flujo 100% teclado.
+        /// </summary>
+        [RelayCommand]
+        private void AddTopSearchMatch()
+        {
+            if (string.IsNullOrWhiteSpace(_searchTerm)) return;
+
+            var product = _productsView.Cast<Product>().FirstOrDefault();
+            if (product == null)
+            {
+                _toastService.ShowInfo($"Ningún equipo coincide con \"{_searchTerm}\".");
+                return;
+            }
+
+            PushUndoSnapshot();
+            var existing = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
+            if (existing != null)
+            {
+                existing.Quantity += _searchQuantity;
+                existing.Dias = EventDays;
+            }
+            else
+            {
+                AddItemToCart(new OrderItem
+                {
+                    ProductId = product.Id,
+                    Product = product,
+                    Quantity = _searchQuantity,
+                    Dias = EventDays,
+                    UnitPrice = product.BasePrice,
+                    ImagePath = product.ImagePath,
+                    CustomFieldsJson = product.CustomFieldsJson,
+                    DescriptionSnapshot = product.Description,
+                    RequestedMeasure = string.Empty,
+                });
+            }
+
+            var name = Alquitel.Core.Parsing.TagParser.StripTags(product.Description) ?? product.Description;
+            _toastService.ShowSuccess($"{_searchQuantity} × {Truncate(name, 40)} agregado al pedido.");
+            SearchText = string.Empty; // listo para el siguiente equipo, sin tocar el mouse
+        }
+
+        private static string Truncate(string text, int max) =>
+            text.Length <= max ? text : text[..max] + "…";
 
         partial void OnCuitInputChanged(string value)
         {
             RefreshCuitFeedback(value);
+            RefreshGenerationWarnings();
 
             // Only hit the DB once the input is a complete, checksum-valid CUIT.
             // A synchronous query per keystroke blocked the UI thread while typing.
@@ -449,6 +517,37 @@ namespace Alquitel.UI.ViewModels
                              e.Date < s.Date
                 ? "✗ La fecha de fin es anterior a la de inicio."
                 : string.Empty;
+            RefreshGenerationWarnings();
+        }
+
+        // ── Advertencias pre-generación (no bloqueantes) ─────────────
+
+        /// <summary>
+        /// Avisos suaves visibles sobre los botones Generar: cosas que NO bloquean la
+        /// generación pero que suelen terminar en un documento rehecho. Vacío = todo bien.
+        /// </summary>
+        [ObservableProperty]
+        private string _generationWarnings = string.Empty;
+
+        /// <summary>Recalcula los avisos. La vista también lo invoca al editar el lugar.</summary>
+        public void RefreshGenerationWarnings()
+        {
+            var warnings = new List<string>();
+
+            if (CurrentOrder.EventDate is DateTime ev && ev.Date < DateTime.Today)
+                warnings.Add("La fecha del evento ya pasó.");
+            if (SelectedItems.Any() && string.IsNullOrWhiteSpace(CurrentOrder.Location?.Name))
+                warnings.Add("Falta el lugar del evento.");
+            if (SelectedItems.Any() && string.IsNullOrWhiteSpace(CurrentOrder.Client?.Cuit))
+                warnings.Add("El cliente no tiene CUIT cargado.");
+
+            int stockConflicts = SelectedItems.Count(i => i.HasStockConflict);
+            if (stockConflicts > 0)
+                warnings.Add($"{stockConflicts} producto(s) con posible conflicto de stock.");
+
+            GenerationWarnings = warnings.Count == 0
+                ? string.Empty
+                : string.Join("\n", warnings.Select(w => "⚠ " + w));
         }
 
         private async Task LookupClientByCuitAsync(string cuit)
@@ -496,7 +595,79 @@ namespace Alquitel.UI.ViewModels
                 DiscountPercent = special;
                 _toastService.ShowInfo($"Descuento acordado con {value.CompanyName}: {special:0.##}% aplicado (editable en Totales).");
             }
+
+            _ = LoadClientInsightAsync(value);
         }
+
+        // ── Ficha rápida del cliente (memoria comercial) ─────────────
+
+        /// <summary>True cuando hay ficha para mostrar (cliente registrado seleccionado).</summary>
+        [ObservableProperty]
+        private bool _isClientInsightVisible;
+
+        /// <summary>Últimos pedidos del cliente, una línea por orden.</summary>
+        [ObservableProperty]
+        private string _clientRecentOrders = string.Empty;
+
+        /// <summary>Badge "cliente frecuente": 3+ órdenes en los últimos 12 meses.</summary>
+        [ObservableProperty]
+        private bool _isClientFrequent;
+
+        /// <summary>Notas internas de la ficha (nunca salen en documentos).</summary>
+        [ObservableProperty]
+        private string _clientNotes = string.Empty;
+
+        /// <summary>
+        /// Carga la memoria comercial del cliente seleccionado: últimas 3 órdenes con
+        /// total, y marca de frecuencia. Es informativa: cualquier error solo la oculta.
+        /// </summary>
+        private async Task LoadClientInsightAsync(Client client)
+        {
+            IsClientInsightVisible = false;
+            if (client.Id == Guid.Empty) return;
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var recent = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+                    .Where(o => o.ClientId == client.Id)
+                    .OrderByDescending(o => o.CreatedDate)
+                    .Take(3)
+                    .Select(o => new { o.BudgetNumber, o.CreatedDate, o.Status })
+                    .ToListAsync();
+
+                var yearAgo = DateTime.UtcNow.AddMonths(-12);
+                var yearCount = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+                    .CountAsync(o => o.ClientId == client.Id && o.CreatedDate >= yearAgo);
+
+                // Si mientras tanto se eligió otro cliente, este resultado ya no aplica.
+                if (SelectedClient?.Id != client.Id) return;
+
+                IsClientFrequent = yearCount >= 3;
+                ClientNotes = client.InternalNotes ?? string.Empty;
+                ClientRecentOrders = recent.Count == 0
+                    ? "Primer pedido de este cliente."
+                    : string.Join("\n", recent.Select(o =>
+                        $"N° {(string.IsNullOrWhiteSpace(o.BudgetNumber) ? "s/n" : o.BudgetNumber)} · " +
+                        $"{o.CreatedDate.ToLocalTime():dd/MM/yyyy} · {StatusLabel(o.Status)}"));
+                IsClientInsightVisible = true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "LoadClientInsightAsync failed for {Client}", client.CompanyName);
+            }
+        }
+
+        private static string StatusLabel(OrderStatus status) => status switch
+        {
+            OrderStatus.Draft => "Borrador",
+            OrderStatus.Approved => "Aprobado",
+            OrderStatus.SentToOF => "Enviado a OF",
+            OrderStatus.SentToOT => "Enviado a OT",
+            OrderStatus.Rejected => "Rechazado",
+            OrderStatus.Archived => "Archivado",
+            _ => status.ToString(),
+        };
 
         // Al cargar una orden existente EventDays se setea desde el primer ítem; sin esta
         // bandera ese seteo pisaba los Dias individuales del resto de los ítems.
@@ -609,6 +780,12 @@ namespace Alquitel.UI.ViewModels
         {
             PushUndoSnapshot();
             RemoveItemFromCart(item);
+
+            // Deshacer a un clic (además de Ctrl+Z): borrar por error no cuesta rearmar.
+            var name = Alquitel.Core.Parsing.TagParser.StripTags(
+                item.DescriptionSnapshot ?? item.Product?.Description) ?? "Ítem";
+            _toastService.ShowSuccess($"{Truncate(name, 40)} quitado del pedido.", "Deshacer",
+                () => { if (UndoCartCommand.CanExecute(null)) UndoCartCommand.Execute(null); });
         }
 
         [RelayCommand]
@@ -1156,11 +1333,52 @@ namespace Alquitel.UI.ViewModels
                 item.OrderId = CurrentOrder.Id;
             }
 
+            // El pedido repetido cotiza a precios de HOY, no a los congelados del
+            // histórico. Se avisa qué cambió y qué producto ya no está en catálogo.
+            RefreshCopiedPricesFromCatalog();
+
             // Order no implementa INotifyPropertyChanged: re-notificar la raíz refresca los bindings.
             OnPropertyChanged(nameof(CurrentOrder));
 
             // La copia arranca con el próximo número de la serie.
             await AssignNextSerialIfEmptyAsync();
+        }
+
+        /// <summary>
+        /// Actualiza el precio unitario de cada ítem copiado al precio vigente del
+        /// catálogo y detecta productos archivados. Avisa por toast si algo cambió.
+        /// </summary>
+        private void RefreshCopiedPricesFromCatalog()
+        {
+            int priceChanges = 0;
+            var archived = new List<string>();
+
+            foreach (var item in SelectedItems)
+            {
+                if (item.Product == null) continue;
+
+                if (item.Product.IsArchived)
+                {
+                    archived.Add(Alquitel.Core.Parsing.TagParser.StripTags(item.Product.Description)
+                                 ?? item.Product.Description);
+                    continue;
+                }
+
+                if (item.UnitPrice != item.Product.BasePrice)
+                {
+                    item.UnitPrice = item.Product.BasePrice;
+                    priceChanges++;
+                }
+            }
+
+            if (priceChanges > 0)
+                _toastService.ShowInfo(
+                    $"{priceChanges} precio(s) actualizados al valor vigente del catálogo (el original quedaba viejo).");
+            if (archived.Count > 0)
+                _dialogService.ShowWarning("Productos fuera de catálogo",
+                    "Estos productos del pedido original ya no están en el catálogo " +
+                    "(se copiaron con su precio histórico — revisalos o reemplazalos):\n\n- " +
+                    string.Join("\n- ", archived.Select(a => Truncate(a, 60))));
         }
 
         /// <summary>
@@ -1545,6 +1763,187 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        // ── Combos de evento (carritos predefinidos) ─────────────────
+
+        /// <summary>Combos guardados, para el selector "Empezar desde combo".</summary>
+        public ObservableCollection<EventTemplate> EventCombos { get; } = new();
+
+        /// <summary>Combo seleccionado en el ComboBox del rail (solo selección; aplicar es explícito).</summary>
+        [ObservableProperty]
+        private EventTemplate? _selectedCombo;
+
+        /// <summary>
+        /// Carga el combo seleccionado al carrito con precios VIGENTES del catálogo.
+        /// Si ya hay productos, pregunta si reemplazar o sumar.
+        /// </summary>
+        [RelayCommand]
+        private void ApplyCombo()
+        {
+            if (SelectedCombo == null)
+            {
+                _toastService.ShowInfo("Elegí un combo de la lista primero.");
+                return;
+            }
+
+            List<EventTemplateItem> items;
+            try
+            {
+                items = System.Text.Json.JsonSerializer
+                    .Deserialize<List<EventTemplateItem>>(SelectedCombo.ItemsJson) ?? new();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "Combo corrupto: {Name}", SelectedCombo.Name);
+                _dialogService.ShowWarning("Combo dañado",
+                    $"El combo \"{SelectedCombo.Name}\" no se pudo leer. Guardalo de nuevo desde un pedido armado.");
+                return;
+            }
+
+            if (items.Count == 0)
+            {
+                _toastService.ShowInfo($"El combo \"{SelectedCombo.Name}\" está vacío.");
+                return;
+            }
+
+            PushUndoSnapshot();
+            if (SelectedItems.Any())
+            {
+                if (_dialogService.ShowConfirm("Cargar combo",
+                    $"Ya hay productos en el pedido. ¿Reemplazarlos con el combo \"{SelectedCombo.Name}\"?\n\n" +
+                    "(No: el combo se SUMA a lo que ya está.)"))
+                    ClearCart();
+            }
+
+            int added = 0;
+            var missing = new List<Guid>();
+            foreach (var ci in items)
+            {
+                var product = AvailableProducts.FirstOrDefault(p => p.Id == ci.ProductId);
+                if (product == null) { missing.Add(ci.ProductId); continue; }
+
+                var existing = SelectedItems.FirstOrDefault(i => i.ProductId == product.Id);
+                if (existing != null)
+                {
+                    existing.Quantity += Math.Max(1, ci.Quantity);
+                    continue;
+                }
+
+                AddItemToCart(new OrderItem
+                {
+                    ProductId = product.Id,
+                    Product = product,
+                    Quantity = Math.Max(1, ci.Quantity),
+                    Dias = Math.Max(1, ci.Dias),
+                    UnitPrice = product.BasePrice, // receta: siempre precio de hoy
+                    ImagePath = product.ImagePath,
+                    CustomFieldsJson = product.CustomFieldsJson,
+                    DescriptionSnapshot = product.Description,
+                    RequestedMeasure = string.Empty,
+                });
+                added++;
+            }
+
+            var msg = $"Combo \"{SelectedCombo.Name}\": {added} producto(s) cargados con precios actuales.";
+            if (missing.Count > 0)
+                msg += $"\n{missing.Count} producto(s) del combo ya no están en el catálogo y se omitieron.";
+            _toastService.ShowSuccess(msg);
+        }
+
+        /// <summary>
+        /// Guarda el carrito actual como combo con nombre. Mismo nombre = pisa el combo
+        /// existente (previa confirmación).
+        /// </summary>
+        [RelayCommand]
+        private async Task SaveCartAsComboAsync()
+        {
+            if (!SelectedItems.Any())
+            {
+                _toastService.ShowInfo("Armá el pedido primero: el combo se guarda desde el carrito actual.");
+                return;
+            }
+
+            var name = _dialogService.ShowInput("Guardar como combo",
+                "Nombre del combo (ej.: \"Casamiento clásico\", \"Stand de feria\"). " +
+                "Después lo cargás en un clic desde \"Empezar desde combo\".");
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            var itemsJson = System.Text.Json.JsonSerializer.Serialize(SelectedItems
+                .Select(i => new EventTemplateItem
+                {
+                    ProductId = i.ProductId,
+                    Quantity = i.Quantity,
+                    Dias = i.Dias,
+                })
+                .ToList());
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var existing = await db.EventTemplates.FirstOrDefaultAsync(t => t.Name == name);
+                if (existing != null)
+                {
+                    if (!_dialogService.ShowConfirm("Combo existente",
+                        $"Ya existe un combo llamado \"{name}\". ¿Reemplazarlo con el pedido actual?"))
+                        return;
+                    existing.ItemsJson = itemsJson;
+                    existing.CreatedDate = DateTime.UtcNow;
+                    existing.CreatedByName = _currentUserService.Current?.Name;
+                }
+                else
+                {
+                    db.EventTemplates.Add(new EventTemplate
+                    {
+                        Name = name,
+                        ItemsJson = itemsJson,
+                        CreatedByName = _currentUserService.Current?.Name,
+                    });
+                }
+                await db.SaveChangesAsync();
+
+                // Refrescar el selector con la lista real de la base.
+                var combos = await db.EventTemplates.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+                EventCombos.Clear();
+                foreach (var t in combos) EventCombos.Add(t);
+                SelectedCombo = EventCombos.FirstOrDefault(t => t.Name == name);
+
+                _toastService.ShowSuccess($"Combo \"{name}\" guardado ({SelectedItems.Count} producto(s)).");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "SaveCartAsComboAsync failed");
+                _dialogService.ShowError("Guardar combo", ex.Message);
+            }
+        }
+
+        /// <summary>Elimina el combo seleccionado (los combos son recetas, no órdenes: sin FKs).</summary>
+        [RelayCommand]
+        private async Task DeleteComboAsync()
+        {
+            if (SelectedCombo == null) return;
+            if (!_dialogService.ShowConfirm("Eliminar combo",
+                $"¿Eliminar el combo \"{SelectedCombo.Name}\"? Los presupuestos ya generados no se tocan."))
+                return;
+
+            try
+            {
+                using var db = await _dbContextFactory.CreateDbContextAsync();
+                var row = await db.EventTemplates.FirstOrDefaultAsync(t => t.Id == SelectedCombo.Id);
+                if (row != null)
+                {
+                    db.EventTemplates.Remove(row);
+                    await db.SaveChangesAsync();
+                }
+                EventCombos.Remove(SelectedCombo);
+                SelectedCombo = null;
+                _toastService.ShowSuccess("Combo eliminado.");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "DeleteComboAsync failed");
+                _dialogService.ShowError("Eliminar combo", ex.Message);
+            }
+        }
+
         private string GetInitials(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return "NA";
@@ -1594,6 +1993,7 @@ namespace Alquitel.UI.ViewModels
             OnPropertyChanged(nameof(FinalBudget));
             NotifyCommercialTotals();
             ScheduleStockConflictRefresh();
+            RefreshGenerationWarnings();
         }
 
         private void OnSelectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1630,6 +2030,7 @@ namespace Alquitel.UI.ViewModels
                 await Task.Delay(300, token);
                 var warnings = await RefreshStockConflictsAsync();
                 _ = warnings; // los flags por ítem ya quedaron seteados; el modal solo se usa al generar
+                RefreshGenerationWarnings(); // el panel de avisos refleja los conflictos nuevos
             }
             catch (TaskCanceledException) { /* llegó un cambio más nuevo */ }
             catch (Exception ex)

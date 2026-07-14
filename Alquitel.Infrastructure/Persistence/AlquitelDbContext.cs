@@ -13,6 +13,7 @@ namespace Alquitel.Infrastructure.Persistence
         public DbSet<User> Users { get; set; }
         public DbSet<OrderAuditEvent> OrderAuditEvents { get; set; }
         public DbSet<OrderApproval> OrderApprovals { get; set; }
+        public DbSet<EventTemplate> EventTemplates { get; set; }
 
         public AlquitelDbContext(DbContextOptions<AlquitelDbContext> options) : base(options) { }
 
@@ -24,6 +25,8 @@ namespace Alquitel.Infrastructure.Persistence
             modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique().HasFilter("\"Cuit\" <> ''");
             modelBuilder.Entity<Order>().HasIndex(o => o.BudgetNumber).IsUnique();
             modelBuilder.Entity<User>().HasIndex(u => u.Name).IsUnique();
+            // Un combo por nombre: "Guardar como combo" con nombre repetido lo pisa (upsert en UI).
+            modelBuilder.Entity<EventTemplate>().HasIndex(t => t.Name).IsUnique();
             // El token ES la autorización del link público de aprobación: único siempre.
             modelBuilder.Entity<OrderApproval>().HasIndex(a => a.Token).IsUnique();
             modelBuilder.Entity<OrderApproval>().HasIndex(a => a.OrderId);

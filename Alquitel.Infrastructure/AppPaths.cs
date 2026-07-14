@@ -18,6 +18,8 @@ namespace Alquitel.Infrastructure
         public static string BackupsFolder { get; }
         /// <summary>Cache local de plantillas descargadas de Supabase Storage.</summary>
         public static string TemplatesCacheFolder { get; }
+        /// <summary>Resúmenes semanales generados automáticamente ("el papelito del lunes").</summary>
+        public static string SummariesFolder { get; }
         public static string DefaultPresupuestosFolder { get; }
         public static string DefaultOfFolder { get; }
         public static string DefaultOtFolder { get; }
@@ -37,9 +39,11 @@ namespace Alquitel.Infrastructure
             LogsFolder = Path.Combine(AppDataRoot, "logs");
             BackupsFolder = Path.Combine(AppDataRoot, "backups");
             TemplatesCacheFolder = Path.Combine(AppDataRoot, "templates_cache");
+            SummariesFolder = Path.Combine(AppDataRoot, "Resumenes");
             Directory.CreateDirectory(LogsFolder);
             Directory.CreateDirectory(BackupsFolder);
             Directory.CreateDirectory(TemplatesCacheFolder);
+            Directory.CreateDirectory(SummariesFolder);
 
             SettingsFilePath = Path.Combine(AppDataRoot, "settings.json");
             DbFilePath = Path.Combine(AppDataRoot, "Alquitel.db");

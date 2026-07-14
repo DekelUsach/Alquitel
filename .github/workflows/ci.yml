@@ -31,12 +31,16 @@ jobs:
       - name: Test
         run: dotnet test Alquitel.Core.Tests/Alquitel.Core.Tests.csproj --no-build -c Release --verbosity normal
 
-  # Al taggear vX.Y.Z: publica el ejecutable self-contained como artifact del run.
-  # (El empaquetado Velopack con `vpk` se puede sumar después sobre este publish.)
+  # Al taggear vX.Y.Z: publica self-contained, empaqueta con Velopack (vpk) y sube
+  # el instalador (Setup.exe + delta packages) como GitHub Release. La app en
+  # runtime (VelopackUpdateService → GithubSource) chequea ese mismo repo público
+  # para auto-actualizarse — ver Updates:GithubRepoUrl en appsettings.json.
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-test
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -48,8 +52,35 @@ jobs:
       - name: Publish (self-contained x64)
         run: dotnet publish Alquitel.UI/Alquitel.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish
 
-      - name: Upload artifact
+      - name: Upload raw publish artifact
         uses: actions/upload-artifact@v4
         with:
           name: alquitel-${{ github.ref_name }}
           path: publish/
+
+      - name: Install vpk (Velopack CLI)
+        run: dotnet tool install --global vpk
+
+      - name: Pack with Velopack
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          vpk pack \
+            --packId Alquitel \
+            --packVersion "$VERSION" \
+            --packDir publish \
+            --packAuthors "Grupo Alquitel" \
+            --packTitle "Alquitel" \
+            --mainExe Alquitel.UI.exe \
+            --icon Alquitel.UI/Assets/app.ico \
+            -o Releases
+
+      - name: Upload release to GitHub
+        shell: bash
+        run: |
+          vpk upload github \
+            --repoUrl https://github.com/${{ github.repository }} \
+            --token ${{ secrets.GITHUB_TOKEN }} \
+            --tag ${{ github.ref_name }} \
+            --publish \
+            -o Releases

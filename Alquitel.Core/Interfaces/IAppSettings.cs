@@ -10,6 +10,8 @@ namespace Alquitel.Core.Interfaces
         string OtTemplate { get; set; }
         bool IsDarkMode { get; set; }
         bool ExportPdf { get; set; }
+        /// <summary>Fecha del último resumen semanal generado (null = nunca).</summary>
+        DateTime? LastWeeklySummary { get; set; }
         List<string> SmartSearchStopWords { get; set; }
         double SmartSearchThreshold { get; set; }
         double SmartSearchMargin { get; set; }

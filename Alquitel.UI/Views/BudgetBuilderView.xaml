@@ -85,6 +85,23 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Indicador de autosave: el operador ve que el pedido a medias está a salvo -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0"
+                            ToolTip="El pedido se guarda solo cada 30 segundos como borrador recuperable">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AutosaveStatus}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource SuccessBrush}"
+                             VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding AutosaveStatus}" FontSize="11"
+                               Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
                 <Button Style="{StaticResource GhostButton}" Height="36" Margin="0,0,8,0"
                         Command="{Binding SuggestTechnicalNotesCommand}"
                         AutomationProperties.Name="Sugerir notas técnicas con inteligencia artificial"
@@ -163,7 +180,12 @@
                         </Grid.ColumnDefinitions>
                         <Grid Grid.Column="0">
                             <TextBox Height="38" Padding="32,0,12,0" FontSize="12" VerticalContentAlignment="Center"
-                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Enter agrega el primer resultado al pedido. Prefijo de cantidad: 3*proyector agrega 3.">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding AddTopSearchMatchCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
                             <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="12"
                                        Foreground="{DynamicResource MutedTextBrush}"
                                        VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False"/>
@@ -549,6 +571,55 @@
                                     AutomationProperties.Name="Colapsar panel de datos"
                                     ToolTip="Colapsar el panel a un resumen mínimo"/>
 
+                    <!-- Combos de evento: carritos predefinidos en un clic -->
+                    <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Border Style="{StaticResource SectionIconBox}">
+                                    <TextBlock Text="&#xE81E;" Style="{StaticResource SectionIconGlyph}"/>
+                                </Border>
+                                <TextBlock Text="Combos de evento" Style="{StaticResource SectionTitle}"/>
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" Height="38"
+                                          ItemsSource="{Binding EventCombos}"
+                                          SelectedItem="{Binding SelectedCombo, Mode=TwoWay}"
+                                          DisplayMemberPath="Name"
+                                          ToolTip="Elegí un combo guardado y tocá ▶ para cargarlo al pedido con precios de hoy"/>
+                                <Button Grid.Column="1" Style="{StaticResource SecondaryButton}"
+                                        Height="38" Width="38" Padding="0" Margin="6,0,0,0"
+                                        Command="{Binding ApplyComboCommand}"
+                                        AutomationProperties.Name="Cargar combo al pedido"
+                                        ToolTip="Cargar el combo elegido al pedido (precios actuales del catálogo)">
+                                    <TextBlock Text="&#xE768;" FontFamily="{StaticResource IconFont}" FontSize="12"/>
+                                </Button>
+                                <Button Grid.Column="2" Style="{StaticResource IconButton}"
+                                        Height="38" Width="38" Margin="4,0,0,0"
+                                        Command="{Binding DeleteComboCommand}"
+                                        AutomationProperties.Name="Eliminar combo"
+                                        ToolTip="Eliminar el combo elegido (no toca presupuestos ya generados)">
+                                    <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                               Foreground="{DynamicResource DangerBrush}"/>
+                                </Button>
+                            </Grid>
+                            <Button Style="{StaticResource GhostButton}" Height="32" Margin="0,8,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SaveCartAsComboCommand}"
+                                    ToolTip="Guarda el pedido actual (productos, cantidades y días) como combo reutilizable">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="11"
+                                               VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Guardar pedido como combo" FontSize="11" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Documento -->
                     <Border Style="{StaticResource Card}" Padding="18,16" Margin="0,0,0,12">
                         <StackPanel>
@@ -630,6 +701,47 @@
                             <TextBlock Text="Empresa / Cliente" Style="{StaticResource FieldLabel}"/>
                             <TextBox Height="38"
                                      Text="{Binding CurrentOrder.Client.CompanyName, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <!-- Ficha rápida: memoria comercial del cliente elegido -->
+                            <Border Style="{StaticResource CardInner}" Padding="12,10" Margin="0,12,0,0"
+                                    Visibility="{Binding IsClientInsightVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="FICHA DEL CLIENTE" Style="{StaticResource MiniLabel}"
+                                                   VerticalAlignment="Center" Margin="0"/>
+                                        <Border CornerRadius="8" Background="{DynamicResource AccentSoftBrush}"
+                                                Padding="7,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                Visibility="{Binding IsClientFrequent, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                ToolTip="3 o más pedidos en los últimos 12 meses">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE735;" FontFamily="{StaticResource IconFont}" FontSize="9"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                                           VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBlock Text="Cliente frecuente" FontSize="10" FontWeight="Bold"
+                                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding ClientRecentOrders}" FontSize="11"
+                                               Foreground="{DynamicResource MutedTextBrush}"
+                                               TextWrapping="Wrap" LineHeight="17"/>
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                               Foreground="{DynamicResource TextBrush}"
+                                               ToolTip="Notas internas de la ficha del cliente. Nunca salen en los documentos.">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ClientNotes}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                        <Run Text="&#xE70B;" FontFamily="{StaticResource IconFont}" FontSize="10"/><Run Text=" "/><Run Text="{Binding ClientNotes}" FontStyle="Italic"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
 
@@ -677,6 +789,7 @@
 
                             <TextBlock Text="Lugar del evento" Style="{StaticResource FieldLabel}"/>
                             <TextBox Height="38" Margin="0,0,0,12"
+                                     TextChanged="LocationTextBox_TextChanged"
                                      Text="{Binding CurrentOrder.Location.Name, UpdateSourceTrigger=PropertyChanged}"/>
 
                             <TextBlock Text="Administrador" Style="{StaticResource FieldLabel}"/>
@@ -819,6 +932,24 @@
                                                    HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                     </Grid>
                                 </StackPanel>
+                            </Border>
+
+                            <!-- Avisos previos: no bloquean, evitan documentos rehechos -->
+                            <Border CornerRadius="10" Padding="12,10" Margin="0,0,0,10"
+                                    Background="#22E0A800" BorderThickness="1" BorderBrush="{DynamicResource WarningBrush}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding GenerationWarnings}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding GenerationWarnings}" FontSize="11"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextWrapping="Wrap" LineHeight="17"
+                                           ToolTip="Avisos: podés generar igual, pero conviene revisarlos antes"/>
                             </Border>
 
                             <Button Height="42" Style="{StaticResource PrimaryButton}" Margin="0,0,0,8"

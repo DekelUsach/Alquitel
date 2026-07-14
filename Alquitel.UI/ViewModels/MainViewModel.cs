@@ -23,6 +23,8 @@ namespace Alquitel.UI.ViewModels
         private readonly IAppSettings _appSettings;
         private readonly ICurrentUserService _currentUserService;
         private readonly IRemoteSyncService _remoteSyncService;
+        private readonly IDialogService _dialogService;
+        private readonly IWeeklySummaryService _weeklySummaryService;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -47,6 +49,9 @@ namespace Alquitel.UI.ViewModels
 
         /// <summary>Gate de las secciones comerciales (todo menos OT). Falso para el Armador.</summary>
         public bool IsCommercial => !IsArmador;
+
+        /// <summary>Productos: visible para todos los roles (Admin, Vendedor, Armador).</summary>
+        public bool CanSeeProducts => true;
 
         /// <summary>La sección de OT la ven el Admin y el Armador.</summary>
         public bool CanSeeWorkOrders => IsAdmin || IsArmador;
@@ -106,8 +111,9 @@ namespace Alquitel.UI.ViewModels
         /// <summary>Host de toasts: MainWindow bindea Toasts.Items para el overlay.</summary>
         public Alquitel.UI.Services.ToastService Toasts { get; }
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService, IDialogService dialogService, IWeeklySummaryService weeklySummaryService)
         {
+            _weeklySummaryService = weeklySummaryService;
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _navigationService = navigationService;
@@ -115,6 +121,7 @@ namespace Alquitel.UI.ViewModels
             _currentUserService = currentUserService;
             _remoteSyncService = remoteSyncService;
             Toasts = toastService;
+            _dialogService = dialogService;
 
             // Load theme preference from settings
             LoadThemePreference();
@@ -135,6 +142,48 @@ namespace Alquitel.UI.ViewModels
                 NavigateToDashboard();
 
             StartConnectionMonitor();
+            MaybeGenerateWeeklySummary();
+        }
+
+        /// <summary>
+        /// Resumen semanal automático: en el primer arranque de cada semana genera el
+        /// .docx con las métricas de la semana anterior y avisa por toast con "Abrir".
+        /// Sin cron ni servicios externos — solo un chequeo de fecha al iniciar sesión.
+        /// El Armador no lo dispara: es información comercial.
+        /// </summary>
+        private void MaybeGenerateWeeklySummary()
+        {
+            if (IsArmador) return;
+            if (!Alquitel.Core.Helpers.WeeklySummaryScheduler.ShouldGenerate(
+                    _appSettings.LastWeeklySummary, DateTime.Today))
+                return;
+
+            var (start, endExclusive) =
+                Alquitel.Core.Helpers.WeeklySummaryScheduler.PreviousWeekRange(DateTime.Today);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var path = await _weeklySummaryService.GenerateAsync(start, endExclusive);
+
+                    // Marcar como generado ANTES del toast: si el usuario cierra rápido,
+                    // el próximo arranque no lo vuelve a generar.
+                    _appSettings.LastWeeklySummary = DateTime.Today;
+                    _appSettings.SaveSettings();
+
+                    Toasts.ShowSuccess(
+                        $"Resumen semanal listo ({start:dd/MM} al {endExclusive.AddDays(-1):dd/MM}).",
+                        "Abrir",
+                        () => System.Diagnostics.Process.Start(
+                            new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }));
+                }
+                catch (Exception ex)
+                {
+                    // Best-effort: el resumen nunca debe impedir el arranque de la app.
+                    AppLog.Warning(ex, "No se pudo generar el resumen semanal");
+                }
+            });
         }
 
         // ── Paleta de comandos (Ctrl+K) ──────────────────────────────
@@ -179,7 +228,7 @@ namespace Alquitel.UI.ViewModels
             _navigationService.NavigateTo<SettingsViewModel>();
         }
 
-        [RelayCommand(CanExecute = nameof(IsAdmin))]
+        [RelayCommand(CanExecute = nameof(CanSeeProducts))]
         private void NavigateToProducts()
         {
             ActiveSection = "Productos";
@@ -226,6 +275,25 @@ namespace Alquitel.UI.ViewModels
         {
             ActiveSection = "Ubicaciones";
             _navigationService.NavigateTo<LocationsViewModel>();
+        }
+
+        /// <summary>
+        /// Cierra sesión reiniciando el proceso completo: los ViewModels/servicios son
+        /// Singleton con estado del usuario actual (dashboard, drafts, gates de rol) y
+        /// no soportan reasignar el usuario en caliente. Relanzar el ejecutable vuelve
+        /// a mostrar el LoginWindow limpio.
+        /// </summary>
+        [RelayCommand]
+        private void Logout()
+        {
+            if (!_dialogService.ShowConfirm("Cerrar sesión", "¿Cerrar la sesión actual?"))
+                return;
+
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exePath))
+                System.Diagnostics.Process.Start(exePath);
+
+            System.Windows.Application.Current.Shutdown();
         }
 
         // ── Theme ────────────────────────────────────────────────────

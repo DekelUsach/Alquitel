@@ -145,8 +145,8 @@ namespace Alquitel.UI
                     options.UseSqlite(AppPaths.DbConnectionString);
             });
 
-            var updateUrl = configuration["Updates:UpdateUrl"];
-            services.AddSingleton<IUpdateService>(new VelopackUpdateService(updateUrl));
+            var githubRepoUrl = configuration["Updates:GithubRepoUrl"];
+            services.AddSingleton<IUpdateService>(new VelopackUpdateService(githubRepoUrl));
             services.AddSingleton<DataInitializationService>();
             services.AddSingleton<DatabaseBackupService>();
             // Feature flag del motor documental: "com" (default, Word Interop completo)
@@ -205,6 +205,10 @@ namespace Alquitel.UI
 
             // Bitácora multi-usuario de presupuestos (quién generó/editó/cambió estado).
             services.AddSingleton<IOrderAuditService, EfOrderAuditService>();
+
+            // Resumen semanal automático ("el papelito del lunes"): .docx con OpenXML puro,
+            // disparado por MainViewModel en el primer arranque de cada semana.
+            services.AddSingleton<IWeeklySummaryService, WeeklySummaryService>();
 
             // Pedido automático con IA (Pollinations.ai). Sin ApiKey el servicio queda
             // no-configurado y el armador usa el motor de coincidencia local de siempre.

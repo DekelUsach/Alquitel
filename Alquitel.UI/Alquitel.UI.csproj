@@ -8,10 +8,16 @@
     <UseWPF>true</UseWPF>
     <StartupObject>Alquitel.UI.Program</StartupObject>
     <UserSecretsId>alquitel-ui-7f3a9c2b-4d1e-4f8a-b6c0-2e5d9a3f7b1c</UserSecretsId>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Alquitel.Core\Alquitel.Core.csproj" />
     <ProjectReference Include="..\Alquitel.Infrastructure\Alquitel.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\logo-mark.png" />
+    <Resource Include="Assets\app.ico" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
@@ -26,7 +32,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
-    <PackageReference Include="Velopack" Version="0.0.915" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">

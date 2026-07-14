@@ -25,5 +25,14 @@ namespace Alquitel.UI.Services
             var result = MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question);
             return result == MessageBoxResult.Yes;
         }
+
+        public string? ShowInput(string title, string hint, string initialValue = "")
+        {
+            var prompt = new Views.InputPromptWindow(title, hint, initialValue)
+            {
+                Owner = Application.Current.MainWindow
+            };
+            return prompt.ShowDialog() == true ? prompt.Value : null;
+        }
     }
 }

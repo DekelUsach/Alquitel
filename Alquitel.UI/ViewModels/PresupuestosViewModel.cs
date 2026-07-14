@@ -362,6 +362,41 @@ namespace Alquitel.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Repetir pedido desde el historial: busca la orden del archivo seleccionado y
+        /// abre el armador con una copia (número/fechas nuevos, precios actualizados).
+        /// </summary>
+        [RelayCommand]
+        private async Task RepeatOrderAsync()
+        {
+            if (SelectedFile == null) return;
+
+            try
+            {
+                string dbNumber = BudgetNumberHelper.FromFileNameForm(SelectedFile.BudgetNumber);
+                var order = await _orderRepository.GetByBudgetNumberAsync(dbNumber)
+                         ?? await _orderRepository.GetByBudgetNumberAsync(SelectedFile.BudgetNumber);
+
+                if (order == null)
+                {
+                    _dialogService.ShowWarning("Repetir pedido",
+                        $"El presupuesto {SelectedFile.BudgetNumber} no está registrado en la base de datos. " +
+                        "Solo se pueden repetir presupuestos registrados.");
+                    return;
+                }
+
+                var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+                await builder.LoadOrderCopyByIdAsync(order.Id);
+                _navigationService.NavigateTo(builder);
+                IsDetailPanelOpen = false;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "RepeatOrderAsync failed for {File}", SelectedFile?.FileName);
+                _dialogService.ShowError("Repetir pedido", ex.Message);
+            }
+        }
+
         [RelayCommand]
         private void ShowInExplorer()
         {
