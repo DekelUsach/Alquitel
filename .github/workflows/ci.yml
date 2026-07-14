@@ -50,7 +50,11 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Publish (self-contained x64)
-        run: dotnet publish Alquitel.UI/Alquitel.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          dotnet publish Alquitel.UI/Alquitel.UI.csproj -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:Version="$VERSION" -o publish
 
       - name: Upload raw publish artifact
         uses: actions/upload-artifact@v4
