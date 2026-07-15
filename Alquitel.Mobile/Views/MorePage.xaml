@@ -10,10 +10,13 @@
         <VerticalStackLayout Padding="16" Spacing="14">
 
             <Border Style="{StaticResource Card}">
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="{Binding UserName}" FontSize="18" FontAttributes="Bold" />
-                    <Label Text="{Binding RoleName}" Style="{StaticResource MutedLabel}" />
-                </VerticalStackLayout>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                        <Label Text="{Binding UserName}" FontSize="18" FontAttributes="Bold" />
+                        <Label Text="{Binding RoleName}" Style="{StaticResource MutedLabel}" />
+                    </VerticalStackLayout>
+                    <Image Grid.Column="1" Source="alquitel_logo.png" HeightRequest="42" WidthRequest="42" VerticalOptions="Center" />
+                </Grid>
             </Border>
 
             <Label Text="SECCIONES" Style="{StaticResource SectionLabel}" />
