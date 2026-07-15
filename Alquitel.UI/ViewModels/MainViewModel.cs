@@ -25,6 +25,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IRemoteSyncService _remoteSyncService;
         private readonly IDialogService _dialogService;
         private readonly IWeeklySummaryService _weeklySummaryService;
+        private readonly Alquitel.Core.Interfaces.ISessionStore _sessionStore;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -111,9 +112,10 @@ namespace Alquitel.UI.ViewModels
         /// <summary>Host de toasts: MainWindow bindea Toasts.Items para el overlay.</summary>
         public Alquitel.UI.Services.ToastService Toasts { get; }
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService, IDialogService dialogService, IWeeklySummaryService weeklySummaryService)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService, IDialogService dialogService, IWeeklySummaryService weeklySummaryService, Alquitel.Core.Interfaces.ISessionStore sessionStore)
         {
             _weeklySummaryService = weeklySummaryService;
+            _sessionStore = sessionStore;
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _navigationService = navigationService;
@@ -288,6 +290,8 @@ namespace Alquitel.UI.ViewModels
         {
             if (!_dialogService.ShowConfirm("Cerrar sesión", "¿Cerrar la sesión actual?"))
                 return;
+
+            _sessionStore.Clear();
 
             var exePath = Environment.ProcessPath;
             if (!string.IsNullOrEmpty(exePath))
