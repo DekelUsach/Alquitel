@@ -5,11 +5,14 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.EntityFrameworkCore;
 
+using Alquitel.Mobile.Services;
+
 namespace Alquitel.Mobile.ViewModels;
 
 public partial class ClientsViewModel : BaseViewModel
 {
     private readonly IDbContextFactory<MobileDbContext> _factory;
+    private readonly SessionService _session;
     private List<Client> _all = new();
 
     public ObservableCollection<Client> Clients { get; } = new();
@@ -17,11 +20,21 @@ public partial class ClientsViewModel : BaseViewModel
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private bool _isRefreshing;
 
-    public ClientsViewModel(IDbContextFactory<MobileDbContext> factory) => _factory = factory;
+    public ClientsViewModel(IDbContextFactory<MobileDbContext> factory, SessionService session)
+    {
+        _factory = factory;
+        _session = session;
+    }
 
     [RelayCommand]
     public async Task LoadAsync()
     {
+        if (!_session.CanManageClients)
+        {
+            await ShowAlertAsync("Acceso denegado", "No tienes permisos para ver clientes.");
+            await Shell.Current.GoToAsync("//main/dashboard");
+            return;
+        }
         if (IsBusy) return;
         try
         {
@@ -62,11 +75,16 @@ public partial class ClientsViewModel : BaseViewModel
     [RelayCommand]
     private async Task EditClientAsync(Client? client)
     {
+        if (!_session.CanManageClients) return;
         var args = new Dictionary<string, object>();
         if (client != null) args["clientId"] = client.Id;
         await Shell.Current.GoToAsync("clientedit", args);
     }
 
     [RelayCommand]
-    private async Task NewClientAsync() => await Shell.Current.GoToAsync("clientedit");
+    private async Task NewClientAsync()
+    {
+        if (!_session.CanManageClients) return;
+        await Shell.Current.GoToAsync("clientedit");
+    }
 }

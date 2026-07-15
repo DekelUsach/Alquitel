@@ -25,6 +25,7 @@ public partial class OrderDetailViewModel : BaseViewModel
     private readonly IDbContextFactory<MobileDbContext> _factory;
     private readonly OrderService _orders;
     private readonly ApprovalService _approvals;
+    private readonly SessionService _session;
 
     [ObservableProperty] private Guid _orderId;
     [ObservableProperty] private Order? _order;
@@ -33,6 +34,8 @@ public partial class OrderDetailViewModel : BaseViewModel
     [ObservableProperty] private string _clientName = string.Empty;
     [ObservableProperty] private string _locationName = string.Empty;
     [ObservableProperty] private string _eventDateText = string.Empty;
+    [ObservableProperty] private bool _canChangeOrderStatus;
+    [ObservableProperty] private bool _canShareApproval;
 
     public ObservableCollection<OrderItemRow> Items { get; } = new();
     public ObservableCollection<OrderApproval> Approvals { get; } = new();
@@ -43,11 +46,13 @@ public partial class OrderDetailViewModel : BaseViewModel
     public OrderDetailViewModel(
         IDbContextFactory<MobileDbContext> factory,
         OrderService orders,
-        ApprovalService approvals)
+        ApprovalService approvals,
+        SessionService session)
     {
         _factory = factory;
         _orders = orders;
         _approvals = approvals;
+        _session = session;
     }
 
     partial void OnOrderIdChanged(Guid value) => _ = LoadAsync();
@@ -60,6 +65,8 @@ public partial class OrderDetailViewModel : BaseViewModel
         {
             IsBusy = true;
             ErrorMessage = null;
+            CanChangeOrderStatus = _session.CanChangeOrderStatus;
+            CanShareApproval = _session.CanCreateBudgets;
 
             using var db = _factory.CreateDbContext();
             Order = await db.Orders
@@ -114,7 +121,7 @@ public partial class OrderDetailViewModel : BaseViewModel
     [RelayCommand]
     private async Task ChangeStatusAsync()
     {
-        if (Order == null) return;
+        if (Order == null || !_session.CanChangeOrderStatus) return;
 
         var choice = await Shell.Current.DisplayActionSheet(
             "Cambiar estado", "Cancelar", null, StatusOptions.ToArray());
@@ -142,7 +149,7 @@ public partial class OrderDetailViewModel : BaseViewModel
     [RelayCommand]
     private async Task ShareApprovalLinkAsync()
     {
-        if (Order == null) return;
+        if (Order == null || !_session.CanCreateBudgets) return;
         try
         {
             IsBusy = true;

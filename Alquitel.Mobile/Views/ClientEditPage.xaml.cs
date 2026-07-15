@@ -9,4 +9,13 @@ public partial class ClientEditPage : ContentPage
         InitializeComponent();
         BindingContext = vm;
     }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        if (BindingContext is ClientEditViewModel vm)
+        {
+            await vm.VerifyPermissionsAsync();
+        }
+    }
 }

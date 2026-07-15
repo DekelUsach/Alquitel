@@ -60,6 +60,12 @@ public partial class BudgetBuilderViewModel : BaseViewModel
     [RelayCommand]
     public async Task LoadAsync()
     {
+        if (!_session.CanCreateBudgets)
+        {
+            await ShowAlertAsync("Acceso denegado", "No tienes permisos para crear presupuestos.");
+            await Shell.Current.GoToAsync("//main/dashboard");
+            return;
+        }
         try
         {
             ErrorMessage = null;
@@ -247,6 +253,7 @@ public partial class BudgetBuilderViewModel : BaseViewModel
     [RelayCommand]
     private async Task SaveAsync()
     {
+        if (!_session.CanCreateBudgets) return;
         if (Cart.Count == 0)
         {
             await ShowAlertAsync("Presupuesto", "El carrito está vacío.");

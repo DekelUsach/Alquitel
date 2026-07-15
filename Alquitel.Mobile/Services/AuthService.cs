@@ -35,4 +35,12 @@ public class AuthService
         if (string.IsNullOrWhiteSpace(user.PasswordHash)) return user;
         return PasswordHasher.Verify(password, user.PasswordHash) ? user : null;
     }
+
+    public async Task<UserMobilePermission?> GetPermissionsAsync(Guid userId)
+    {
+        using var db = _factory.CreateDbContext();
+        return await db.UserMobilePermissions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId);
+    }
 }

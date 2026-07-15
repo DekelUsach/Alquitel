@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Alquitel.Mobile.ViewModels"
+             x:Class="Alquitel.Mobile.Views.UserPermissionEditPage"
+             x:DataType="vm:UserPermissionEditViewModel"
+             Title="Modificar Permisos">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <!-- Encabezado de Usuario -->
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="{Binding UserName}" FontSize="18" FontAttributes="Bold" />
+                    <Label Text="{Binding UserRoleText, StringFormat='Rol por defecto: {0}'}" Style="{StaticResource MutedLabel}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Toggles de Permisos -->
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="PERMISOS DEL USUARIO" Style="{StaticResource SectionLabel}" />
+
+                    <!-- Ubicaciones -->
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="Ubicaciones de eventos" FontAttributes="Bold" VerticalOptions="End" />
+                        <Label Grid.Row="1" Text="Permite ver, crear y renombrar ubicaciones." Style="{StaticResource MutedLabel}" FontSize="12" />
+                        <Switch Grid.Column="1" Grid.RowSpan="2" IsToggled="{Binding CanManageLocations}" VerticalOptions="Center" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+
+                    <!-- Presupuestos -->
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="Crear presupuestos" FontAttributes="Bold" VerticalOptions="End" />
+                        <Label Grid.Row="1" Text="Permite usar el analizador IA y registrar presupuestos en el pool." Style="{StaticResource MutedLabel}" FontSize="12" />
+                        <Switch Grid.Column="1" Grid.RowSpan="2" IsToggled="{Binding CanCreateBudgets}" VerticalOptions="Center" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+
+                    <!-- Clientes -->
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="Gestionar clientes" FontAttributes="Bold" VerticalOptions="End" />
+                        <Label Grid.Row="1" Text="Permite ver, crear y archivar clientes en la app." Style="{StaticResource MutedLabel}" FontSize="12" />
+                        <Switch Grid.Column="1" Grid.RowSpan="2" IsToggled="{Binding CanManageClients}" VerticalOptions="Center" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" />
+
+                    <!-- Reportes -->
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="Ver reportes" FontAttributes="Bold" VerticalOptions="End" />
+                        <Label Grid.Row="1" Text="Permite ver gráficos de facturación, conversión y productos top." Style="{StaticResource MutedLabel}" FontSize="12" />
+                        <Switch Grid.Column="1" Grid.RowSpan="2" IsToggled="{Binding CanSeeReports}" VerticalOptions="Center" />
+                    </Grid>
+
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Guardar Permisos" Command="{Binding SaveCommand}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" HorizontalOptions="Center" />
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource NotNullConverter}}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

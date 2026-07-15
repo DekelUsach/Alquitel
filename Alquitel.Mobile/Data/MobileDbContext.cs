@@ -20,6 +20,7 @@ public class MobileDbContext : DbContext
     public DbSet<OrderAuditEvent> OrderAuditEvents => Set<OrderAuditEvent>();
     public DbSet<OrderApproval> OrderApprovals => Set<OrderApproval>();
     public DbSet<EventTemplate> EventTemplates => Set<EventTemplate>();
+    public DbSet<UserMobilePermission> UserMobilePermissions => Set<UserMobilePermission>();
 
     public MobileDbContext(DbContextOptions<MobileDbContext> options) : base(options) { }
 

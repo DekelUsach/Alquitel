@@ -5,6 +5,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.EntityFrameworkCore;
 
+using Alquitel.Mobile.Services;
+
 namespace Alquitel.Mobile.ViewModels;
 
 public class MonthRow
@@ -24,6 +26,7 @@ public class TopProductRow
 public partial class ReportsViewModel : BaseViewModel
 {
     private readonly IDbContextFactory<MobileDbContext> _factory;
+    private readonly SessionService _session;
 
     [ObservableProperty] private int _totalOrders;
     [ObservableProperty] private string _conversionText = "—";
@@ -32,11 +35,21 @@ public partial class ReportsViewModel : BaseViewModel
     public ObservableCollection<MonthRow> Months { get; } = new();
     public ObservableCollection<TopProductRow> TopProducts { get; } = new();
 
-    public ReportsViewModel(IDbContextFactory<MobileDbContext> factory) => _factory = factory;
+    public ReportsViewModel(IDbContextFactory<MobileDbContext> factory, SessionService session)
+    {
+        _factory = factory;
+        _session = session;
+    }
 
     [RelayCommand]
     public async Task LoadAsync()
     {
+        if (!_session.CanSeeReports)
+        {
+            await ShowAlertAsync("Acceso denegado", "No tienes permisos para ver reportes.");
+            await Shell.Current.GoToAsync("//main/dashboard");
+            return;
+        }
         if (IsBusy) return;
         try
         {

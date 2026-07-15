@@ -105,7 +105,10 @@ public partial class LoginViewModel : BaseViewModel
                 return;
             }
 
-            _session.SignIn(user);
+            var permissions = await _auth.GetPermissionsAsync(user.Id);
+            _session.SignIn(user, permissions);
+            if (Shell.Current is AppShell appShell)
+                appShell.UpdatePermissions();
             Preferences.Set("last_user", user.Name);
             Password = string.Empty;
             await Shell.Current.GoToAsync("//main/dashboard");

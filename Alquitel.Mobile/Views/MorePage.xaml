@@ -27,28 +27,36 @@
                         <Label Text="Catálogo de productos" />
                         <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
                     </Grid>
-                    <BoxView Style="{StaticResource Divider}" />
-                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                    <BoxView Style="{StaticResource Divider}" IsVisible="{Binding CanManageLocations}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto" IsVisible="{Binding CanManageLocations}">
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding GoLocationsCommand}" />
                         </Grid.GestureRecognizers>
                         <Label Text="Ubicaciones de eventos" />
                         <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
                     </Grid>
-                    <BoxView Style="{StaticResource Divider}" />
-                    <Grid Padding="16,14" ColumnDefinitions="*,Auto">
+                    <BoxView Style="{StaticResource Divider}" IsVisible="{Binding CanSeeReports}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto" IsVisible="{Binding CanSeeReports}">
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding GoReportsCommand}" />
                         </Grid.GestureRecognizers>
                         <Label Text="Reportes" />
                         <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
                     </Grid>
-                    <BoxView Style="{StaticResource Divider}" />
+                    <BoxView Style="{StaticResource Divider}" IsVisible="{Binding CanSeeReports}" />
                     <Grid Padding="16,14" ColumnDefinitions="*,Auto">
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding GoSettingsCommand}" />
                         </Grid.GestureRecognizers>
                         <Label Text="Ajustes" />
+                        <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
+                    </Grid>
+                    <BoxView Style="{StaticResource Divider}" IsVisible="{Binding IsAdmin}" />
+                    <Grid Padding="16,14" ColumnDefinitions="*,Auto" IsVisible="{Binding IsAdmin}">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoUserPermissionsCommand}" />
+                        </Grid.GestureRecognizers>
+                        <Label Text="Permisos de usuarios" />
                         <Label Grid.Column="1" Text="›" Style="{StaticResource MutedLabel}" FontSize="20" />
                     </Grid>
                 </VerticalStackLayout>

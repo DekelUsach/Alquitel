@@ -4,6 +4,7 @@ using Alquitel.Mobile.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.EntityFrameworkCore;
+using Alquitel.Mobile.Services;
 using Location = Alquitel.Core.Entities.Location;
 
 namespace Alquitel.Mobile.ViewModels;
@@ -11,17 +12,28 @@ namespace Alquitel.Mobile.ViewModels;
 public partial class LocationsViewModel : BaseViewModel
 {
     private readonly IDbContextFactory<MobileDbContext> _factory;
+    private readonly SessionService _session;
 
     public ObservableCollection<Location> Locations { get; } = new();
 
     [ObservableProperty] private string _newLocationName = string.Empty;
     [ObservableProperty] private bool _isRefreshing;
 
-    public LocationsViewModel(IDbContextFactory<MobileDbContext> factory) => _factory = factory;
+    public LocationsViewModel(IDbContextFactory<MobileDbContext> factory, SessionService session)
+    {
+        _factory = factory;
+        _session = session;
+    }
 
     [RelayCommand]
     public async Task LoadAsync()
     {
+        if (!_session.CanManageLocations)
+        {
+            await ShowAlertAsync("Acceso denegado", "No tienes permisos para ver ubicaciones.");
+            await Shell.Current.GoToAsync("//main/dashboard");
+            return;
+        }
         if (IsBusy) return;
         try
         {
@@ -46,6 +58,7 @@ public partial class LocationsViewModel : BaseViewModel
     [RelayCommand]
     private async Task AddAsync()
     {
+        if (!_session.CanManageLocations) return;
         if (string.IsNullOrWhiteSpace(NewLocationName)) return;
         try
         {
@@ -69,6 +82,7 @@ public partial class LocationsViewModel : BaseViewModel
     [RelayCommand]
     private async Task RenameAsync(Location? location)
     {
+        if (!_session.CanManageLocations) return;
         if (location == null) return;
         var newName = await Shell.Current.DisplayPromptAsync("Renombrar ubicación", "Nuevo nombre:",
             initialValue: location.Name, accept: "Guardar", cancel: "Cancelar");
@@ -91,6 +105,7 @@ public partial class LocationsViewModel : BaseViewModel
     [RelayCommand]
     private async Task DeleteAsync(Location? location)
     {
+        if (!_session.CanManageLocations) return;
         if (location == null) return;
         if (!await ConfirmAsync("Eliminar ubicación", $"¿Eliminar \"{location.Name}\"? Si tiene pedidos asociados la base lo va a rechazar."))
             return;

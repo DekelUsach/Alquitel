@@ -35,7 +35,7 @@
             </Border>
 
             <!-- Acciones -->
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding CanChangeOrderStatus}">
                 <Button Text="Cambiar estado" Command="{Binding ChangeStatusCommand}" />
                 <Button Grid.Column="1" Text="Link de aprobación" Style="{StaticResource SecondaryButton}"
                         Command="{Binding ShareApprovalLinkCommand}" />

@@ -44,7 +44,7 @@
                     </Border>
                 </Grid>
 
-                <Button Text="+ Nuevo presupuesto" Command="{Binding NewBudgetCommand}" />
+                <Button Text="+ Nuevo presupuesto" Command="{Binding NewBudgetCommand}" IsVisible="{Binding CanCreateBudgets}" />
 
                 <!-- Pedidos recientes -->
                 <Label Text="PEDIDOS RECIENTES" Style="{StaticResource SectionLabel}" Margin="0,8,0,0" />

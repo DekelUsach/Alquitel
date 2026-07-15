@@ -16,11 +16,11 @@
     <TabBar Route="main">
         <ShellContent Route="dashboard" Title="Inicio" Icon="icon_home.png"
                       ContentTemplate="{DataTemplate views:DashboardPage}" />
-        <ShellContent Route="budget" Title="Nuevo" Icon="icon_new.png"
+        <ShellContent x:Name="BudgetTab" Route="budget" Title="Nuevo" Icon="icon_new.png"
                       ContentTemplate="{DataTemplate views:BudgetBuilderPage}" />
         <ShellContent Route="orders" Title="Pedidos" Icon="icon_orders.png"
                       ContentTemplate="{DataTemplate views:OrdersPage}" />
-        <ShellContent Route="clients" Title="Clientes" Icon="icon_clients.png"
+        <ShellContent x:Name="ClientsTab" Route="clients" Title="Clientes" Icon="icon_clients.png"
                       ContentTemplate="{DataTemplate views:ClientsPage}" />
         <ShellContent Route="more" Title="Más" Icon="icon_more.png"
                       ContentTemplate="{DataTemplate views:MorePage}" />

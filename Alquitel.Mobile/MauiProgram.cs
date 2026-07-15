@@ -24,6 +24,10 @@ public static class MauiProgram
         // ── Datos ──
         services.AddSingleton<IDbContextFactory<MobileDbContext>, MobileDbContextFactory>();
 
+        // ── App & Shell ──
+        services.AddSingleton<App>();
+        services.AddSingleton<AppShell>();
+
         // ── Servicios ──
         services.AddSingleton<SessionService>();
         services.AddSingleton<AuthService>();
@@ -45,6 +49,8 @@ public static class MauiProgram
         services.AddTransient<ReportsViewModel>();
         services.AddTransient<SettingsViewModel>();
         services.AddTransient<MoreViewModel>();
+        services.AddTransient<UserPermissionsViewModel>();
+        services.AddTransient<UserPermissionEditViewModel>();
 
         // ── Views ──
         services.AddTransient<LoginPage>();
@@ -60,6 +66,8 @@ public static class MauiProgram
         services.AddTransient<ReportsPage>();
         services.AddTransient<SettingsPage>();
         services.AddTransient<MorePage>();
+        services.AddTransient<UserPermissionsPage>();
+        services.AddTransient<UserPermissionEditPage>();
 
         return builder.Build();
     }

@@ -19,6 +19,7 @@ public partial class DashboardViewModel : BaseViewModel
     [ObservableProperty] private int _pendingApprovals;
     [ObservableProperty] private int _approvedOrders;
     [ObservableProperty] private bool _isRefreshing;
+    [ObservableProperty] private bool _canCreateBudgets;
 
     public ObservableCollection<Order> RecentOrders { get; } = new();
 
@@ -37,6 +38,7 @@ public partial class DashboardViewModel : BaseViewModel
             IsBusy = true;
             ErrorMessage = null;
             Greeting = $"Hola, {_session.UserName}";
+            CanCreateBudgets = _session.CanCreateBudgets;
 
             using var db = _factory.CreateDbContext();
 
@@ -85,5 +87,9 @@ public partial class DashboardViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    private async Task NewBudgetAsync() => await Shell.Current.GoToAsync("//main/budget");
+    private async Task NewBudgetAsync()
+    {
+        if (!_session.CanCreateBudgets) return;
+        await Shell.Current.GoToAsync("//main/budget");
+    }
 }

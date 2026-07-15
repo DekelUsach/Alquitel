@@ -1,6 +1,7 @@
 using Alquitel.Core.Entities;
 using Alquitel.Core.Helpers;
 using Alquitel.Mobile.Data;
+using Alquitel.Mobile.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ namespace Alquitel.Mobile.ViewModels;
 public partial class ClientEditViewModel : BaseViewModel
 {
     private readonly IDbContextFactory<MobileDbContext> _factory;
+    private readonly SessionService _session;
 
     [ObservableProperty] private Guid _clientId;
     [ObservableProperty] private string _pageTitle = "Nuevo cliente";
@@ -25,7 +27,20 @@ public partial class ClientEditViewModel : BaseViewModel
     [ObservableProperty] private string _specialDiscountText = string.Empty;
     [ObservableProperty] private bool _isExisting;
 
-    public ClientEditViewModel(IDbContextFactory<MobileDbContext> factory) => _factory = factory;
+    public ClientEditViewModel(IDbContextFactory<MobileDbContext> factory, SessionService session)
+    {
+        _factory = factory;
+        _session = session;
+    }
+
+    public async Task VerifyPermissionsAsync()
+    {
+        if (!_session.CanManageClients)
+        {
+            await ShowAlertAsync("Acceso denegado", "No tienes permisos para gestionar clientes.");
+            await Shell.Current.GoToAsync("..");
+        }
+    }
 
     partial void OnClientIdChanged(Guid value) => _ = LoadAsync();
 
@@ -69,6 +84,7 @@ public partial class ClientEditViewModel : BaseViewModel
     [RelayCommand]
     private async Task SaveAsync()
     {
+        if (!_session.CanManageClients) return;
         if (string.IsNullOrWhiteSpace(CompanyName))
         {
             await ShowAlertAsync("Cliente", "Ingresá la razón social.");
@@ -128,6 +144,7 @@ public partial class ClientEditViewModel : BaseViewModel
     [RelayCommand]
     private async Task ArchiveAsync()
     {
+        if (!_session.CanManageClients) return;
         if (ClientId == Guid.Empty) return;
         if (!await ConfirmAsync("Archivar cliente", "El cliente se oculta de las listas pero se conserva en el historial. ¿Continuar?"))
             return;
