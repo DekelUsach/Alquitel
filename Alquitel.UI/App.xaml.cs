@@ -128,7 +128,15 @@ namespace Alquitel.UI
             Alquitel.Core.Entities.User? user;
             try
             {
-                user = Task.Run(() => userRepository.GetByIdAsync(userId)).GetAwaiter().GetResult();
+                var resolveTask = Task.Run(() => userRepository.GetByIdAsync(userId));
+                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
+                var completed = Task.WhenAny(resolveTask, timeoutTask).GetAwaiter().GetResult();
+                if (completed != resolveTask)
+                {
+                    AppLog.Warning("Timeout resolviendo usuario de sesión guardada (>5s), se pide login manual");
+                    return false;
+                }
+                user = resolveTask.GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
