@@ -19,12 +19,17 @@ namespace Alquitel.UI.Views
     {
         private readonly ICurrentUserService _currentUserService;
         private readonly IUserRepository _userRepository;
+        private readonly Alquitel.Core.Interfaces.ISessionStore _sessionStore;
         private List<User> _users = new();
 
-        public LoginWindow(IUserRepository userRepository, ICurrentUserService currentUserService)
+        public LoginWindow(
+            IUserRepository userRepository,
+            ICurrentUserService currentUserService,
+            Alquitel.Core.Interfaces.ISessionStore sessionStore)
         {
             _currentUserService = currentUserService;
             _userRepository = userRepository;
+            _sessionStore = sessionStore;
             InitializeComponent();
 
             // La carga de usuarios va contra la base (que en modo servidor es Supabase
@@ -116,6 +121,7 @@ namespace Alquitel.UI.Views
             }
 
             _currentUserService.SetCurrentUser(user);
+            _sessionStore.Save(user.Id);
             DialogResult = true;
         }
 
