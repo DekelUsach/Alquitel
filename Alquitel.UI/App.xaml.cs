@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -58,21 +59,27 @@ namespace Alquitel.UI
                 ServiceProvider.GetRequiredService<OrderOutboxService>().Start();
 
                 // ── Login multi-usuario ──────────────────────────────────
-                // Bloquea hasta elegir usuario (y contraseña si tiene). Cancelar = salir.
+                // Si hay sesión guardada válida, saltea LoginWindow (ver TryAutoLogin).
+                // Si no, bloquea hasta elegir usuario (y contraseña si tiene). Cancelar = salir.
                 // Se cambia temporalmente a OnExplicitShutdown para evitar que la aplicación se cierre al cerrar la ventana de login
                 var oldShutdownMode = this.ShutdownMode;
                 this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-                var loginWindow = new Views.LoginWindow(
-                    ServiceProvider.GetRequiredService<Alquitel.Core.Interfaces.Repositories.IUserRepository>(),
-                    ServiceProvider.GetRequiredService<ICurrentUserService>());
-                
-                bool? loginResult = loginWindow.ShowDialog();
-                
-                if (loginResult != true)
+                var userRepository = ServiceProvider.GetRequiredService<Alquitel.Core.Interfaces.Repositories.IUserRepository>();
+                var currentUserService = ServiceProvider.GetRequiredService<ICurrentUserService>();
+                var sessionStore = ServiceProvider.GetRequiredService<Alquitel.Core.Interfaces.ISessionStore>();
+
+                if (!TryAutoLogin(userRepository, currentUserService, sessionStore))
                 {
-                    Shutdown();
-                    return;
+                    var loginWindow = new Views.LoginWindow(userRepository, currentUserService, sessionStore);
+
+                    bool? loginResult = loginWindow.ShowDialog();
+
+                    if (loginResult != true)
+                    {
+                        Shutdown();
+                        return;
+                    }
                 }
 
                 _ = Task.Run(() => ServiceProvider.GetRequiredService<IUpdateService>()
@@ -102,6 +109,42 @@ namespace Alquitel.UI
                     "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
+        }
+
+        /// <summary>
+        /// Intenta restaurar la sesión guardada sin mostrar LoginWindow. Devuelve false
+        /// (y deja la sesión guardada intacta o corrupta sin arreglar) ante cualquier
+        /// motivo de invalidez: sin sesión, usuario borrado, red caída, o Admin con
+        /// sesión de más de 30 días.
+        /// </summary>
+        private static bool TryAutoLogin(
+            Alquitel.Core.Interfaces.Repositories.IUserRepository userRepository,
+            ICurrentUserService currentUserService,
+            Alquitel.Core.Interfaces.ISessionStore sessionStore)
+        {
+            if (!sessionStore.TryLoad(out var userId, out var savedAtUtc))
+                return false;
+
+            Alquitel.Core.Entities.User? user;
+            try
+            {
+                user = Task.Run(() => userRepository.GetByIdAsync(userId)).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "No se pudo resolver el usuario de la sesión guardada, se pide login manual");
+                return false;
+            }
+
+            if (user == null || user.IsArchived)
+                return false;
+
+            if (user.Role == Alquitel.Core.Entities.UserRole.Admin &&
+                DateTimeOffset.UtcNow - savedAtUtc > TimeSpan.FromDays(30))
+                return false;
+
+            currentUserService.SetCurrentUser(user);
+            return true;
         }
 
         protected override void OnExit(ExitEventArgs e)
