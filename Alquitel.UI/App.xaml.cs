@@ -190,6 +190,7 @@ namespace Alquitel.UI
 
             // Multi-usuario: usuario logueado de la sesión actual.
             services.AddSingleton<ICurrentUserService, CurrentUserService>();
+            services.AddSingleton<Alquitel.Core.Interfaces.ISessionStore, FileSessionStore>();
 
             // Persistencia de órdenes y borradores del armador (extraídos del VM).
             services.AddSingleton<IOrderPersistenceService, OrderPersistenceService>();
