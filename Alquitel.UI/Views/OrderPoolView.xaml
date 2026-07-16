@@ -78,18 +78,52 @@
                                         <Border x:Name="Chip" CornerRadius="16" Padding="14,7"
                                                 Background="{DynamicResource SurfaceAltBrush}"
                                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                                Cursor="Hand">
+                                                Cursor="Hand"
+                                                RenderTransformOrigin="0.5,0.5">
+                                            <Border.RenderTransform>
+                                                <ScaleTransform/>
+                                            </Border.RenderTransform>
                                             <ContentPresenter/>
                                         </Border>
                                         <ControlTemplate.Triggers>
+                                            <!-- Hover primero: si el chip está seleccionado, el trigger
+                                                 de IsSelected (posterior) pisa el fondo y gana. -->
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chip" Property="Background"
+                                                        Value="{DynamicResource HoverBrush}"/>
+                                                <Setter TargetName="Chip" Property="BorderBrush"
+                                                        Value="{DynamicResource SecondaryColorBrush}"/>
+                                                <Trigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetName="Chip"
+                                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                             To="1.04" Duration="0:0:0.1"/>
+                                                            <DoubleAnimation Storyboard.TargetName="Chip"
+                                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                             To="1.04" Duration="0:0:0.1"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </Trigger.EnterActions>
+                                                <Trigger.ExitActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetName="Chip"
+                                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                             To="1" Duration="0:0:0.15"/>
+                                                            <DoubleAnimation Storyboard.TargetName="Chip"
+                                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                             To="1" Duration="0:0:0.15"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </Trigger.ExitActions>
+                                            </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
                                                 <Setter TargetName="Chip" Property="Background"
                                                         Value="{DynamicResource SecondaryColorBrush}"/>
-                                                <Setter Property="TextElement.Foreground" Value="White"/>
-                                            </Trigger>
-                                            <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="Chip" Property="BorderBrush"
                                                         Value="{DynamicResource SecondaryColorBrush}"/>
+                                                <Setter Property="TextElement.Foreground" Value="White"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -114,8 +148,21 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                                 <Border Background="#30000000" CornerRadius="9" Padding="7,1" Margin="7,0,0,0">
+                                    <!-- Foreground explícito: sin él hereda el negro default de WPF
+                                         y queda ilegible en tema oscuro. -->
                                     <TextBlock Text="{Binding Count}" FontSize="11" FontWeight="Bold"
-                                               VerticalAlignment="Center"/>
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </Border>
                             </StackPanel>
                         </DataTemplate>
@@ -145,7 +192,7 @@
         </StackPanel>
 
         <!-- Grilla -->
-        <Border Grid.Row="3" Style="{StaticResource Card}"
+        <Border Grid.Row="3" Style="{StaticResource CardFadeIn}"
                 Visibility="{Binding IsLoading, Converter={StaticResource InvBoolToVis}}">
             <DataGrid ItemsSource="{Binding RowsView}"
                       AutoGenerateColumns="False"

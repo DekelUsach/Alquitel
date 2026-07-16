@@ -12,8 +12,13 @@ se actualiza solo en la base compartida.
    `https://qgtaugmxmoxtpxvmugvt.supabase.co/functions/v1/aprobar?token=<uuid>`
 3. El vendedor pega el link en el mail al cliente (el borrador de Outlook del botón
    "Enviar por mail" es el lugar natural).
-4. El cliente abre el link → página con el número de presupuesto y botones
-   **Aprobar / Rechazar**. Al responder:
+4. El cliente abre el link → página con el presupuesto **completo**: cliente
+   (empresa, CUIT, contacto), evento (fechas y lugar), comentarios, ítems con
+   descripción estilada (BBCode renderizado), campos técnicos, medidas y notas,
+   y desglose de totales (descuentos, IVA si corresponde, total final). Tiene
+   modo claro/oscuro automático y confirmación en dos pasos en los botones
+   **Aprobar / Rechazar**. Nunca expone datos internos (`InternalNotes`,
+   `Cost`, `SpecialDiscountPercent`). Al responder:
    - `OrderApprovals.Status` pasa a Approved/Rejected con `RespondedAt` y `ClientIp`.
    - `Orders.Status` pasa a `Approved` (1) o `Rejected` (5).
 5. La app de escritorio ve el estado nuevo al recargar presupuestos (base compartida).
@@ -37,6 +42,9 @@ se actualiza solo en la base compartida.
 # 2. Edge Function (requiere Supabase CLI logueada en el proyecto):
 supabase functions deploy aprobar --project-ref qgtaugmxmoxtpxvmugvt --no-verify-jwt
 ```
+
+Re-correr el deploy de la función cada vez que cambie `index.ts` (los links ya
+emitidos siguen funcionando: el token vive en la base, no en la función).
 
 `--no-verify-jwt` es necesario: el cliente final no tiene sesión de Supabase; la
 autorización es el token uuid del link (secreto por presupuesto, un solo uso).
