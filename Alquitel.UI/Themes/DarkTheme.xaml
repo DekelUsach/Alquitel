@@ -21,6 +21,7 @@
     <Color x:Key="DangerColor">#D46A6A</Color>
     <Color x:Key="DangerSubtleColor">#3A1D1D</Color>
     <Color x:Key="WarningColor">#D29922</Color>
+    <Color x:Key="WarningSubtleColor">#2E2410</Color>
     <Color x:Key="SidebarColor">#10151C</Color>
     <Color x:Key="AccentSoftColor">#10233A</Color>
 
@@ -41,6 +42,7 @@
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}"/>
     <SolidColorBrush x:Key="DangerSubtleBrush" Color="{StaticResource DangerSubtleColor}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
+    <SolidColorBrush x:Key="WarningSubtleBrush" Color="{StaticResource WarningSubtleColor}"/>
     <SolidColorBrush x:Key="SidebarBrush" Color="{StaticResource SidebarColor}"/>
     <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}"/>
 

@@ -119,6 +119,27 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private async Task RefreshAsync() => await LoadAsync();
 
+        /// <summary>Presets de rango rápido: "30", "90", "12m" o "year".</summary>
+        [RelayCommand]
+        private async Task SetRangeAsync(string preset)
+        {
+            var today = DateTime.Today;
+            (FromDate, ToDate) = preset switch
+            {
+                "30" => (today.AddDays(-29), today),
+                "90" => (today.AddDays(-89), today),
+                "year" => (new DateTime(today.Year, 1, 1), today),
+                _ => (new DateTime(today.Year, today.Month, 1).AddMonths(-11), (DateTime?)today),
+            };
+            await LoadAsync();
+        }
+
+        [RelayCommand]
+        private void ShowChartsView() => ShowCharts = true;
+
+        [RelayCommand]
+        private void ShowTableView() => ShowCharts = false;
+
         private async Task LoadAsync()
         {
             if (FromDate == null || ToDate == null)

@@ -15,8 +15,9 @@ namespace Alquitel.UI.ViewModels
     public record RecentOrderRow(Guid OrderId, string BudgetNumber, string ClientName,
         DateTime CreatedDate, decimal Total, string StatusLabel);
 
-    /// <summary>Fila liviana para el ranking de productos más presupuestados.</summary>
-    public record TopProductRow(int Rank, string Description, int TimesQuoted);
+    /// <summary>Fila liviana para el ranking de productos más presupuestados.
+    /// Share: proporción 0..1 respecto del más pedido, para la barra proporcional.</summary>
+    public record TopProductRow(int Rank, string Description, int TimesQuoted, double Share);
 
     public partial class DashboardViewModel : ObservableObject, IAsyncInitialization
     {
@@ -136,10 +137,12 @@ namespace Alquitel.UI.ViewModels
 
             TopProducts.Clear();
             var rank = 1;
+            var maxCount = topRaw.Count > 0 ? topRaw.Max(t => t.Count) : 1;
             foreach (var t in topRaw)
                 TopProducts.Add(new TopProductRow(rank++,
                     Alquitel.Core.Parsing.TagParser.StripTags(t.Description) ?? t.Description,
-                    t.Count));
+                    t.Count,
+                    maxCount > 0 ? (double)t.Count / maxCount : 0));
         }
 
         private static string StatusLabel(OrderStatus status) => status switch

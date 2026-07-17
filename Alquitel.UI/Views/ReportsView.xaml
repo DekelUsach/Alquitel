@@ -10,178 +10,366 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+
+        <!-- Celdas numéricas: derecha + cifras tabulares para que las columnas no bailen -->
+        <Style x:Key="DataGridCellNumeric" TargetType="TextBlock"
+               BasedOn="{StaticResource DataGridCellText}">
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+        </Style>
+        <Style x:Key="DataGridCellNumericMuted" TargetType="TextBlock"
+               BasedOn="{StaticResource DataGridCellNumeric}">
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style x:Key="DataGridCellNumericStrong" TargetType="TextBlock"
+               BasedOn="{StaticResource DataGridCellNumeric}">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <!-- Encabezado de columna alineado a derecha para columnas numéricas -->
+        <Style x:Key="NumericColumnHeader" TargetType="DataGridColumnHeader"
+               BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        </Style>
+
+        <!-- Etiqueta de métrica (misma voz que el dashboard) -->
+        <Style x:Key="MetricLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="Typography.Capitals" Value="AllSmallCaps"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="MetricValue" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource AppDisplayFontFamily}"/>
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+        </Style>
+
+        <Style x:Key="MetricDivider" TargetType="Rectangle">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Fill" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Margin" Value="0,18"/>
+        </Style>
+
+        <!-- Chip de preset de rango -->
+        <Style x:Key="RangeChipButton" TargetType="Button">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background"
+                                        Value="{DynamicResource HoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="Background"
+                                        Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Segmento Gráficos / Tabla -->
+        <Style x:Key="ViewSegmentButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="32,24">
         <StackPanel MaxWidth="1200">
 
-            <!-- ── Encabezado ── -->
+            <!-- ═══════════ ENCABEZADO ═══════════ -->
             <Grid Margin="0,0,0,20">
                 <StackPanel>
                     <TextBlock Text="Reportes" Style="{StaticResource PageTitle}"/>
-                    <TextBlock Style="{StaticResource PageSubtitle}"
+                    <TextBlock Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"
                                Text="Facturación por cliente y por mes, y rentabilidad de productos. Excluye presupuestos rechazados."/>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                     <Button Content="Exportar CSV" Style="{StaticResource SecondaryButton}"
-                            Command="{Binding ExportCsvCommand}" Margin="0,0,10,0"/>
-                    <Button Content="Actualizar" Style="{StaticResource PrimaryButton}"
-                            Command="{Binding RefreshCommand}"/>
+                            Command="{Binding ExportCsvCommand}"/>
+                    <Button Style="{StaticResource IconButton}" Width="40" Height="40" Margin="8,0,0,0"
+                            Command="{Binding RefreshCommand}" ToolTip="Actualizar reporte">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
+                    </Button>
                 </StackPanel>
             </Grid>
 
-            <!-- ── Filtros de rango ── -->
-            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
-                <StackPanel Orientation="Horizontal">
-                    <StackPanel Margin="0,0,16,0">
-                        <TextBlock Text="Desde" Style="{StaticResource FieldLabel}"/>
-                        <DatePicker Width="180" SelectedDate="{Binding FromDate}"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,24,0">
-                        <TextBlock Text="Hasta" Style="{StaticResource FieldLabel}"/>
-                        <DatePicker Width="180" SelectedDate="{Binding ToDate}"/>
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ModernCheckBox}"
-                              Content="Ver gráficos"
-                              IsChecked="{Binding ShowCharts}"
-                              VerticalAlignment="Bottom" Margin="0,0,24,10"/>
-                    <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,4">
-                        <TextBlock Text="{Binding StatusMessage}" FontSize="12"
-                                   Foreground="{DynamicResource MutedTextBrush}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- ── Totales ── -->
+            <!-- ═══════════ BARRA DE RANGO Y VISTA ═══════════ -->
             <Grid Margin="0,0,0,16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Style="{StaticResource Card}" Padding="22,18" Margin="0,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="FACTURACIÓN DEL PERÍODO" Style="{StaticResource SectionLabel}"/>
-                        <TextBlock Text="{Binding TotalRevenue, StringFormat='{}{0:C0}'}"
-                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"
-                                   Margin="0,6,0,0"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <DatePicker Width="150" SelectedDate="{Binding FromDate}"
+                                ToolTip="Inicio del rango"/>
+                    <TextBlock Text="–" FontSize="13" Foreground="{DynamicResource MutedTextBrush}"
+                               VerticalAlignment="Center" Margin="8,0"/>
+                    <DatePicker Width="150" SelectedDate="{Binding ToDate}"
+                                ToolTip="Fin del rango"/>
+
+                    <!-- Presets: evitan tipear fechas para los rangos de siempre -->
+                    <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <Button Content="30 días" Style="{StaticResource RangeChipButton}"
+                                Command="{Binding SetRangeCommand}" CommandParameter="30"/>
+                        <Button Content="90 días" Style="{StaticResource RangeChipButton}" Margin="2,0,0,0"
+                                Command="{Binding SetRangeCommand}" CommandParameter="90"/>
+                        <Button Content="12 meses" Style="{StaticResource RangeChipButton}" Margin="2,0,0,0"
+                                Command="{Binding SetRangeCommand}" CommandParameter="12m"/>
+                        <Button Content="Este año" Style="{StaticResource RangeChipButton}" Margin="2,0,0,0"
+                                Command="{Binding SetRangeCommand}" CommandParameter="year"/>
                     </StackPanel>
-                </Border>
-                <Border Grid.Column="1" Style="{StaticResource Card}" Padding="22,18" Margin="8,0">
-                    <StackPanel>
-                        <TextBlock Text="PRESUPUESTOS" Style="{StaticResource SectionLabel}"/>
-                        <TextBlock Text="{Binding TotalOrders}"
-                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"
-                                   Margin="0,6,0,0"/>
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="2" Style="{StaticResource Card}" Padding="22,18" Margin="8,0,0,0">
-                    <StackPanel>
-                        <TextBlock Text="MARGEN (PRODUCTOS CON COSTO)" Style="{StaticResource SectionLabel}"/>
-                        <TextBlock Text="{Binding TotalMargin, StringFormat='{}{0:C0}'}"
-                                   FontSize="26" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}"
-                                   Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <!-- Segmento Gráficos | Tabla -->
+                <Border HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Background="{DynamicResource SurfaceAltBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="10" Padding="3">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Gráficos" Command="{Binding ShowChartsViewCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ViewSegmentButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowCharts}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Tabla" Margin="3,0,0,0" Command="{Binding ShowTableViewCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ViewSegmentButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowCharts}" Value="False">
+                                            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <!-- ── Facturación por cliente ── -->
-            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <Border Style="{StaticResource SectionIconBox}">
-                            <TextBlock Text="&#xE716;" Style="{StaticResource SectionIconGlyph}"/>
-                        </Border>
-                        <TextBlock Text="Facturación por cliente" Style="{StaticResource SectionTitle}"/>
+            <!-- ═══════════ FRANJA DE MÉTRICAS ═══════════
+                 Una sola superficie con separadores hairline; facturación domina. -->
+            <Border Style="{StaticResource Card}" Padding="0" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="26,18" VerticalAlignment="Center">
+                        <TextBlock Text="Facturación del período" Style="{StaticResource MetricLabel}"/>
+                        <TextBlock Text="{Binding TotalRevenue, StringFormat='{}{0:C0}'}"
+                                   Style="{StaticResource MetricValue}" FontSize="34"/>
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="11.5"
+                                   Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0"
+                                   TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
-                    <lvc:CartesianChart Height="320"
-                                        Series="{Binding ClientSeries}"
-                                        XAxes="{Binding ClientXAxes}"
-                                        YAxes="{Binding ClientYAxes}"
-                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <DataGrid ItemsSource="{Binding ClientBilling}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
-                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="CLIENTE" Binding="{Binding ClientName}" Width="3*"
-                                                ElementStyle="{StaticResource DataGridCellText}"/>
-                            <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
-                            <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
+
+                    <Rectangle Grid.Column="1" Style="{StaticResource MetricDivider}"/>
+
+                    <StackPanel Grid.Column="2" Margin="26,18" VerticalAlignment="Center">
+                        <TextBlock Text="Presupuestos" Style="{StaticResource MetricLabel}"/>
+                        <TextBlock Text="{Binding TotalOrders}" Style="{StaticResource MetricValue}"/>
+                        <TextBlock Text="en el rango elegido" FontSize="11.5"
+                                   Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <Rectangle Grid.Column="3" Style="{StaticResource MetricDivider}"/>
+
+                    <StackPanel Grid.Column="4" Margin="26,18" VerticalAlignment="Center">
+                        <TextBlock Text="Margen" Style="{StaticResource MetricLabel}"/>
+                        <TextBlock Text="{Binding TotalMargin, StringFormat='{}{0:C0}'}"
+                                   Style="{StaticResource MetricValue}"
+                                   Foreground="{DynamicResource SuccessBrush}"/>
+                        <TextBlock Text="solo productos con costo" FontSize="11.5"
+                                   Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ═══════════ ESTADO VACÍO GLOBAL ═══════════ -->
+            <Border Padding="24,44" Margin="0,0,0,16">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding TotalOrders}" Value="0">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="&#xE9D2;" Style="{StaticResource EmptyStateIcon}"/>
+                    <TextBlock Text="Sin presupuestos en este rango" Style="{StaticResource EmptyStateTitle}"/>
+                    <TextBlock Text="Probá con otro rango de fechas o con uno de los presets de arriba."
+                               Style="{StaticResource EmptyStateHint}"/>
                 </StackPanel>
             </Border>
 
-            <!-- ── Facturación por mes ── -->
-            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,16">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <Border Style="{StaticResource SectionIconBox}">
-                            <TextBlock Text="&#xE787;" Style="{StaticResource SectionIconGlyph}"/>
-                        </Border>
-                        <TextBlock Text="Tendencia mensual" Style="{StaticResource SectionTitle}"/>
-                    </StackPanel>
-                    <lvc:CartesianChart Height="320"
-                                        Series="{Binding MonthlySeries}"
-                                        XAxes="{Binding MonthlyXAxes}"
-                                        YAxes="{Binding MonthlyYAxes}"
-                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <DataGrid ItemsSource="{Binding MonthlyBilling}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
-                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="MES" Binding="{Binding MonthLabel}" Width="2*"
-                                                ElementStyle="{StaticResource DataGridCellText}"/>
-                            <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
-                            <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </StackPanel>
-            </Border>
+            <!-- ═══════════ SECCIONES ═══════════ -->
+            <StackPanel>
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding TotalOrders}" Value="0">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
 
-            <!-- ── Rentabilidad por producto ── -->
-            <Border Style="{StaticResource Card}" Padding="24,18" Margin="0,0,0,24">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                        <Border Style="{StaticResource SectionIconBox}">
-                            <TextBlock Text="&#xE7BF;" Style="{StaticResource SectionIconGlyph}"/>
-                        </Border>
-                        <TextBlock Text="Rentabilidad por producto" Style="{StaticResource SectionTitle}"/>
+                <!-- ── Facturación por cliente ── -->
+                <Border Style="{StaticResource Card}" Padding="24,20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <TextBlock Text="Facturación por cliente" Style="{StaticResource SectionTitle}"
+                                       FontSize="15"/>
+                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}"
+                                       Text="top 10 en el gráfico · tabla completa"/>
+                        </Grid>
+                        <lvc:CartesianChart Height="320"
+                                            Series="{Binding ClientSeries}"
+                                            XAxes="{Binding ClientXAxes}"
+                                            YAxes="{Binding ClientYAxes}"
+                                            Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <DataGrid ItemsSource="{Binding ClientBilling}" AutoGenerateColumns="False"
+                                  CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
+                                  Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="CLIENTE" Binding="{Binding ClientName}" Width="3*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericMuted}"/>
+                                <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericStrong}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </StackPanel>
-                    <TextBlock FontSize="11" Foreground="{DynamicResource WarningBrush}" Margin="44,0,0,8"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding HasProductsWithoutCost, Converter={StaticResource BoolToVisibilityConverter}}"
-                               Text="Algunos productos no tienen costo cargado: su margen queda vacío. Cargá el costo en Productos → Costo interno."/>
-                    <lvc:CartesianChart Height="380"
-                                        Series="{Binding ProductSeries}"
-                                        XAxes="{Binding ProductXAxes}"
-                                        YAxes="{Binding ProductYAxes}"
-                                        LegendPosition="Top"
-                                        LegendTextPaint="{Binding LegendPaint}"
-                                        Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <DataGrid ItemsSource="{Binding ProductProfit}" AutoGenerateColumns="False"
-                              CanUserAddRows="False" IsReadOnly="True" MaxHeight="420" RowHeight="40"
-                              Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="50"
-                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
-                            <DataGridTextColumn Header="PRODUCTO" Binding="{Binding Description}" Width="3*"
-                                                ElementStyle="{StaticResource DataGridCellText}"/>
-                            <DataGridTextColumn Header="VECES" Binding="{Binding TimesQuoted}" Width="80"
-                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
-                            <DataGridTextColumn Header="FACTURACIÓN" Binding="{Binding Revenue, StringFormat='{}{0:C}'}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellText}"/>
-                            <DataGridTextColumn Header="COSTO" Binding="{Binding Cost, StringFormat='{}{0:C}'}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextMuted}"/>
-                            <DataGridTextColumn Header="MARGEN" Binding="{Binding Margin, StringFormat='{}{0:C}'}" Width="*"
-                                                ElementStyle="{StaticResource DataGridCellTextAccent}"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </StackPanel>
-            </Border>
+                </Border>
+
+                <!-- ── Tendencia mensual ── -->
+                <Border Style="{StaticResource Card}" Padding="24,20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Tendencia mensual" Style="{StaticResource SectionTitle}"
+                                   FontSize="15" Margin="0,0,0,12"/>
+                        <lvc:CartesianChart Height="320"
+                                            Series="{Binding MonthlySeries}"
+                                            XAxes="{Binding MonthlyXAxes}"
+                                            YAxes="{Binding MonthlyYAxes}"
+                                            Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <DataGrid ItemsSource="{Binding MonthlyBilling}" AutoGenerateColumns="False"
+                                  CanUserAddRows="False" IsReadOnly="True" MaxHeight="320" RowHeight="40"
+                                  Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="MES" Binding="{Binding MonthLabel}" Width="2*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="PRESUPUESTOS" Binding="{Binding OrdersCount}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericMuted}"/>
+                                <DataGridTextColumn Header="TOTAL" Binding="{Binding Total, StringFormat='{}{0:C}'}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericStrong}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ── Rentabilidad por producto ── -->
+                <Border Style="{StaticResource Card}" Padding="24,20" Margin="0,0,0,24">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="Rentabilidad por producto" Style="{StaticResource SectionTitle}"
+                                       FontSize="15"/>
+                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}"
+                                       Text="facturación vs. margen"/>
+                        </Grid>
+                        <Border CornerRadius="8" Padding="12,8" Margin="0,0,0,10"
+                                Background="{DynamicResource WarningSubtleBrush}"
+                                Visibility="{Binding HasProductsWithoutCost, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock FontSize="11.5" Foreground="{DynamicResource WarningBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="Algunos productos no tienen costo cargado: su margen queda vacío. Cargá el costo en Productos → Costo interno."/>
+                        </Border>
+                        <lvc:CartesianChart Height="380"
+                                            Series="{Binding ProductSeries}"
+                                            XAxes="{Binding ProductXAxes}"
+                                            YAxes="{Binding ProductYAxes}"
+                                            LegendPosition="Top"
+                                            LegendTextPaint="{Binding LegendPaint}"
+                                            Visibility="{Binding ShowCharts, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <DataGrid ItemsSource="{Binding ProductProfit}" AutoGenerateColumns="False"
+                                  CanUserAddRows="False" IsReadOnly="True" MaxHeight="420" RowHeight="40"
+                                  Visibility="{Binding ShowCharts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="50"
+                                                    ElementStyle="{StaticResource DataGridCellTextMuted}"/>
+                                <DataGridTextColumn Header="PRODUCTO" Binding="{Binding Description}" Width="3*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="VECES" Binding="{Binding TimesQuoted}" Width="80"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericMuted}"/>
+                                <DataGridTextColumn Header="FACTURACIÓN" Binding="{Binding Revenue, StringFormat='{}{0:C}'}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumeric}"/>
+                                <DataGridTextColumn Header="COSTO" Binding="{Binding Cost, StringFormat='{}{0:C}'}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericMuted}"/>
+                                <DataGridTextColumn Header="MARGEN" Binding="{Binding Margin, StringFormat='{}{0:C}'}" Width="*"
+                                                    HeaderStyle="{StaticResource NumericColumnHeader}"
+                                                    ElementStyle="{StaticResource DataGridCellNumericStrong}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
         </StackPanel>
     </ScrollViewer>
