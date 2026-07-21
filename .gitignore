@@ -67,3 +67,9 @@ youtube-screenshot.png
 # Secretos por máquina (connection string real, service key de Supabase).
 # NUNCA committear: sobreescriben appsettings.json solo en el equipo desplegado.
 appsettings.local.json
+
+# Plantillas y órdenes de trabajo locales (.docx en la raíz)
+/*.docx
+
+# Carpeta de migraciones de Supabase
+/supabase/migrations/
