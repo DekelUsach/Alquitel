@@ -20,9 +20,66 @@ namespace Alquitel.Infrastructure.Services
                 ?.GetName().Version?.ToString(3);
         }
 
+        public bool IsUpdateCheckEnabled => !string.IsNullOrWhiteSpace(_githubRepoUrl);
+
+        public async Task<bool> CheckAndApplyUpdatesOnStartupAsync(Action<string> onStatusChanged)
+        {
+            if (!IsUpdateCheckEnabled)
+            {
+                AppLog.Information("Update check skipped on startup — GithubRepoUrl not configured.");
+                return false;
+            }
+
+            try
+            {
+                onStatusChanged("Buscando actualizaciones...");
+
+                var source = new GithubSource(_githubRepoUrl!, string.Empty, prerelease: false);
+                var mgr = new UpdateManager(source);
+
+                // Timeout de 4 segundos para el chequeo de actualizaciones (evita quedarse colgado si no hay internet o es muy lento)
+                var checkTask = mgr.CheckForUpdatesAsync();
+                var timeoutTask = Task.Delay(4000);
+
+                var completedTask = await Task.WhenAny(checkTask, timeoutTask).ConfigureAwait(false);
+                if (completedTask == timeoutTask)
+                {
+                    AppLog.Warning("Update check timed out after 4 seconds.");
+                    return false;
+                }
+
+                var update = await checkTask.ConfigureAwait(false);
+                if (update == null)
+                {
+                    AppLog.Information("No updates available on startup.");
+                    return false;
+                }
+
+                AppLog.Information("Update found on startup: {Version}. Downloading…",
+                    update.TargetFullRelease.Version);
+                onStatusChanged($"Nueva versión encontrada ({update.TargetFullRelease.Version}).\nDescargando actualización...");
+
+                await mgr.DownloadUpdatesAsync(update).ConfigureAwait(false);
+
+                AppLog.Information("Update downloaded on startup. Applying and restarting.");
+                onStatusChanged("Instalando y reiniciando aplicación...");
+
+                // Dar un breve momento para que se lea el mensaje antes de reiniciar
+                await Task.Delay(1000).ConfigureAwait(false);
+
+                mgr.ApplyUpdatesAndRestart(update);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "Update check failed on startup.");
+                return false;
+            }
+        }
+
         public async Task CheckAndApplyUpdatesAsync()
         {
-            if (string.IsNullOrWhiteSpace(_githubRepoUrl))
+            if (!IsUpdateCheckEnabled)
             {
                 AppLog.Information("Update check skipped — GithubRepoUrl not configured.");
                 return;
@@ -32,7 +89,7 @@ namespace Alquitel.Infrastructure.Services
             {
                 // Repo público: sin accessToken (empty) alcanza — GitHub permite 60
                 // requests/hora sin auth por IP, de sobra para chequeos de update.
-                var source = new GithubSource(_githubRepoUrl, string.Empty, prerelease: false);
+                var source = new GithubSource(_githubRepoUrl!, string.Empty, prerelease: false);
                 var mgr = new UpdateManager(source);
 
                 var update = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);

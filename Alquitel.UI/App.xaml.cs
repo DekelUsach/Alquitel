@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -13,6 +15,7 @@ using Alquitel.Infrastructure.Services;
 using Alquitel.UI.ViewModels;
 using Alquitel.Core.Interfaces;
 using Alquitel.UI.Services;
+
 namespace Alquitel.UI
 {
     public partial class App : Application
@@ -58,16 +61,41 @@ namespace Alquitel.UI
                 // (outbox offline): primer intento al minuto, luego cada 5.
                 ServiceProvider.GetRequiredService<OrderOutboxService>().Start();
 
-                // ── Login multi-usuario ──────────────────────────────────
-                // Si hay sesión guardada válida, saltea LoginWindow (ver TryAutoLogin).
-                // Si no, bloquea hasta elegir usuario (y contraseña si tiene). Cancelar = salir.
-                // Se cambia temporalmente a OnExplicitShutdown para evitar que la aplicación se cierre al cerrar la ventana de login
+                // ── Flujo de Inicio Asíncrono (Actualización + Login) ──────
+                // Cambiamos temporalmente a OnExplicitShutdown para evitar que la aplicación se cierre al cerrar la ventana de actualización o de login
                 var oldShutdownMode = this.ShutdownMode;
                 this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-                var userRepository = ServiceProvider.GetRequiredService<Alquitel.Core.Interfaces.Repositories.IUserRepository>();
-                var currentUserService = ServiceProvider.GetRequiredService<ICurrentUserService>();
-                var sessionStore = ServiceProvider.GetRequiredService<Alquitel.Core.Interfaces.ISessionStore>();
+                _ = RunStartupFlowAsync(e, oldShutdownMode);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Fatal(ex, "Startup failed");
+                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}",
+                    "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+            }
+        }
+
+        private async Task RunStartupFlowAsync(StartupEventArgs e, ShutdownMode oldShutdownMode)
+        {
+            try
+            {
+                // 1. Chequeo de actualizaciones de Velopack
+                var updateService = ServiceProvider!.GetRequiredService<IUpdateService>();
+                bool updateApplied = await CheckAndApplyUpdatesOnStartupInternalAsync(updateService);
+
+                if (updateApplied)
+                {
+                    // Si se aplicó la actualización, Velopack reiniciará la app. Cerramos esta instancia.
+                    Shutdown();
+                    return;
+                }
+
+                // 2. Login multi-usuario
+                var userRepository = ServiceProvider!.GetRequiredService<Alquitel.Core.Interfaces.Repositories.IUserRepository>();
+                var currentUserService = ServiceProvider!.GetRequiredService<ICurrentUserService>();
+                var sessionStore = ServiceProvider!.GetRequiredService<Alquitel.Core.Interfaces.ISessionStore>();
 
                 if (!TryAutoLogin(userRepository, currentUserService, sessionStore))
                 {
@@ -82,33 +110,107 @@ namespace Alquitel.UI
                     }
                 }
 
-                _ = Task.Run(() => ServiceProvider.GetRequiredService<IUpdateService>()
-                        .CheckAndApplyUpdatesAsync())
-                    .ContinueWith(
-                        t => AppLog.Warning(t.Exception!.Flatten().InnerException!,
-                            "Background update task faulted"),
-                        System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
-
-                var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
+                // 3. Lanzamiento de MainWindow
+                var mainWindow = ServiceProvider!.GetRequiredService<MainWindow>();
                 mainWindow.Show();
 
-                // Una vez que MainWindow está visible (y por lo tanto hay al menos una ventana abierta),
-                // restablecemos el ShutdownMode original (OnLastWindowClose).
+                // Restablecemos el ShutdownMode original
                 this.ShutdownMode = oldShutdownMode;
 
-                // Navigate to the Dashboard — without this the shell opens with an
-                // empty content area until the user clicks a sidebar item.
-                ServiceProvider.GetRequiredService<MainViewModel>().Initialize();
+                // Navigate to the Dashboard
+                ServiceProvider!.GetRequiredService<MainViewModel>().Initialize();
 
                 base.OnStartup(e);
             }
             catch (Exception ex)
             {
-                AppLog.Fatal(ex, "Startup failed");
-                MessageBox.Show($"Error crítico al iniciar Alquitel:\n\n{ex.Message}",
+                AppLog.Fatal(ex, "Error in startup flow");
+                MessageBox.Show($"Error crítico en el flujo de inicio de Alquitel:\n\n{ex.Message}",
                     "Error de Lanzamiento", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
+        }
+
+        private async Task<bool> CheckAndApplyUpdatesOnStartupInternalAsync(IUpdateService updateService)
+        {
+            if (updateService is not VelopackUpdateService velopackService || !velopackService.IsUpdateCheckEnabled)
+            {
+                return false;
+            }
+
+            var updateWindow = new Window
+            {
+                Title = "Actualización de Alquitel",
+                Width = 450,
+                Height = 180,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E1E2E")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4F46E5")),
+                BorderThickness = new Thickness(2),
+                AllowsTransparency = true,
+                Topmost = true
+            };
+
+            var grid = new Grid { Margin = new Thickness(20) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+
+            var textBlock = new TextBlock
+            {
+                Text = "Buscando actualizaciones...",
+                Foreground = Brushes.White,
+                FontSize = 16,
+                FontFamily = new FontFamily("Segoe UI"),
+                FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center
+            };
+            Grid.SetRow(textBlock, 0);
+            grid.Children.Add(textBlock);
+
+            var progressBar = new ProgressBar
+            {
+                IsIndeterminate = true,
+                Height = 8,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E2E3E")),
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4F46E5")),
+                BorderThickness = new Thickness(0),
+                Margin = new Thickness(0, 10, 0, 10)
+            };
+            Grid.SetRow(progressBar, 1);
+            grid.Children.Add(progressBar);
+
+            updateWindow.Content = grid;
+            updateWindow.Show();
+
+            bool updateApplied = false;
+            try
+            {
+                // Breve delay para asegurar que el render de la UI de la ventana sea visible
+                await Task.Delay(500);
+
+                updateApplied = await velopackService.CheckAndApplyUpdatesOnStartupAsync(status =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        textBlock.Text = status;
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(ex, "Error checking or applying updates on startup UI");
+            }
+            finally
+            {
+                updateWindow.Close();
+            }
+
+            return updateApplied;
         }
 
         /// <summary>
