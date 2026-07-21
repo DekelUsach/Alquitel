@@ -3,280 +3,461 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:Alquitel.UI.Converters">
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CLIENTES · "Directorio + ficha lateral"
+         El directorio es una grilla de fichas (iniciales reales, CUIT y
+         contacto a la vista): se recorre como un fichero, no como una lista
+         de administración. Al elegir una ficha se abre un panel lateral de
+         edición sobre un scrim — el directorio queda visible detrás y el
+         contexto nunca se pierde.
+         ═══════════════════════════════════════════════════════════════════ -->
+
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
+
+        <!-- Ficha del directorio -->
+        <Style x:Key="DirectoryCard" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,14,14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="card" Width="292" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="12" Padding="18,16"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <TranslateTransform/>
+                            </Border.RenderTransform>
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="card" Property="BorderBrush"
+                                        Value="{DynamicResource MutedTextBrush}"/>
+                                <Setter TargetName="card" Property="Effect"
+                                        Value="{StaticResource CardShadow}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="card"
+                                                             Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.Y)"
+                                                             To="-2" Duration="0:0:0.12">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="card"
+                                                             Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.Y)"
+                                                             To="0" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="card" Property="BorderBrush"
+                                        Value="{DynamicResource SecondaryColorBrush}"/>
+                                <Setter TargetName="card" Property="BorderThickness" Value="1.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="32,28,32,28">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <!-- ═══════════ CAPA BASE: DIRECTORIO ═══════════ -->
+        <Grid Margin="32,28,32,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <!-- ═══════════ HEADER ═══════════ -->
-        <Grid Grid.Row="0" Margin="0,0,0,24">
-            <StackPanel>
-                <TextBlock Text="Clientes" Style="{StaticResource PageTitle}"/>
-                <TextBlock Text="Directorio corporativo con validación de CUIT (AFIP)."
-                           Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+            <!-- Encabezado -->
+            <Grid Grid.Row="0" Margin="0,0,0,18">
+                <StackPanel>
+                    <TextBlock Text="Clientes" Style="{StaticResource PageTitle}"/>
+                    <TextBlock Text="Directorio corporativo con validación de CUIT (AFIP)."
+                               Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Width="40" Height="40"
+                            Command="{Binding RefreshAsyncCommand}"
+                            ToolTip="Recargar directorio"
+                            AutomationProperties.Name="Recargar directorio de clientes">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Width="40" Height="40" Margin="4,0,0,0"
+                            Command="{Binding ExportCsvCommand}"
+                            ToolTip="Exportar directorio a CSV (Excel)"
+                            AutomationProperties.Name="Exportar directorio a CSV">
+                        <TextBlock Text="&#xEDE1;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
+                    </Button>
+                    <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
+                            Command="{Binding NewClientCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Nuevo cliente" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Búsqueda -->
+            <Grid Grid.Row="1" MaxWidth="440" HorizontalAlignment="Left" Margin="0,0,0,20">
+                <TextBox Height="42" Padding="38,10,14,10"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           VerticalAlignment="Center" Margin="14,0,0,0" IsHitTestVisible="False"/>
+                <TextBlock Text="Buscar empresa, CUIT o contacto" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           VerticalAlignment="Center" Margin="40,0,0,0" IsHitTestVisible="False">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+
+            <!-- Skeleton mientras carga (latencia en modo Supabase) -->
+            <StackPanel Grid.Row="2" VerticalAlignment="Top"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                <WrapPanel>
+                    <Border Style="{StaticResource SkeletonRow}" Width="292" Height="120" Margin="0,0,14,14"/>
+                    <Border Style="{StaticResource SkeletonRow}" Width="292" Height="120" Margin="0,0,14,14" Opacity="0.45"/>
+                    <Border Style="{StaticResource SkeletonRow}" Width="292" Height="120" Margin="0,0,14,14" Opacity="0.35"/>
+                    <Border Style="{StaticResource SkeletonRow}" Width="292" Height="120" Margin="0,0,14,14" Opacity="0.25"/>
+                </WrapPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAsyncCommand}"
-                        ToolTip="Recargar lista de clientes" Margin="0,0,10,0">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Actualizar" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button Style="{StaticResource SecondaryButton}" Command="{Binding ExportCsvCommand}"
-                        ToolTip="Exportar directorio a CSV (Excel)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xEDE1;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Exportar CSV" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
-                        Command="{Binding NewClientCommand}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Nuevo Cliente" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
+
+            <!-- Grilla de fichas -->
+            <ListBox Grid.Row="2" ItemsSource="{Binding ClientsCollectionView}"
+                     SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
+                     ItemContainerStyle="{StaticResource DirectoryCard}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     Visibility="{Binding IsLoading, Converter={StaticResource InvBoolToVis}}"
+                     Padding="0,0,0,28">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="40" Height="40" CornerRadius="11"
+                                        Background="{DynamicResource AccentSoftBrush}" Margin="0,0,12,0">
+                                    <TextBlock Text="{Binding CompanyName, Converter={x:Static conv:InitialsConverter.Instance}}"
+                                               FontSize="13" FontWeight="Bold"
+                                               Foreground="{DynamicResource SecondaryColorBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding CompanyName}" FontSize="13.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Cuit}" FontSize="11"
+                                               FontFamily="Consolas"
+                                               Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Contacto: solo lo que existe, sin filas fantasma -->
+                            <TextBlock Text="{Binding ContactName}" FontSize="12"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ContactName}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ContactName}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding Email}" FontSize="11.5" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Email}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Email}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding Phone}" FontSize="11.5" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Phone}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Phone}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- Acuerdo de descuento, solo si existe -->
+                            <Border Margin="0,8,0,0">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource Chip}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SpecialDiscountPercent}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Style="{StaticResource ChipText}">
+                                    <Run Text="{Binding SpecialDiscountPercent, Mode=OneWay, StringFormat='{}{0:0.#}'}"/><Run Text="% acordado"/>
+                                </TextBlock>
+                            </Border>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="350"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- ═══════════ IZQUIERDA: LISTA ═══════════ -->
-            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="14" Margin="0,0,20,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Buscador -->
-                    <Grid Grid.Row="0" Margin="0,0,0,12">
-                        <TextBox Height="40" Padding="36,10,14,10"
-                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   Foreground="{DynamicResource MutedTextBrush}"
-                                   VerticalAlignment="Center" Margin="14,0,0,0"
-                                   IsHitTestVisible="False"/>
-                        <TextBlock Text="Buscar empresa, CUIT o contacto"
-                                   Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
-                                   VerticalAlignment="Center" Margin="38,0,0,0"
-                                   IsHitTestVisible="False">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SearchText}" Value="">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-
-                    <!-- Skeleton mientras cargan los clientes (latencia en modo Supabase) -->
-                    <StackPanel Grid.Row="1" VerticalAlignment="Top" Panel.ZIndex="1"
-                                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
-                        <Border Style="{StaticResource SkeletonRow}"/>
-                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.5"/>
-                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.45"/>
-                        <Border Style="{StaticResource SkeletonRow}" Opacity="0.35"/>
-                    </StackPanel>
-
-                    <ListBox Grid.Row="1" ItemsSource="{Binding ClientsCollectionView}"
-                             SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
-                             ItemContainerStyle="{StaticResource NavListItem}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Style="{StaticResource AvatarBadge}" Margin="0,0,12,0">
-                                        <TextBlock Text="&#xE716;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                                                   Foreground="{DynamicResource SecondaryColorBrush}"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding CompanyName}" FontSize="13" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding Cuit}" FontSize="11"
-                                                   Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
+        <!-- ═══════════ CAPA SUPERIOR: FICHA LATERAL DE EDICIÓN ═══════════ -->
+        <Grid Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}" Panel.ZIndex="100">
+            <!-- Scrim: clic afuera cancela la edición -->
+            <Border Background="#66000000">
+                <Border.InputBindings>
+                    <MouseBinding Gesture="LeftClick" Command="{Binding CancelEditCommand}"/>
+                </Border.InputBindings>
             </Border>
 
-            <!-- ═══════════ DERECHA: ESTADO VACÍO ═══════════ -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding IsEditing, Converter={StaticResource InvBoolToVis}}">
-                <TextBlock Text="&#xE716;" Style="{StaticResource EmptyStateIcon}"/>
-                <TextBlock Text="Seleccioná un cliente" Style="{StaticResource EmptyStateTitle}"/>
-                <TextBlock Text="Elegí uno de la lista para ver o editar sus datos,&#x0a;o creá uno nuevo con el botón de arriba."
-                           Style="{StaticResource EmptyStateHint}"/>
-            </StackPanel>
+            <!-- Panel lateral -->
+            <Border HorizontalAlignment="Right" Width="500"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
+                    RenderTransformOrigin="1,0.5">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="DrawerSlide"/>
+                </Border.RenderTransform>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.X)"
+                                                             From="70" To="0" Duration="0:0:0.22">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <QuarticEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             From="0" To="1" Duration="0:0:0.18"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
 
-            <!-- ═══════════ DERECHA: EDITOR ═══════════ -->
-            <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="4,0,4,20" MaxWidth="720" HorizontalAlignment="Left">
-
-                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                    <Border Style="{StaticResource SectionIconBox}">
-                                        <TextBlock Text="&#xE716;" Style="{StaticResource SectionIconGlyph}"/>
-                                    </Border>
-                                    <TextBlock Text="Datos de la empresa" Style="{StaticResource SectionTitle}"/>
-                                </StackPanel>
-
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.6*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                        <TextBlock Text="Empresa / Cliente" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditCompanyName, UpdateSourceTrigger=PropertyChanged}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="CUIT" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditCuit, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <!-- Feedback inline ✓/✗ al pie del campo -->
-                                        <TextBlock Text="{Binding CuitFeedback}" FontSize="11"
-                                                   TextWrapping="Wrap" Margin="4,3,0,0">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding CuitFeedbackIsError}" Value="True">
-                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding CuitFeedback}" Value="">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                        <TextBlock Text="Contacto" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditContactName, UpdateSourceTrigger=PropertyChanged}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Teléfono" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditPhone, UpdateSourceTrigger=PropertyChanged}"/>
-                                    </StackPanel>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                        <TextBlock Text="Email" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditEmail, UpdateSourceTrigger=PropertyChanged}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Descuento acordado % (vacío = sin acuerdo)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox Height="42" Text="{Binding EditSpecialDiscount, UpdateSourceTrigger=PropertyChanged}"
-                                                 ToolTip="Precio especial del cliente: el armador aplica este % de descuento por defecto al seleccionarlo (editable en cada presupuesto)."/>
-                                    </StackPanel>
-                                </Grid>
-
-                                <TextBlock Text="Notas internas (no se imprimen en documentos)" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Height="90" AcceptsReturn="True" TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         VerticalContentAlignment="Top" Padding="14,10"
-                                         Text="{Binding EditInternalNotes, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Uso interno del equipo: condiciones de pago, historial de trato, etc."/>
-
-                                <!-- Quick-win IA: resumen del historial de pedidos -->
-                                <Button Height="36" Margin="0,14,0,0" HorizontalAlignment="Left"
-                                        Command="{Binding SummarizeClientHistoryCommand}"
-                                        AutomationProperties.Name="Resumir historial del cliente con inteligencia artificial"
-                                        ToolTip="IA: resume qué alquila este cliente, con qué frecuencia y por qué montos.">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsSummarizing}" Value="True">
-                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
-                                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
-                                        <TextBlock Text="Resumen IA del historial" FontSize="12" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                                <Border Padding="14,10" Margin="0,10,0,0">
-                                    <Border.Style>
-                                        <Style TargetType="Border" BasedOn="{StaticResource CardInner}">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding ClientAiSummary}" Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="{Binding ClientAiSummary}" FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                </Border>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Acciones -->
+                <DockPanel>
+                    <!-- Pie de acciones fijo -->
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,1,0,0" Padding="24,14">
                         <Grid>
-                            <Button Style="{StaticResource GhostDangerButton}" Height="42" HorizontalAlignment="Left"
+                            <Button Style="{StaticResource GhostDangerButton}" Height="40" HorizontalAlignment="Left"
                                     Command="{Binding DeleteClientCommand}" Content="Eliminar"/>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
+                                <Button Style="{StaticResource SecondaryButton}" Height="40" Margin="0,0,8,0"
                                         Command="{Binding CancelEditCommand}" Content="Cancelar"/>
-                                <Button Style="{StaticResource PrimaryButton}" Height="42"
+                                <Button Style="{StaticResource PrimaryButton}" Height="40"
                                         Command="{Binding SaveClientCommand}">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBlock Text="Guardar Cliente" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Guardar cliente" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
                         </Grid>
-                        <TextBlock Text="{Binding StatusMessage}" FontSize="13"
-                                   Foreground="{DynamicResource SecondaryColorBrush}"
-                                   HorizontalAlignment="Right" Margin="0,12,0,0"/>
-                    </StackPanel>
-                </ScrollViewer>
+                    </Border>
+
+                    <!-- Contenido de la ficha -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="24,22,24,20">
+
+                            <!-- Identidad viva: refleja lo tipeado -->
+                            <Grid Margin="0,0,0,24">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="46" Height="46" CornerRadius="13"
+                                        Background="{DynamicResource AccentSoftBrush}" Margin="0,0,14,0">
+                                    <TextBlock Text="{Binding EditCompanyName, Converter={x:Static conv:InitialsConverter.Instance}}"
+                                               FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource SecondaryColorBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock FontSize="17" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"
+                                               TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="{Binding EditCompanyName}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EditCompanyName}" Value="">
+                                                        <Setter Property="Text" Value="Cliente nuevo"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="Ficha del cliente" FontSize="11"
+                                               Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="34" Height="34"
+                                        VerticalAlignment="Top"
+                                        Command="{Binding CancelEditCommand}" ToolTip="Cerrar sin guardar"
+                                        AutomationProperties.Name="Cerrar ficha sin guardar">
+                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource IconFont}" FontSize="12"/>
+                                </Button>
+                            </Grid>
+
+                            <TextBlock Text="Empresa / Cliente" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="42" Margin="0,0,0,14"
+                                     Text="{Binding EditCompanyName, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Text="CUIT" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="42" Text="{Binding EditCuit, UpdateSourceTrigger=PropertyChanged}"/>
+                            <!-- Validación inline ✓/✗ al pie del campo -->
+                            <TextBlock Text="{Binding CuitFeedback}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="4,4,0,14">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CuitFeedbackIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CuitFeedback}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="Margin" Value="0,0,0,14"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="Contacto" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Height="42" Text="{Binding EditContactName, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Teléfono" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Height="42" Text="{Binding EditPhone, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="Email" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="42" Margin="0,0,0,14"
+                                     Text="{Binding EditEmail, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Text="Descuento acordado % (vacío = sin acuerdo)" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="42" Margin="0,0,0,14"
+                                     Text="{Binding EditSpecialDiscount, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Precio especial del cliente: el armador aplica este % de descuento por defecto al seleccionarlo (editable en cada presupuesto)."/>
+
+                            <TextBlock Text="Notas internas (no se imprimen en documentos)" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Height="88" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     VerticalContentAlignment="Top" Padding="14,10"
+                                     Text="{Binding EditInternalNotes, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Uso interno del equipo: condiciones de pago, historial de trato, etc."/>
+
+                            <!-- Resumen IA del historial de pedidos -->
+                            <Button Height="36" Margin="0,16,0,0" HorizontalAlignment="Left"
+                                    Command="{Binding SummarizeClientHistoryCommand}"
+                                    AutomationProperties.Name="Resumir historial del cliente con inteligencia artificial"
+                                    ToolTip="IA: resume qué alquila este cliente, con qué frecuencia y por qué montos.">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSummarizing}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                               VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Resumen IA del historial" FontSize="12" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Border Padding="14,10" Margin="0,10,0,0">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource CardInner}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ClientAiSummary}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding ClientAiSummary}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </Border>
+
+                            <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                                       Foreground="{DynamicResource SecondaryColorBrush}"
+                                       Margin="0,12,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
         </Grid>
     </Grid>

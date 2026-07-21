@@ -586,10 +586,10 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void CancelEdit()
         {
-            if (SelectedProduct != null)
-                PopulateForm(SelectedProduct);
-            else
-                IsEditing = false;
+            // "Volver al catálogo": descarta cambios sin guardar y cierra el taller.
+            // Deseleccionar dispara OnSelectedProductChanged(null) → IsEditing = false.
+            SelectedProduct = null;
+            IsEditing = false;
             StatusMessage = string.Empty;
         }
 

@@ -3,127 +3,183 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:Alquitel.UI.Converters">
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         UBICACIONES · "Tablero de lugares"
+         Un catálogo de una sola entidad de un solo campo no necesita
+         master-detail: acá los lugares son fichas en un tablero y la edición
+         ocurre en una banda que se abre arriba del tablero, sin cambiar de
+         contexto ni dejar media pantalla vacía.
+         ═══════════════════════════════════════════════════════════════════ -->
+
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <conv:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
+
+        <!-- Ficha de lugar -->
+        <Style x:Key="PlaceTile" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,12,12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="tile" Width="228" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="12" Padding="14,12">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="tile" Property="Background"
+                                        Value="{DynamicResource HoverBrush}"/>
+                                <Setter TargetName="tile" Property="BorderBrush"
+                                        Value="{DynamicResource MutedTextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="tile" Property="BorderBrush"
+                                        Value="{DynamicResource SecondaryColorBrush}"/>
+                                <Setter TargetName="tile" Property="BorderThickness" Value="1.5"/>
+                                <Setter TargetName="tile" Property="Background"
+                                        Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="32,28,32,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ═══════════ HEADER ═══════════ -->
-        <Grid Grid.Row="0" Margin="0,0,0,24">
+        <!-- ═══════════ ENCABEZADO ═══════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
             <StackPanel>
                 <TextBlock Text="Ubicaciones" Style="{StaticResource PageTitle}"/>
                 <TextBlock Text="Lugares físicos donde se realizan los eventos."
                            Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <Button Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAsyncCommand}"
-                        ToolTip="Recargar lista de ubicaciones" Margin="0,0,10,0">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Actualizar" VerticalAlignment="Center"/>
-                    </StackPanel>
+                <Button Style="{StaticResource IconButton}" Width="40" Height="40"
+                        Command="{Binding RefreshAsyncCommand}"
+                        ToolTip="Recargar ubicaciones"
+                        AutomationProperties.Name="Recargar lista de ubicaciones">
+                    <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
                 </Button>
-                <Button Style="{StaticResource PrimaryButton}" Command="{Binding NewLocationCommand}">
+                <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
+                        Command="{Binding NewLocationCommand}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Text="Nueva Ubicación" VerticalAlignment="Center"/>
+                        <TextBlock Text="Nueva ubicación" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="350"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+        <!-- ═══════════ BANDA DE EDICIÓN (se abre sobre el tablero) ═══════════ -->
+        <Border Grid.Row="1" Margin="0,0,0,20"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource SecondaryColorBrush}" BorderThickness="1"
+                CornerRadius="12" Padding="20,16"
+                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- ═══════════ IZQUIERDA: LISTA ═══════════ -->
-            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="14" Margin="0,0,20,0">
-                <ListBox ItemsSource="{Binding Locations}"
-                         SelectedItem="{Binding SelectedLocation, Mode=TwoWay}"
-                         ItemContainerStyle="{StaticResource NavListItem}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Style="{StaticResource AvatarBadge}" Margin="0,0,12,0">
-                                    <TextBlock Text="&#xE707;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                                               Foreground="{DynamicResource SecondaryColorBrush}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"/>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Border>
+                <Border Grid.Column="0" Width="42" Height="42" CornerRadius="11"
+                        Background="{DynamicResource AccentSoftBrush}" Margin="0,0,14,0"
+                        VerticalAlignment="Center">
+                    <TextBlock Text="{Binding EditName, Converter={x:Static conv:InitialsConverter.Instance}}"
+                               FontSize="14" FontWeight="Bold"
+                               Foreground="{DynamicResource SecondaryColorBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
 
-            <!-- ═══════════ DERECHA: ESTADO VACÍO ═══════════ -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding IsEditing, Converter={StaticResource InvBoolToVis}}">
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Nombre del lugar (ej. Predio de La Rural)"
+                               Style="{StaticResource FieldLabel}"/>
+                    <TextBox Height="42" Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
+                    <Button Style="{StaticResource GhostDangerButton}" Height="42" Margin="0,0,8,0"
+                            Command="{Binding DeleteLocationCommand}" Content="Eliminar"/>
+                    <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
+                            Command="{Binding CancelEditCommand}" Content="Cancelar"/>
+                    <Button Style="{StaticResource PrimaryButton}" Height="42"
+                            Command="{Binding SaveLocationCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Guardar" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ TABLERO ═══════════ -->
+        <Grid Grid.Row="2">
+            <!-- Estado vacío -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Locations.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
                 <TextBlock Text="&#xE707;" Style="{StaticResource EmptyStateIcon}"/>
-                <TextBlock Text="Seleccioná una ubicación" Style="{StaticResource EmptyStateTitle}"/>
-                <TextBlock Text="Elegí una de la lista para editarla,&#x0a;o creá una nueva con el botón de arriba."
-                           Style="{StaticResource EmptyStateHint}"/>
+                <TextBlock Text="Todavía no hay ubicaciones" Style="{StaticResource EmptyStateTitle}"/>
+                <TextBlock Text="Creá la primera con «Nueva ubicación»: después la vas a elegir al armar cada presupuesto."
+                           Style="{StaticResource EmptyStateHint}" MaxWidth="340"/>
             </StackPanel>
 
-            <!-- ═══════════ DERECHA: EDITOR ═══════════ -->
-            <Border Grid.Column="1" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="4,0,4,20" MaxWidth="720" HorizontalAlignment="Left">
-
-                        <Border Style="{StaticResource Card}" Padding="26,22" Margin="0,0,0,16">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                    <Border Style="{StaticResource SectionIconBox}">
-                                        <TextBlock Text="&#xE707;" Style="{StaticResource SectionIconGlyph}"/>
-                                    </Border>
-                                    <TextBlock Text="Datos de la ubicación" Style="{StaticResource SectionTitle}"/>
-                                </StackPanel>
-
-                                <TextBlock Text="Nombre (ej. Predio de La Rural)" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Height="42" Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Acciones -->
+            <ListBox ItemsSource="{Binding Locations}"
+                     SelectedItem="{Binding SelectedLocation, Mode=TwoWay}"
+                     ItemContainerStyle="{StaticResource PlaceTile}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
                         <Grid>
-                            <Button Style="{StaticResource GhostDangerButton}" Height="42" HorizontalAlignment="Left"
-                                    Command="{Binding DeleteLocationCommand}" Content="Eliminar"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
-                                        Command="{Binding CancelEditCommand}" Content="Cancelar"/>
-                                <Button Style="{StaticResource PrimaryButton}" Height="42"
-                                        Command="{Binding SaveLocationCommand}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBlock Text="Guardar Ubicación" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                    Background="{DynamicResource AccentSoftBrush}" Margin="0,0,11,0">
+                                <TextBlock Text="{Binding Name, Converter={x:Static conv:InitialsConverter.Instance}}"
+                                           FontSize="11.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource SecondaryColorBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </Grid>
-                        <TextBlock Text="{Binding StatusMessage}" FontSize="13"
-                                   Foreground="{DynamicResource SecondaryColorBrush}"
-                                   HorizontalAlignment="Right" Margin="0,12,0,0"/>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
+
+        <!-- Estado -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" FontSize="12"
+                   Foreground="{DynamicResource SecondaryColorBrush}"
+                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,0"/>
     </Grid>
 </UserControl>
