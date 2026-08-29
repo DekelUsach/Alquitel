@@ -1,4 +1,4 @@
-## Visual Studio Professional / Enterprise / Community
+﻿## Visual Studio Professional / Enterprise / Community
 .vs/
 .vscode/
 
@@ -38,13 +38,18 @@ tz/
 t.zip
 bs.txt
 bookmarks_encontrados.txt
+Drafts/
+**/Drafts/
+Backups/
+**/Backups/
+session.json
+**/session.json
 
 ## Alquitel Generated Docs (Excluded from Git)
 1_PRESUPUESTOS/
 2_OF/
 3_OT/
 .agents
-AGENTS.md
 .claude
 # Debug outputs generados en runtime
 dump.txt
@@ -67,9 +72,15 @@ youtube-screenshot.png
 # Secretos por máquina (connection string real, service key de Supabase).
 # NUNCA committear: sobreescriben appsettings.json solo en el equipo desplegado.
 appsettings.local.json
+**/appsettings.local.json
 
 # Plantillas y órdenes de trabajo locales (.docx en la raíz)
 /*.docx
 
-# Carpeta de migraciones de Supabase
-/supabase/migrations/
+# Supabase: versionar migraciones pero excluir temporales, dumps y ramas
+!/supabase/migrations/
+!/supabase/migrations/**
+/supabase/.temp/
+/supabase/.branches/
+supabase/*.dump
+supabase/*.sql.bak
