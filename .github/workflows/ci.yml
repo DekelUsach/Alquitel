@@ -1,6 +1,4 @@
-# CI mínimo: compila la solución y corre los tests de Core en cada push/PR a main.
-# Elimina el "compila en mi máquina": un PR que rompe el build o los tests no se mergea.
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -11,30 +9,54 @@ on:
 
 jobs:
   build-and-test:
-    # windows-latest: Alquitel.UI/Infrastructure targetean net8.0-windows (WPF + COM).
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Secret Scanning
+        shell: bash
+        run: |
+          echo "Scanning for sensitive patterns..."
+          P1="eyJ"
+          P2="sk_"
+          P3="service"
+          P3+="_role"
+          PATTERN="${P1}[A-Za-z0-9_-]{20,}|${P2}[A-Za-z0-9]{16,}|${P3}"
+          LEAKS=$(git grep -E "$PATTERN" -- ':!*.githooks/*' ':!*example*' ':!.github/*' || true)
+          if [ -n "$LEAKS" ]; then
+            echo "::error::Posible secreto detectado en el repositorio:"
+            echo "$LEAKS"
+            exit 1
+          fi
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@39504262cda4527d3e8e1629828397f968bdfe9d # v4.1.0
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore Alquitel.sln
+      - name: Restore (Locked Mode)
+        run: dotnet restore Alquitel.sln --locked-mode
 
-      - name: Build
+      - name: Dependency Vulnerability Audit
+        shell: bash
+        run: |
+          AUDIT_OUTPUT=$(dotnet list package --vulnerable --include-transitive)
+          echo "$AUDIT_OUTPUT"
+          if echo "$AUDIT_OUTPUT" | grep -iE "(Critical|High)" > /dev/null; then
+            echo "::error::Se detectaron vulnerabilidades de severidad Alta o Crítica en las dependencias."
+            exit 1
+          fi
+
+      - name: Build (Release)
         run: dotnet build Alquitel.sln --no-restore -c Release
 
-      - name: Test
+      - name: Test (Release)
         run: dotnet test Alquitel.Core.Tests/Alquitel.Core.Tests.csproj --no-build -c Release --verbosity normal
 
-  # Al taggear vX.Y.Z: publica self-contained, empaqueta con Velopack (vpk) y sube
-  # el instalador (Setup.exe + delta packages) como GitHub Release. La app en
-  # runtime (VelopackUpdateService → GithubSource) chequea ese mismo repo público
-  # para auto-actualizarse — ver Updates:GithubRepoUrl en appsettings.json.
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-test
@@ -42,10 +64,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Validate Release Tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::El tag '$TAG' no cumple con formato SemVer vX.Y.Z."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@39504262cda4527d3e8e1629828397f968bdfe9d # v4.1.0
         with:
           dotnet-version: 8.0.x
 
@@ -56,14 +88,44 @@ jobs:
           dotnet publish Alquitel.UI/Alquitel.UI.csproj -c Release -r win-x64 --self-contained true \
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:Version="$VERSION" -o publish
 
-      - name: Upload raw publish artifact
-        uses: actions/upload-artifact@v4
+      - name: Verify No Secrets or Local Data in Publish Directory
+        shell: bash
+        run: |
+          if [ -f "publish/appsettings.local.json" ]; then
+            echo "::error::appsettings.local.json no debe ser incluido en la publicacion."
+            exit 1
+          fi
+          if compgen -G "publish/*.db*" > /dev/null; then
+            echo "::error::Archivos de base de datos SQLite locales detectados en publish/."
+            exit 1
+          fi
+          if [ -d "publish/Drafts" ] || [ -d "publish/Backups" ]; then
+            echo "::error::Carpetas de datos locales (Drafts/Backups) detectadas en publish/."
+            exit 1
+          fi
+
+      - name: Generate SBOM (Package Manifest)
+        shell: bash
+        run: |
+          dotnet list Alquitel.UI/Alquitel.UI.csproj package --include-transitive --format json > publish/sbom-packages.json
+
+      - name: Generate SHA-256 Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path publish -Recurse -File |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $($_.Path.Replace((Get-Item -Path publish).FullName + '\', ''))" } |
+            Out-File -FilePath publish/SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload Raw Publish Artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: alquitel-${{ github.ref_name }}
           path: publish/
+          retention-days: 14
 
-      - name: Install vpk (Velopack CLI)
-        run: dotnet tool install --global vpk
+      - name: Install Pinned Velopack CLI
+        run: dotnet tool install --global vpk --version 1.2.0
 
       - name: Pack with Velopack
         shell: bash
@@ -79,7 +141,15 @@ jobs:
             --icon Alquitel.UI/Assets/app.ico \
             -o Releases
 
-      - name: Upload release to GitHub
+      - name: Generate Release Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path Releases -Recurse -File |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $($_.Path.Replace((Get-Item -Path Releases).FullName + '\', ''))" } |
+            Out-File -FilePath Releases/SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload Release to GitHub
         shell: bash
         run: |
           vpk upload github \
