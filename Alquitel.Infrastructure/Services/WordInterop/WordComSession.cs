@@ -42,7 +42,19 @@ namespace Alquitel.Infrastructure.Services.WordInterop
 
             try
             {
-                _wordPid = GetWinwordPids().Except(pidsBefore).Cast<int?>().FirstOrDefault();
+                // Solo se adopta el PID si apareció EXACTAMENTE un WINWORD nuevo. Si el
+                // usuario abrió Word a mano en el mismo instante habría dos candidatos y
+                // elegir al azar terminaría matándole el documento con trabajo sin guardar.
+                var newPids = GetWinwordPids().Except(pidsBefore).ToList();
+                if (newPids.Count == 1)
+                {
+                    _wordPid = newPids[0];
+                }
+                else if (newPids.Count > 1)
+                {
+                    _wordPid = null;
+                    AppLog.Warning("Aparecieron {Count} procesos WINWORD nuevos: no se adopta ninguno para no matar el Word del usuario", newPids.Count);
+                }
                 LastLaunchedPid = _wordPid;
             }
             catch (Exception ex) { AppLog.Warning(ex, "Could not capture WINWORD PID"); }
@@ -177,6 +189,31 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch (Exception ex) { AppLog.Warning(ex, "Failed to delete temp file {TempPath}", _tempPath); }
                 _tempPath = null;
             }
+
+            // Barrido de temporales de corridas anteriores: si el proceso murió a mitad
+            // (crash, timeout, apagón) quedaron .docx con datos de clientes en %TEMP%.
+            SweepStaleTempFiles();
+        }
+
+        /// <summary>
+        /// Borra los alquitel_tmp_*.docx de más de un día que hayan quedado en %TEMP%
+        /// por corridas abortadas. Best-effort y silencioso: nunca debe romper el flujo.
+        /// </summary>
+        private static void SweepStaleTempFiles()
+        {
+            try
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-1);
+                foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "alquitel_tmp_*.docx"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
+                    }
+                    catch { /* archivo en uso o sin permisos: se intentará la próxima vez */ }
+                }
+            }
+            catch (Exception ex) { AppLog.Warning(ex, "No se pudo barrer temporales viejos de Word"); }
         }
     }
 }

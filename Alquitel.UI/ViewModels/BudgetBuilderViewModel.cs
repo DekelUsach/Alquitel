@@ -1131,8 +1131,12 @@ namespace Alquitel.UI.ViewModels
                     }
                     else
                     {
+                        // ArgumentList en vez de una línea de comando armada a mano: el
+                        // nombre del archivo lleva la razón social del cliente y una
+                        // comilla ahí adentro rompía (o inyectaba) los argumentos.
+                        var revealPath = outputPath;
                         _toastService.ShowSuccess($"Documento guardado: {fileName}", "Abrir carpeta",
-                            () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""));
+                            () => Alquitel.UI.Helpers.ShellLauncher.RevealInExplorer(revealPath));
                     }
                 }
                 else if (persistResult == OrderPersistResult.Error)

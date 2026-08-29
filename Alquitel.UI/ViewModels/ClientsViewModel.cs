@@ -140,7 +140,9 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
-                var clients = await db.Clients.OrderBy(c => c.CompanyName).ToListAsync();
+                // AsNoTracking: la grilla trabaja sobre copias; los guardados releen la
+                // fila con FindAsync en un contexto propio.
+                var clients = await db.Clients.AsNoTracking().OrderBy(c => c.CompanyName).ToListAsync();
 
                 _dispatcher.InvokeAsync(() =>
                 {
@@ -272,17 +274,48 @@ namespace Alquitel.UI.ViewModels
                 }
             }
 
+            // El email es a donde salen el borrador de Outlook y el link de aprobación:
+            // un typo se descubría recién cuando el presupuesto nunca era contestado.
+            var emailProblem = ContactValidator.ValidateEmail(EditEmail);
+            if (emailProblem != null)
+            {
+                _dialogService.ShowWarning("Email inválido", emailProblem);
+                return;
+            }
+
+            var phoneProblem = ContactValidator.ValidatePhone(EditPhone);
+            if (phoneProblem != null)
+            {
+                _dialogService.ShowWarning("Teléfono inválido", phoneProblem);
+                return;
+            }
+
             try
             {
                 using var db = await _dbContextFactory.CreateDbContextAsync();
 
+                // El CUIT se guarda normalizado a 11 dígitos: antes convivían "20-1234..."
+                // y "201234..." como clientes distintos y el chequeo de duplicados no los
+                // veía, dejando dos fichas del mismo cliente.
+                var cuit = CuitValidator.Normalize(EditCuit) ?? EditCuit?.Trim() ?? string.Empty;
+
                 // Friendly duplicate check — otherwise the unique index surfaces
                 // as a raw DbUpdateException the user can't interpret.
-                var cuit = EditCuit?.Trim() ?? string.Empty;
+                // La comparación va normalizada de los dos lados: las filas viejas
+                // guardaron el CUIT tal cual se tipeó ("20-12345678-9") y un igual
+                // literal contra el normalizado no las encontraba.
                 if (!string.IsNullOrEmpty(cuit))
                 {
-                    var duplicate = await db.Clients.IgnoreQueryFilters()
-                        .AnyAsync(c => c.Cuit == cuit && c.Id != SelectedClient.Id);
+                    var existing = await db.Clients.IgnoreQueryFilters().AsNoTracking()
+                        .Where(c => c.Id != SelectedClient.Id && c.Cuit != "")
+                        .Select(c => c.Cuit)
+                        .ToListAsync();
+
+                    var normalizedNew = CuitValidator.Normalize(cuit) ?? cuit;
+                    bool duplicate = existing.Any(existingCuit =>
+                        string.Equals(CuitValidator.Normalize(existingCuit) ?? existingCuit, normalizedNew,
+                            StringComparison.OrdinalIgnoreCase));
+
                     if (duplicate)
                     {
                         _dialogService.ShowWarning("CUIT duplicado",
@@ -301,9 +334,10 @@ namespace Alquitel.UI.ViewModels
                 
                 client.CompanyName = EditCompanyName.Trim();
                 client.Cuit = cuit;
-                client.ContactName = EditContactName;
-                client.Phone = EditPhone;
-                client.Email = EditEmail;
+                client.ContactName = EditContactName?.Trim();
+                client.Phone = EditPhone?.Trim();
+                // Un espacio de más pegado del portapapeles hacía rebotar el mail.
+                client.Email = EditEmail?.Trim();
                 client.InternalNotes = string.IsNullOrWhiteSpace(EditInternalNotes) ? null : EditInternalNotes.Trim();
                 client.SpecialDiscountPercent =
                     decimal.TryParse(EditSpecialDiscount?.Trim().Replace("%", ""),

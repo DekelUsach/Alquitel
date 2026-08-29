@@ -47,13 +47,18 @@ namespace Alquitel.Infrastructure.Services
 
                     using (var doc = WordprocessingDocument.Open(tempPath, isEditable: true))
                     {
-                        var body = doc.MainDocumentPart?.Document.Body
+                        // Se valida parte por parte en vez de encadenar con "?.": una
+                        // plantilla sin MainDocumentPart y una sin Document son fallas
+                        // distintas y ambas terminaban en un NullReferenceException crudo.
+                        var mainPart = doc.MainDocumentPart
+                            ?? throw new InvalidOperationException("La plantilla no tiene contenido principal (MainDocumentPart).");
+                        var body = mainPart.Document?.Body
                             ?? throw new InvalidOperationException("La plantilla no tiene cuerpo de documento.");
 
                         ReplacePlaceholders(doc, order, isTechnical);
                         RenderProducts(doc, body, order, isTechnical);
 
-                        doc.MainDocumentPart!.Document.Save();
+                        mainPart.Document.Save();
                     }
 
                     File.Move(tempPath, outputPath, overwrite: true);
@@ -125,8 +130,9 @@ namespace Alquitel.Infrastructure.Services
 
         private static IEnumerable<OpenXmlElement> EnumerateTextParts(WordprocessingDocument doc)
         {
-            var main = doc.MainDocumentPart!;
-            if (main.Document.Body != null) yield return main.Document.Body;
+            var main = doc.MainDocumentPart;
+            if (main == null) yield break;
+            if (main.Document?.Body != null) yield return main.Document.Body;
             foreach (var hp in main.HeaderParts)
                 if (hp.Header != null) yield return hp.Header;
             foreach (var fp in main.FooterParts)

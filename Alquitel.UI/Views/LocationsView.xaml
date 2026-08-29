@@ -4,40 +4,49 @@
              xmlns:conv="clr-namespace:Alquitel.UI.Converters">
 
     <!-- ═══════════════════════════════════════════════════════════════════
-         UBICACIONES · "Tablero de lugares"
-         Un catálogo de una sola entidad de un solo campo no necesita
-         master-detail: acá los lugares son fichas en un tablero y la edición
-         ocurre en una banda que se abre arriba del tablero, sin cambiar de
-         contexto ni dejar media pantalla vacía.
+         UBICACIONES · "El padrón de lugares"
+         Esto no es un catálogo decorativo: es una herramienta de mantenimiento.
+         El campo "Lugar del evento" del armador es texto libre y se guarda con
+         find-or-create por nombre exacto, así que "La Rural", "la rural" y
+         "Predio La Rural" conviven como tres lugares distintos — y ese nombre
+         se imprime en el presupuesto que va al cliente.
+         Por eso la pantalla marca sola los nombres repetidos, los lugares sin
+         uso y el centinela del sistema, y permite fusionarlos reasignando sus
+         presupuestos. Toda la actividad sale de Orders: la entidad Location
+         sigue teniendo solo Id y Name, sin una sola migración.
+         Una única ruta de edición: la ficha lateral. Nada se guarda solo.
          ═══════════════════════════════════════════════════════════════════ -->
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
+        <conv:OrderStatusToBrushConverter x:Key="StatusToBrush"/>
 
-        <!-- Ficha de lugar -->
-        <Style x:Key="PlaceTile" TargetType="ListBoxItem">
-            <Setter Property="Margin" Value="0,0,12,12"/>
+        <!-- Fila del padrón. El centinela se pinta primero para que hover y
+             selección puedan ganarle. -->
+        <Style x:Key="PadronRow" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="tile" Width="228" Background="{DynamicResource SurfaceBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="12" Padding="14,12">
+                        <Border x:Name="row" Background="Transparent"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="0,0,0,1">
                             <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSentinel}" Value="True">
+                                <Setter TargetName="row" Property="Background"
+                                        Value="{DynamicResource SurfaceAltBrush}"/>
+                            </DataTrigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="tile" Property="Background"
-                                        Value="{DynamicResource HoverBrush}"/>
-                                <Setter TargetName="tile" Property="BorderBrush"
-                                        Value="{DynamicResource MutedTextBrush}"/>
+                                <Setter TargetName="row" Property="Background"
+                                        Value="{DynamicResource DataRowHoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="tile" Property="BorderBrush"
-                                        Value="{DynamicResource SecondaryColorBrush}"/>
-                                <Setter TargetName="tile" Property="BorderThickness" Value="1.5"/>
-                                <Setter TargetName="tile" Property="Background"
+                                <Setter TargetName="row" Property="Background"
                                         Value="{DynamicResource SelectionBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -45,31 +54,137 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Acciones que aparecen con el hover. Solo se anima Opacity: animar
+             ancho o visibilidad haría saltar el layout de toda la fila. -->
+        <Style x:Key="RowActions" TargetType="StackPanel">
+            <Setter Property="Opacity" Value="0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                             Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Segmento de orden. El pill activo es más CLARO que el riel, nunca
+             coloreado: el acento se reserva para lo accionable. -->
+        <Style x:Key="SortSegmentButton" TargetType="Button">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="seg" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="seg" Property="Background"
+                                        Value="{DynamicResource HoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HygieneChipButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+        </Style>
+
+        <!-- Distintivo de fila. Cada estado lleva TEXTO además de color: el
+             color solo nunca transmite estado. -->
+        <Style x:Key="RowBadge" TargetType="Border" BasedOn="{StaticResource Chip}">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="12,0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding BadgeKind}" Value="Repetido">
+                    <Setter Property="Background" Value="{DynamicResource WarningSubtleBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BadgeKind}" Value="SinNombre">
+                    <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BadgeText}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RowBadgeText" TargetType="TextBlock" BasedOn="{StaticResource ChipText}">
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding BadgeKind}" Value="Repetido">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BadgeKind}" Value="SinNombre">
+                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Etiqueta + valor de la ficha lateral -->
+        <Style x:Key="DetailValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="32,28,32,28">
+    <Grid Margin="32,26,32,26">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ═══════════ ENCABEZADO ═══════════ -->
-        <Grid Grid.Row="0" Margin="0,0,0,20">
+        <!-- ═══════════ 1 · ENCABEZADO ═══════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,18">
             <StackPanel>
                 <TextBlock Text="Ubicaciones" Style="{StaticResource PageTitle}"/>
-                <TextBlock Text="Lugares físicos donde se realizan los eventos."
+                <TextBlock Text="El padrón de lugares. Los nombres repetidos y los lugares sin uso se marcan solos."
                            Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <!-- RefreshCommand, NO RefreshAsyncCommand: CommunityToolkit saca el
+                     sufijo Async al generar el nombre del comando. -->
                 <Button Style="{StaticResource IconButton}" Width="40" Height="40"
-                        Command="{Binding RefreshAsyncCommand}"
-                        ToolTip="Recargar ubicaciones"
-                        AutomationProperties.Name="Recargar lista de ubicaciones">
+                        Command="{Binding RefreshCommand}"
+                        ToolTip="Recargar el padrón"
+                        AutomationProperties.Name="Recargar el padrón de ubicaciones">
                     <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
                 </Button>
                 <Button Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
-                        Command="{Binding NewLocationCommand}">
+                        Command="{Binding NewLocationCommand}"
+                        AutomationProperties.Name="Crear una ubicación nueva">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13"
                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -79,107 +194,809 @@
             </StackPanel>
         </Grid>
 
-        <!-- ═══════════ BANDA DE EDICIÓN (se abre sobre el tablero) ═══════════ -->
-        <Border Grid.Row="1" Margin="0,0,0,20"
-                Background="{DynamicResource SurfaceBrush}"
-                BorderBrush="{DynamicResource SecondaryColorBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="20,16"
-                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <!-- ═══════════ 2 · BARRA DE HERRAMIENTAS ═══════════ -->
+        <Grid Grid.Row="1" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Width="42" Height="42" CornerRadius="11"
-                        Background="{DynamicResource AccentSoftBrush}" Margin="0,0,14,0"
-                        VerticalAlignment="Center">
-                    <TextBlock Text="{Binding EditName, Converter={x:Static conv:InitialsConverter.Instance}}"
-                               FontSize="14" FontWeight="Bold"
-                               Foreground="{DynamicResource SecondaryColorBrush}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <!-- Buscador -->
+                <Grid Width="420" HorizontalAlignment="Left">
+                    <TextBox Height="42" Padding="38,10,14,10"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Buscar un lugar en el padrón">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Escape" Command="{Binding ClearFiltersCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               VerticalAlignment="Center" Margin="14,0,0,0" IsHitTestVisible="False"/>
+                    <TextBlock Text="Buscá un lugar (probá «rural» para ver todas sus variantes)"
+                               FontSize="12" Foreground="{DynamicResource MutedTextBrush}"
+                               VerticalAlignment="Center" Margin="40,0,0,0" IsHitTestVisible="False">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SearchText}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
 
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                    <TextBlock Text="Nombre del lugar (ej. Predio de La Rural)"
-                               Style="{StaticResource FieldLabel}"/>
-                    <TextBox Height="42" Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"/>
-                </StackPanel>
+                <!-- Aviso de higiene: aparece solo cuando hay algo que revisar -->
+                <Button Style="{StaticResource HygieneChipButton}" Margin="14,0,0,0"
+                        VerticalAlignment="Center"
+                        Command="{Binding ShowReviewCommand}"
+                        ToolTip="Filtrar el padrón por lo que hay que revisar"
+                        AutomationProperties.Name="Ver los lugares que hay que revisar"
+                        Visibility="{Binding HasHygieneWarnings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <TextBlock Text="{Binding HygieneSummary}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                    <Button Style="{StaticResource GhostDangerButton}" Height="42" Margin="0,0,8,0"
-                            Command="{Binding DeleteLocationCommand}" Content="Eliminar"/>
-                    <Button Style="{StaticResource SecondaryButton}" Height="42" Margin="0,0,8,0"
-                            Command="{Binding CancelEditCommand}" Content="Cancelar"/>
-                    <Button Style="{StaticResource PrimaryButton}" Height="42"
-                            Command="{Binding SaveLocationCommand}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Guardar" VerticalAlignment="Center"/>
-                        </StackPanel>
+            <!-- Segmento de orden -->
+            <Border Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Background="{DynamicResource SurfaceAltBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="3">
+                <StackPanel Orientation="Horizontal">
+                    <Button Command="{Binding SetSortCommand}" CommandParameter="Alfabetico"
+                            Content="A–Z" AutomationProperties.Name="Ordenar alfabéticamente"
+                            ToolTip="Orden alfabético (el predeterminado)">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SortSegmentButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSortAlpha}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Command="{Binding SetSortCommand}" CommandParameter="Uso"
+                            Content="Más usadas" AutomationProperties.Name="Ordenar por más usadas"
+                            ToolTip="Las que más presupuestos tienen, primero">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SortSegmentButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSortUso}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Command="{Binding SetSortCommand}" CommandParameter="Proximo"
+                            Content="Próximo evento" AutomationProperties.Name="Ordenar por próximo evento"
+                            ToolTip="Lo que se monta antes, primero">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SortSegmentButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSortProximo}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                     </Button>
                 </StackPanel>
-            </Grid>
-        </Border>
+            </Border>
+        </Grid>
 
-        <!-- ═══════════ TABLERO ═══════════ -->
+        <!-- ═══════════ 3 · CUERPO ═══════════ -->
         <Grid Grid.Row="2">
-            <!-- Estado vacío -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <StackPanel.Style>
-                    <Style TargetType="StackPanel">
-                        <Setter Property="Visibility" Value="Collapsed"/>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="236"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 3.a · Rail de curaduría -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="10" VerticalAlignment="Stretch">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Style="{StaticResource SectionLabel}"
+                               Text="Estado del padrón" Margin="12,8,0,10"/>
+
+                    <StackPanel Grid.Row="1" Margin="4,0"
+                                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                        <Border Style="{StaticResource SkeletonRow}" Height="38"/>
+                        <Border Style="{StaticResource SkeletonRow}" Height="38" Opacity="0.45"/>
+                        <Border Style="{StaticResource SkeletonRow}" Height="38" Opacity="0.35"/>
+                        <Border Style="{StaticResource SkeletonRow}" Height="38" Opacity="0.25"/>
+                    </StackPanel>
+
+                    <ListBox Grid.Row="1" ItemsSource="{Binding ScopeOptions}"
+                             SelectedItem="{Binding SelectedScope, Mode=TwoWay}"
+                             ItemContainerStyle="{StaticResource NavListItem}"
+                             AutomationProperties.Name="Lotes de curaduría del padrón"
+                             Visibility="{Binding IsLoading, Converter={StaticResource InvBoolToVis}}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="{Binding Hint}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Grid.Column="0" Width="8" Height="8" Margin="2,0,10,0"
+                                             VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{DynamicResource SecondaryColorBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Key}" Value="ConActividad">
+                                                        <Setter Property="Fill" Value="{DynamicResource SuccessBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Key}" Value="SinUso">
+                                                        <Setter Property="Fill" Value="{DynamicResource MutedTextBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Key}" Value="ARevisar">
+                                                        <Setter Property="Fill" Value="{DynamicResource WarningBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}"
+                                               FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Count}"
+                                               FontSize="11.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource MutedTextBrush}"
+                                               Typography.NumeralAlignment="Tabular"
+                                               VerticalAlignment="Center" Margin="8,0,2,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Button Grid.Row="2" Style="{StaticResource GhostButton}" Height="34"
+                            HorizontalAlignment="Stretch" Margin="4,8,4,2" FontSize="12"
+                            Command="{Binding ClearFiltersCommand}"
+                            AutomationProperties.Name="Limpiar la búsqueda y volver a ver todo el padrón">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8E6;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="Limpiar filtros" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- 3.b · Padrón -->
+            <Grid Grid.Column="2">
+                <!-- Esqueleto de carga: copia la geometría de la fila real -->
+                <StackPanel Margin="4,8" VerticalAlignment="Top"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                    <Border Style="{StaticResource SkeletonRow}" Height="64"/>
+                    <Border Style="{StaticResource SkeletonRow}" Height="64" Opacity="0.6"/>
+                    <Border Style="{StaticResource SkeletonRow}" Height="64" Opacity="0.5"/>
+                    <Border Style="{StaticResource SkeletonRow}" Height="64" Opacity="0.4"/>
+                    <Border Style="{StaticResource SkeletonRow}" Height="64" Opacity="0.3"/>
+                    <Border Style="{StaticResource SkeletonRow}" Height="64" Opacity="0.2"/>
+                </StackPanel>
+
+                <Border Style="{StaticResource CardFadeIn}" Padding="6,2"
+                        Visibility="{Binding IsLoading, Converter={StaticResource InvBoolToVis}}">
+                    <Grid>
+                        <!-- Estados vacíos: booleanos explícitos del ViewModel, nunca .Count -->
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEmptyCatalog}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="&#xE707;" Style="{StaticResource EmptyStateIcon}"/>
+                            <TextBlock Text="Todavía no hay ubicaciones" Style="{StaticResource EmptyStateTitle}"/>
+                            <TextBlock Style="{StaticResource EmptyStateHint}" MaxWidth="340"
+                                       Text="Creá la primera con «Nueva ubicación»: después la vas a elegir al armar cada presupuesto y acá vas a poder mantener el padrón ordenado."/>
+                        </StackPanel>
+
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasNoMatches}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="&#xE721;" Style="{StaticResource EmptyStateIcon}"/>
+                            <TextBlock Text="Nada por acá" Style="{StaticResource EmptyStateTitle}"/>
+                            <TextBlock Style="{StaticResource EmptyStateHint}" MaxWidth="340"
+                                       Text="Ningún lugar coincide con el filtro o la búsqueda elegidos. Tocá «Limpiar filtros» para ver todo el padrón."/>
+                        </StackPanel>
+
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCleanRegistry}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="&#xE735;" Style="{StaticResource EmptyStateIcon}"/>
+                            <TextBlock Text="El padrón está limpio" Style="{StaticResource EmptyStateTitle}"/>
+                            <TextBlock Style="{StaticResource EmptyStateHint}" MaxWidth="340"
+                                       Text="No hay nombres repetidos ni lugares sin nombre. Nada que revisar por ahora."/>
+                        </StackPanel>
+
+                        <ListBox ItemsSource="{Binding RowsView}"
+                                 SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                 ItemContainerStyle="{StaticResource PadronRow}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingPanel.ScrollUnit="Pixel"
+                                 AutomationProperties.Name="Padrón de lugares">
+                            <ListBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding OpenLocationCommand}"
+                                            CommandParameter="{Binding SelectedRow}"/>
+                            </ListBox.InputBindings>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="14,11" Background="Transparent"
+                                          AutomationProperties.Name="{Binding AccessibleName}">
+                                        <Grid.InputBindings>
+                                            <MouseBinding Gesture="LeftDoubleClick"
+                                                          Command="{Binding DataContext.OpenLocationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          CommandParameter="{Binding}"/>
+                                        </Grid.InputBindings>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="88"/>
+                                            <ColumnDefinition Width="108"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Iniciales -->
+                                        <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                Background="{DynamicResource AccentSoftBrush}"
+                                                Margin="0,0,12,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName, Converter={x:Static conv:InitialsConverter.Instance}}"
+                                                       FontSize="11.5" FontWeight="Bold"
+                                                       Foreground="{DynamicResource SecondaryColorBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+
+                                        <!-- Nombre + metalínea -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}" FontSize="13.5"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding MetaLine}" FontSize="11.5"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+
+                                        <!-- Distintivo -->
+                                        <Border Grid.Column="2" Style="{StaticResource RowBadge}">
+                                            <TextBlock Text="{Binding BadgeText}" Style="{StaticResource RowBadgeText}"/>
+                                        </Border>
+
+                                        <!-- Presupuestos -->
+                                        <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Events}" FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       Typography.NumeralAlignment="Tabular" TextAlignment="Right"/>
+                                            <TextBlock Text="{Binding EventsLabel}" FontSize="10.5"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       TextAlignment="Right"/>
+                                        </StackPanel>
+
+                                        <!-- Próximo evento: semáforo antes de fusionar o borrar -->
+                                        <Grid Grid.Column="4" VerticalAlignment="Center">
+                                            <StackPanel Visibility="{Binding HasNextEvent, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="{Binding NextDay}"
+                                                           FontFamily="{StaticResource AppDisplayFontFamily}"
+                                                           FontSize="17" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}"
+                                                           Typography.NumeralAlignment="Tabular" TextAlignment="Right"/>
+                                                <TextBlock Text="{Binding NextMonth}" FontSize="10.5"
+                                                           Foreground="{DynamicResource MutedTextBrush}"
+                                                           TextAlignment="Right"/>
+                                            </StackPanel>
+                                            <TextBlock Text="—" TextAlignment="Right"
+                                                       Foreground="{DynamicResource BorderBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding HasNextEvent, Converter={StaticResource InvBoolToVis}}"/>
+                                        </Grid>
+
+                                        <!-- Acciones (aparecen con el hover) -->
+                                        <StackPanel Grid.Column="5" Orientation="Horizontal"
+                                                    VerticalAlignment="Center" Margin="12,0,0,0"
+                                                    Style="{StaticResource RowActions}">
+                                            <Button Style="{StaticResource IconButton}" Width="34" Height="34"
+                                                    Margin="2,0,0,0"
+                                                    Command="{Binding DataContext.OpenLocationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="Renombrar: abre la ficha del lugar"
+                                                    AutomationProperties.Name="Abrir la ficha del lugar para renombrarlo">
+                                                <TextBlock Text="&#xE70F;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                            </Button>
+                                            <Button Style="{StaticResource IconButton}" Width="34" Height="34"
+                                                    Margin="2,0,0,0"
+                                                    Command="{Binding DataContext.ViewOrdersCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="Ver sus presupuestos en Seguimiento"
+                                                    AutomationProperties.Name="Ver los presupuestos de este lugar en Seguimiento">
+                                                <TextBlock Text="&#xE9F9;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                            </Button>
+                                            <Button Style="{StaticResource IconButton}" Width="34" Height="34"
+                                                    Margin="2,0,0,0"
+                                                    Command="{Binding DataContext.OpenLocationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="Fusionar con otro lugar: abre la ficha"
+                                                    AutomationProperties.Name="Abrir la ficha para fusionar este lugar con otro"
+                                                    Visibility="{Binding CanRename, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="&#xE71B;" FontFamily="{StaticResource IconFont}" FontSize="13"/>
+                                            </Button>
+                                            <Button Style="{StaticResource IconButton}" Width="34" Height="34"
+                                                    Margin="2,0,0,0"
+                                                    Command="{Binding DataContext.DeleteLocationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="Eliminar (sus presupuestos pasan a «(Sin ubicación)»)"
+                                                    AutomationProperties.Name="Eliminar el lugar y reasignar sus presupuestos a Sin ubicación"
+                                                    Visibility="{Binding CanDelete, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                           Foreground="{DynamicResource DangerBrush}"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- ═══════════ 4 · PIE DE ESTADO ═══════════ -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" FontSize="12"
+                   Foreground="{DynamicResource MutedTextBrush}"
+                   Typography.NumeralAlignment="Tabular"
+                   Margin="6,10,0,0" HorizontalAlignment="Left"
+                   AutomationProperties.LiveSetting="Polite"/>
+
+        <!-- ═══════════ 5 · FICHA DEL LUGAR (overlay) ═══════════ -->
+        <Grid Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="100"
+              Margin="-32,-26,-32,-26"
+              Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+
+            <Border Background="#66000000">
+                <Border.InputBindings>
+                    <MouseBinding Gesture="LeftClick" Command="{Binding CancelEditCommand}"/>
+                </Border.InputBindings>
+            </Border>
+
+            <Border HorizontalAlignment="Right" Width="480"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
+                    RenderTransformOrigin="1,0.5"
+                    AutomationProperties.Name="Ficha del lugar">
+                <Border.RenderTransform>
+                    <TranslateTransform X="70"/>
+                </Border.RenderTransform>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Opacity" Value="0"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding Locations.Count}" Value="0">
-                                <Setter Property="Visibility" Value="Visible"/>
+                            <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation
+                                                Storyboard.TargetProperty="RenderTransform.X"
+                                                To="0" Duration="0:0:0.22">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <QuarticEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             To="1" Duration="0:0:0.18"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </StackPanel.Style>
-                <TextBlock Text="&#xE707;" Style="{StaticResource EmptyStateIcon}"/>
-                <TextBlock Text="Todavía no hay ubicaciones" Style="{StaticResource EmptyStateTitle}"/>
-                <TextBlock Text="Creá la primera con «Nueva ubicación»: después la vas a elegir al armar cada presupuesto."
-                           Style="{StaticResource EmptyStateHint}" MaxWidth="340"/>
-            </StackPanel>
+                </Border.Style>
 
-            <ListBox ItemsSource="{Binding Locations}"
-                     SelectedItem="{Binding SelectedLocation, Mode=TwoWay}"
-                     ItemContainerStyle="{StaticResource PlaceTile}"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel/>
-                    </ItemsPanelTemplate>
-                </ListBox.ItemsPanel>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
+                <DockPanel>
+                    <!-- Barra de acciones -->
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,1,0,0" Padding="24,14">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
-                                    Background="{DynamicResource AccentSoftBrush}" Margin="0,0,11,0">
-                                <TextBlock Text="{Binding Name, Converter={x:Static conv:InitialsConverter.Instance}}"
-                                           FontSize="11.5" FontWeight="Bold"
-                                           Foreground="{DynamicResource SecondaryColorBrush}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            <Button Style="{StaticResource GhostDangerButton}" Height="40"
+                                    HorizontalAlignment="Left" Content="Eliminar"
+                                    Command="{Binding DeleteLocationCommand}"
+                                    CommandParameter="{Binding SelectedRow}"
+                                    AutomationProperties.Name="Eliminar este lugar"
+                                    Visibility="{Binding IsRenameLocked, Converter={StaticResource InvBoolToVis}}"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Style="{StaticResource SecondaryButton}" Height="40"
+                                        Margin="0,0,8,0" Content="Cancelar"
+                                        Command="{Binding CancelEditCommand}"/>
+                                <Button Style="{StaticResource PrimaryButton}" Height="40"
+                                        Command="{Binding SaveLocationCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Guardar lugar" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
                         </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </Grid>
+                    </Border>
 
-        <!-- Estado -->
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" FontSize="12"
-                   Foreground="{DynamicResource SecondaryColorBrush}"
-                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,0"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="24,22,24,20">
+                            <!-- Identidad -->
+                            <Grid Margin="0,0,0,22">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="46" Height="46" CornerRadius="13"
+                                        Background="{DynamicResource AccentSoftBrush}"
+                                        Margin="0,0,14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding EditName, Converter={x:Static conv:InitialsConverter.Instance}}"
+                                               FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource SecondaryColorBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock FontSize="17" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="{Binding EditName}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EditName}" Value="">
+                                                        <Setter Property="Text" Value="Lugar nuevo"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="Ficha del lugar" FontSize="12"
+                                               Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="2" Style="{StaticResource IconButton}"
+                                        Width="34" Height="34" VerticalAlignment="Top"
+                                        Command="{Binding CancelEditCommand}"
+                                        ToolTip="Cerrar la ficha"
+                                        AutomationProperties.Name="Cerrar la ficha del lugar">
+                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource IconFont}" FontSize="12"/>
+                                </Button>
+                            </Grid>
+
+                            <!-- Nombre -->
+                            <TextBlock Text="Nombre del lugar (ej. Predio de La Rural)"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="EditNameBox" Height="42"
+                                     Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                                     IsVisibleChanged="EditNameBox_IsVisibleChanged"
+                                     AutomationProperties.Name="Nombre del lugar">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsRenameLocked}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SaveLocationCommand}"/>
+                                    <KeyBinding Key="Escape" Command="{Binding CancelEditCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
+
+                            <TextBlock Text="{Binding NameFeedback}" FontSize="11" Margin="4,6,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding NameFeedbackIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding NameFeedback}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- Aviso de consecuencia del renombrado -->
+                            <Border Padding="14,12" Margin="0,16,0,0">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource CardInner}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DetailEvents}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE7BA;"
+                                               FontFamily="{StaticResource IconFont}" FontSize="14"
+                                               Foreground="{DynamicResource WarningBrush}"
+                                               VerticalAlignment="Top" Margin="0,1,10,0"/>
+                                    <TextBlock Grid.Column="1" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource MutedTextBrush}">
+                                        <Run Text="Este lugar figura en"/>
+                                        <Run Text="{Binding DetailEvents, Mode=OneWay}" FontWeight="SemiBold"/>
+                                        <Run Text="presupuesto(s). Renombrarlo NO reescribe los .docx ya generados: el explorador de Presupuestos va a seguir mostrando el nombre viejo."/>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
+
+                            <!-- Actividad -->
+                            <StackPanel Margin="0,18,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE9D5;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <TextBlock Text="Actividad" Style="{StaticResource SectionTitle}"/>
+                                </StackPanel>
+                                <Border Style="{StaticResource CardInner}" Padding="16,14">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="PRESUPUESTOS" Style="{StaticResource MiniLabel}"/>
+                                                <TextBlock Text="{Binding DetailEvents}" Style="{StaticResource DetailValue}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="CLIENTES" Style="{StaticResource MiniLabel}"/>
+                                                <TextBlock Text="{Binding DetailClients}" Style="{StaticResource DetailValue}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="PRÓXIMO EVENTO" Style="{StaticResource MiniLabel}"/>
+                                                <TextBlock Text="{Binding DetailNextLabel}" Style="{StaticResource DetailValue}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Text="{Binding DetailFirstLast}" FontSize="11.5"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   Margin="0,10,0,0" TextWrapping="Wrap"/>
+                                        <Button Style="{StaticResource SecondaryButton}" Height="36"
+                                                Margin="0,12,0,0" HorizontalAlignment="Left"
+                                                Command="{Binding ViewOrdersCommand}"
+                                                CommandParameter="{Binding SelectedRow}"
+                                                AutomationProperties.Name="Ver los presupuestos de este lugar en Seguimiento">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE9F9;" FontFamily="{StaticResource IconFont}"
+                                                           FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="Ver sus presupuestos" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Equipamiento típico -->
+                            <StackPanel Margin="0,18,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE7B8;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <TextBlock Text="Equipamiento que más se pide acá"
+                                               Style="{StaticResource SectionTitle}"/>
+                                </StackPanel>
+                                <Border Style="{StaticResource CardInner}" Padding="16,12">
+                                    <Grid>
+                                        <StackPanel Visibility="{Binding IsDetailLoading, Converter={StaticResource BoolToVis}}">
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Margin="0,0,0,6"/>
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Margin="0,0,0,6" Opacity="0.4"/>
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Opacity="0.3"/>
+                                        </StackPanel>
+                                        <StackPanel Visibility="{Binding IsDetailLoading, Converter={StaticResource InvBoolToVis}}">
+                                            <ItemsControl ItemsSource="{Binding DetailTopItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,0,0,5">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Description}"
+                                                                       FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource TextBrush}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Units}"
+                                                                       FontSize="11.5" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                                       Typography.NumeralAlignment="Tabular"
+                                                                       Margin="12,0,0,0"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="Sin datos suficientes todavía." FontSize="12"
+                                                       Foreground="{DynamicResource MutedTextBrush}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding DetailTopItems.Count}" Value="0">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Últimos presupuestos -->
+                            <StackPanel Margin="0,18,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE9F9;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <TextBlock Text="Últimos presupuestos" Style="{StaticResource SectionTitle}"/>
+                                </StackPanel>
+                                <Border Style="{StaticResource CardInner}" Padding="16,12">
+                                    <Grid>
+                                        <StackPanel Visibility="{Binding IsDetailLoading, Converter={StaticResource BoolToVis}}">
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Margin="0,0,0,6"/>
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Margin="0,0,0,6" Opacity="0.4"/>
+                                            <Border Style="{StaticResource SkeletonRow}" Height="22" Opacity="0.3"/>
+                                        </StackPanel>
+                                        <StackPanel Visibility="{Binding IsDetailLoading, Converter={StaticResource InvBoolToVis}}">
+                                            <ItemsControl ItemsSource="{Binding DetailRecentOrders}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,0,0,6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Ellipse Grid.Column="0" Width="8" Height="8"
+                                                                     Margin="0,0,10,0" VerticalAlignment="Center"
+                                                                     Fill="{Binding Status, Converter={StaticResource StatusToBrush}}"/>
+                                                            <TextBlock Grid.Column="1" FontSize="12"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource TextBrush}">
+                                                                <Run Text="{Binding BudgetNumber, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                                <Run Text="·" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                                <Run Text="{Binding ClientName, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                            <TextBlock Grid.Column="2" Text="{Binding DateLabel}"
+                                                                       FontSize="11.5"
+                                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                                       Typography.NumeralAlignment="Tabular"
+                                                                       Margin="12,0,0,0"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="Este lugar todavía no tiene presupuestos." FontSize="12"
+                                                       Foreground="{DynamicResource MutedTextBrush}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding DetailRecentOrders.Count}" Value="0">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Fusión -->
+                            <StackPanel Margin="0,18,0,0"
+                                        Visibility="{Binding IsRenameLocked, Converter={StaticResource InvBoolToVis}}">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border Style="{StaticResource SectionIconBox}">
+                                        <TextBlock Text="&#xE71B;" Style="{StaticResource SectionIconGlyph}"/>
+                                    </Border>
+                                    <TextBlock Text="Fusionar este lugar en otro" Style="{StaticResource SectionTitle}"/>
+                                </StackPanel>
+                                <Border Style="{StaticResource CardInner}" Padding="16,14">
+                                    <StackPanel>
+                                        <TextBlock FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   Margin="0,0,0,10">
+                                            <Run Text="Los presupuestos de este lugar pasan al que elijas y este se borra."/>
+                                            <Run Text="Esto no se deshace." FontWeight="SemiBold"
+                                                 Foreground="{DynamicResource DangerBrush}"/>
+                                        </TextBlock>
+
+                                        <TextBlock FontSize="11.5" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource WarningBrush}"
+                                                   Margin="0,0,0,8">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ExactDuplicateCount}" Value="0">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                            <Run Text="Hay"/>
+                                            <Run Text="{Binding ExactDuplicateCount, Mode=OneWay}" FontWeight="SemiBold"/>
+                                            <Run Text="lugar(es) con el mismo nombre normalizado."/>
+                                        </TextBlock>
+
+                                        <ComboBox Height="42" ItemsSource="{Binding MergeCandidates}"
+                                                  SelectedItem="{Binding MergeTarget, Mode=TwoWay}"
+                                                  DisplayMemberPath="DisplayName"
+                                                  AutomationProperties.Name="Lugar de destino de la fusión"/>
+
+                                        <Button Style="{StaticResource SecondaryButton}" Height="40"
+                                                Margin="0,10,0,0" HorizontalAlignment="Left"
+                                                Command="{Binding MergeIntoCommand}"
+                                                AutomationProperties.Name="Fusionar este lugar en el destino elegido">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE71B;" FontFamily="{StaticResource IconFont}"
+                                                           FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="Fusionar" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

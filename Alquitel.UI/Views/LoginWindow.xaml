@@ -41,7 +41,7 @@
                        FontSize="12" TextWrapping="Wrap" Visibility="Collapsed"
                        Margin="4,0,0,10"/>
 
-            <Button Content="Entrar" Style="{StaticResource PrimaryButton}"
+            <Button x:Name="LoginButton" Content="Entrar" Style="{StaticResource PrimaryButton}"
                     Height="42" Click="Login_Click" IsDefault="True"/>
 
             <TextBlock x:Name="ModeText" FontSize="11" Margin="0,16,0,0"

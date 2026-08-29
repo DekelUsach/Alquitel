@@ -41,11 +41,20 @@ namespace Alquitel.Infrastructure.Services
                 }
 
                 // Reutilizar el link pendiente si ya existe (reenviar el mismo mail no
-                // debe invalidar el link anterior que el cliente quizá ya tiene abierto).
+                // debe invalidar el link anterior que el cliente quizá ya tiene abierto),
+                // salvo que ya haya pasado su ventana de vigencia: ahí se emite uno nuevo
+                // en vez de mandar al cliente a una página que le va a decir "vencido".
                 var approval = await db.OrderApprovals
                     .Where(a => a.OrderId == orderId && a.Status == ApprovalStatus.Pending)
                     .OrderByDescending(a => a.CreatedAt)
                     .FirstOrDefaultAsync();
+
+                if (approval != null &&
+                    Alquitel.Core.Security.ApprovalTokenPolicy.IsExpired(approval.CreatedAt, DateTime.UtcNow))
+                {
+                    AppLog.Information("Link de aprobación vencido para orden {OrderId}: se emite uno nuevo", orderId);
+                    approval = null;
+                }
 
                 if (approval == null)
                 {

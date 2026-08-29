@@ -52,6 +52,9 @@ namespace Alquitel.UI.ViewModels
         public decimal Total { get; }
         public string AdminName { get; }
 
+        /// <summary>Fecha de creación en UTC (CreatedDate es la versión local, para mostrar).</summary>
+        private readonly DateTime _createdDateUtc;
+
         public OrderStatus Status
         {
             get => _status;
@@ -61,10 +64,28 @@ namespace Alquitel.UI.ViewModels
                 var old = _status;
                 _status = value;
                 OnPropertyChanged();
+                // Aprobar o rechazar apaga el reloj de vigencia: el badge se recalcula.
+                OnPropertyChanged(nameof(ValidityLabel));
+                OnPropertyChanged(nameof(HasValidityBadge));
+                OnPropertyChanged(nameof(IsExpired));
                 if (!SuppressPersist)
                     _ = _onStatusChanged(this, old, value);
             }
         }
+
+        // ── Vigencia comercial ───────────────────────────────────────
+        // Un presupuesto en borrador de hace dos meses tiene precios que ya no se
+        // sostienen y nada en la app lo señalaba: el vendedor se enteraba al facturar.
+
+        private BudgetValidity Validity => BudgetValidityPolicy.Evaluate(
+            _createdDateUtc, Status == OrderStatus.Draft, DateTime.UtcNow);
+
+        public string ValidityLabel => Validity.Label;
+
+        /// <summary>Solo se muestra el badge cuando aporta: por vencer o ya vencido.</summary>
+        public bool HasValidityBadge => Validity.State is BudgetValidityState.PorVencer or BudgetValidityState.Vencido;
+
+        public bool IsExpired => Validity.State == BudgetValidityState.Vencido;
 
         public OrderPoolRow(Order order, Func<OrderPoolRow, OrderStatus, OrderStatus, Task> onStatusChanged)
         {
@@ -74,6 +95,7 @@ namespace Alquitel.UI.ViewModels
             ClientName = order.Client?.CompanyName ?? "(sin cliente)";
             LocationName = order.Location?.Name ?? string.Empty;
             CreatedDate = order.CreatedDate.ToLocalTime();
+            _createdDateUtc = order.CreatedDate;
             EventLabel = order.EventDate.HasValue
                 ? SpanishDateFormatter.ToWordsRange(order.EventDate.Value, order.EventEndDate)
                 : string.Empty;
@@ -165,7 +187,11 @@ namespace Alquitel.UI.ViewModels
             return row.BudgetNumber.Contains(text, StringComparison.OrdinalIgnoreCase)
                 || row.ClientName.Contains(text, StringComparison.OrdinalIgnoreCase)
                 || row.LocationName.Contains(text, StringComparison.OrdinalIgnoreCase)
-                || row.AdminName.Contains(text, StringComparison.OrdinalIgnoreCase);
+                || row.AdminName.Contains(text, StringComparison.OrdinalIgnoreCase)
+                // La vigencia entra al buscador: escribir "vencido" en la caja de
+                // búsqueda deja a la vista solo los presupuestos que hay que rescatar,
+                // sin sumar otro control a la barra.
+                || row.ValidityLabel.Contains(text, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>True mientras se cargan las órdenes: la vista muestra skeleton rows.</summary>

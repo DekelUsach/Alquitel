@@ -97,7 +97,7 @@ namespace Alquitel.UI
                 var currentUserService = ServiceProvider!.GetRequiredService<ICurrentUserService>();
                 var sessionStore = ServiceProvider!.GetRequiredService<Alquitel.Core.Interfaces.ISessionStore>();
 
-                if (!TryAutoLogin(userRepository, currentUserService, sessionStore))
+                if (!await TryAutoLoginAsync(userRepository, currentUserService, sessionStore))
                 {
                     var loginWindow = new Views.LoginWindow(userRepository, currentUserService, sessionStore);
 
@@ -215,30 +215,35 @@ namespace Alquitel.UI
 
         /// <summary>
         /// Intenta restaurar la sesión guardada sin mostrar LoginWindow. Devuelve false
-        /// (y deja la sesión guardada intacta o corrupta sin arreglar) ante cualquier
-        /// motivo de invalidez: sin sesión, usuario borrado, red caída, o Admin con
-        /// sesión de más de 30 días.
+        /// ante cualquier motivo de invalidez: sin sesión, firma que no valida, sesión
+        /// vencida, usuario borrado, red caída, contraseña cambiada desde que se guardó,
+        /// o Admin con sesión de más de 30 días.
+        ///
+        /// Es async de punta a punta: la versión anterior bloqueaba el hilo de UI hasta
+        /// 5 segundos esperando a PostgreSQL con la ventana de arranque congelada.
         /// </summary>
-        private static bool TryAutoLogin(
+        private static async Task<bool> TryAutoLoginAsync(
             Alquitel.Core.Interfaces.Repositories.IUserRepository userRepository,
             ICurrentUserService currentUserService,
             Alquitel.Core.Interfaces.ISessionStore sessionStore)
         {
-            if (!sessionStore.TryLoad(out var userId, out var savedAtUtc))
+            // Se lee con el tope global; el tope más corto de Admin se aplica una vez
+            // resuelto el usuario (el rol no se conoce antes de consultarlo).
+            if (!sessionStore.TryLoad(Alquitel.Core.Security.SessionToken.MaxAge,
+                    out var userId, out var fingerprint, out var savedAtUtc))
                 return false;
 
             Alquitel.Core.Entities.User? user;
             try
             {
-                var resolveTask = Task.Run(() => userRepository.GetByIdAsync(userId));
-                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
-                var completed = Task.WhenAny(resolveTask, timeoutTask).GetAwaiter().GetResult();
+                var resolveTask = userRepository.GetByIdAsync(userId);
+                var completed = await Task.WhenAny(resolveTask, Task.Delay(TimeSpan.FromSeconds(5)));
                 if (completed != resolveTask)
                 {
                     AppLog.Warning("Timeout resolviendo usuario de sesión guardada (>5s), se pide login manual");
                     return false;
                 }
-                user = resolveTask.GetAwaiter().GetResult();
+                user = await resolveTask;
             }
             catch (Exception ex)
             {
@@ -249,8 +254,18 @@ namespace Alquitel.UI
             if (user == null || user.IsArchived)
                 return false;
 
+            // La sesión quedó atada a la contraseña vigente al guardarla: si se cambió
+            // (o se le sacó/puso una), el sobre firmado ya no corresponde.
+            if (!string.Equals(fingerprint, Alquitel.Core.Helpers.PasswordHasher.Fingerprint(user.PasswordHash),
+                    StringComparison.Ordinal))
+            {
+                AppLog.Information("La contraseña del usuario cambió desde la última sesión: se pide login manual");
+                sessionStore.Clear();
+                return false;
+            }
+
             if (user.Role == Alquitel.Core.Entities.UserRole.Admin &&
-                DateTimeOffset.UtcNow - savedAtUtc > TimeSpan.FromDays(30))
+                DateTimeOffset.UtcNow - savedAtUtc > Alquitel.Core.Security.SessionToken.AdminMaxAge)
                 return false;
 
             currentUserService.SetCurrentUser(user);
@@ -293,7 +308,15 @@ namespace Alquitel.UI
             services.AddDbContextFactory<AlquitelDbContext>(options =>
             {
                 if (useRemote)
-                    options.UseNpgsql(remoteConnectionString);
+                    // EnableRetryOnFailure: la base vive en sa-east-1 por internet y un
+                    // corte de dos segundos de wifi tiraba abajo el guardado de un
+                    // presupuesto entero. La estrategia de ejecución reintenta los
+                    // errores transitorios de Npgsql en TODA la app, no solo en el sync.
+                    // Ojo: con esto, cualquier BeginTransaction manual debe ir envuelto
+                    // en db.Database.CreateExecutionStrategy().ExecuteAsync(...).
+                    options.UseNpgsql(remoteConnectionString, npgsql => npgsql
+                        .EnableRetryOnFailure(maxRetryCount: 4, maxRetryDelay: TimeSpan.FromSeconds(8), errorCodesToAdd: null)
+                        .CommandTimeout(60));
                 else
                     options.UseSqlite(AppPaths.DbConnectionString);
             });

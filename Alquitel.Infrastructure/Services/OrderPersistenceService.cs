@@ -59,6 +59,40 @@ namespace Alquitel.Infrastructure.Services
         private async Task<OrderPersistResult> PersistOnceAsync(Order order, bool forceOverwrite)
         {
             using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            // En modo servidor el DbContext trae EnableRetryOnFailure: abrir una
+            // transacción a mano sin pasar por la estrategia de ejecución hace que EF
+            // lance InvalidOperationException y ningún presupuesto se guarde.
+            var strategy = db.Database.CreateExecutionStrategy();
+
+            // El cuerpo se puede re-ejecutar tras un corte de red. RowVersion se muta
+            // dentro (rotación del token de concurrencia): si no se restaura el valor
+            // con el que se cargó la orden, el segundo intento se compara contra un
+            // token que la base nunca vio y devuelve un Conflict inventado.
+            var loadedRowVersion = order.RowVersion;
+
+            var (result, existed) = await strategy.ExecuteAsync(async () =>
+            {
+                db.ChangeTracker.Clear();
+                order.RowVersion = loadedRowVersion;
+                return await PersistCoreAsync(db, order, forceOverwrite);
+            });
+
+            if (result == OrderPersistResult.Saved)
+            {
+                // Bitácora: fuera de la transacción y fuera del reintento (un fallo de
+                // auditoría no revierte la orden, y un reintento no la duplica).
+                await _audit.LogAsync(order.Id,
+                    existed ? "Editado" : "Creado",
+                    $"Presupuesto {order.BudgetNumber} · {order.Items.Count} ítem(s) · total {order.GrandTotal:C}");
+            }
+
+            return result;
+        }
+
+        private async Task<(OrderPersistResult Result, bool OrderExisted)> PersistCoreAsync(
+            AlquitelDbContext db, Order order, bool forceOverwrite)
+        {
             await using var tx = await db.Database.BeginTransactionAsync();
 
             // ── Location: find-or-create so Order.LocationId always references a real row.
@@ -125,7 +159,7 @@ namespace Alquitel.Infrastructure.Services
                         AppLog.Warning(
                             "Conflicto de concurrencia en orden {OrderId}: RowVersion base {Db} ≠ cargada {Loaded}",
                             order.Id, tracked.RowVersion, order.RowVersion);
-                        return OrderPersistResult.Conflict;
+                        return (OrderPersistResult.Conflict, true);
                     }
 
                     tracked.BudgetNumber = order.BudgetNumber;
@@ -161,12 +195,7 @@ namespace Alquitel.Infrastructure.Services
 
             await tx.CommitAsync();
             AppLog.Information("Order persisted: {OrderId} ({Budget})", order.Id, order.BudgetNumber);
-
-            // Bitácora: fuera de la transacción (un fallo de auditoría no revierte la orden).
-            await _audit.LogAsync(order.Id,
-                orderExists ? "Editado" : "Creado",
-                $"Presupuesto {order.BudgetNumber} · {order.Items.Count} ítem(s) · total {order.GrandTotal:C}");
-            return OrderPersistResult.Saved;
+            return (OrderPersistResult.Saved, orderExists);
         }
 
         /// <summary>

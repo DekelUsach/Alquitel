@@ -22,6 +22,12 @@ namespace Alquitel.UI.Views
         private readonly Alquitel.Core.Interfaces.ISessionStore _sessionStore;
         private List<User> _users = new();
 
+        // Static: el bloqueo debe sobrevivir a que se cierre y reabra la ventana dentro
+        // del mismo proceso. Un reinicio de la app sí lo limpia (costo aceptable: el
+        // atacante paga el arranque completo por cada tanda de intentos).
+        private static readonly Alquitel.Core.Security.LoginThrottle _throttle = new();
+        private bool _loginInProgress;
+
         public LoginWindow(
             IUserRepository userRepository,
             ICurrentUserService currentUserService,
@@ -79,6 +85,8 @@ namespace Alquitel.UI.Views
 
         private async Task TryLoginAsync()
         {
+            if (_loginInProgress) return;
+
             var user = SelectedUser;
             if (user == null)
             {
@@ -86,43 +94,101 @@ namespace Alquitel.UI.Views
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(user.PasswordHash) &&
-                !PasswordHasher.Verify(PasswordInput.Password, user.PasswordHash))
+            // Freno de fuerza bruta: sin esto, probar contraseñas contra esta ventana
+            // costaba solo el tiempo de un PBKDF2 y era automatizable.
+            string throttleKey = user.Id.ToString("D");
+            var remaining = _throttle.GetRemainingLockout(throttleKey, DateTimeOffset.UtcNow);
+            if (remaining > TimeSpan.Zero)
             {
-                ShowError("Contraseña incorrecta.");
-                PasswordInput.Clear();
-                PasswordInput.Focus();
+                ShowError($"Demasiados intentos fallidos. Probá de nuevo en {FormatWait(remaining)}.");
                 return;
             }
 
-            // Un Admin sin contraseña tiene acceso total a datos de facturación con solo
-            // elegir su nombre. Se obliga a definir una en el primer login; cancelar no entra.
-            if (user.Role == UserRole.Admin && string.IsNullOrWhiteSpace(user.PasswordHash))
+            _loginInProgress = true;
+            LoginButton.IsEnabled = false;
+            try
             {
-                var prompt = new PasswordPromptWindow(user.Name, hasPassword: false) { Owner = this };
-                if (prompt.ShowDialog() != true || prompt.RemoveRequested)
+                if (!string.IsNullOrWhiteSpace(user.PasswordHash))
                 {
-                    ShowError("Un usuario Admin debe tener contraseña para poder ingresar.");
-                    return;
+                    string typed = PasswordInput.Password;
+                    // PBKDF2 con 210.000 iteraciones congelaba la ventana ~200 ms en el
+                    // hilo de UI en cada intento: se verifica en el thread pool.
+                    bool ok = await Task.Run(() => PasswordHasher.Verify(typed, user.PasswordHash));
+                    if (!ok)
+                    {
+                        var lockout = _throttle.RegisterFailure(throttleKey, DateTimeOffset.UtcNow);
+                        ShowError(lockout > TimeSpan.Zero
+                            ? $"Contraseña incorrecta. Esperá {FormatWait(lockout)} antes de reintentar."
+                            : "Contraseña incorrecta.");
+                        PasswordInput.Clear();
+                        PasswordInput.Focus();
+                        return;
+                    }
+
+                    // Rehash transparente si el hash guardado quedó con menos iteraciones
+                    // que las vigentes (best-effort: si falla, el login igual procede).
+                    if (PasswordHasher.NeedsRehash(user.PasswordHash))
+                    {
+                        try
+                        {
+                            user.PasswordHash = await Task.Run(() => PasswordHasher.Hash(typed));
+                            await _userRepository.UpsertAsync(user);
+                        }
+                        catch (Exception ex)
+                        {
+                            Alquitel.Infrastructure.AppLog.Warning(ex, "No se pudo re-hashear la contraseña de {User}", user.Name);
+                        }
+                    }
                 }
 
-                user.PasswordHash = PasswordHasher.Hash(prompt.Password);
-                try
+                // Un Admin sin contraseña tiene acceso total a datos de facturación con solo
+                // elegir su nombre. Se obliga a definir una en el primer login; cancelar no entra.
+                if (user.Role == UserRole.Admin && string.IsNullOrWhiteSpace(user.PasswordHash))
                 {
-                    await _userRepository.UpsertAsync(user);
+                    var prompt = new PasswordPromptWindow(user.Name, hasPassword: false) { Owner = this };
+                    if (prompt.ShowDialog() != true || prompt.RemoveRequested)
+                    {
+                        ShowError("Un usuario Admin debe tener contraseña para poder ingresar.");
+                        return;
+                    }
+
+                    var weakness = PasswordHasher.ValidateNewPassword(prompt.Password);
+                    if (weakness != null)
+                    {
+                        ShowError(weakness);
+                        return;
+                    }
+
+                    user.PasswordHash = await Task.Run(() => PasswordHasher.Hash(prompt.Password));
+                    try
+                    {
+                        await _userRepository.UpsertAsync(user);
+                    }
+                    catch (Exception ex)
+                    {
+                        Alquitel.Infrastructure.AppLog.Error(ex, "No se pudo guardar la contraseña inicial del Admin");
+                        ShowError($"No se pudo guardar la contraseña:\n{ex.Message}");
+                        user.PasswordHash = null;
+                        return;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Alquitel.Infrastructure.AppLog.Error(ex, "No se pudo guardar la contraseña inicial del Admin");
-                    ShowError($"No se pudo guardar la contraseña:\n{ex.Message}");
-                    user.PasswordHash = null;
-                    return;
-                }
+
+                _throttle.Reset(throttleKey);
+                _currentUserService.SetCurrentUser(user);
+                _sessionStore.Save(user.Id, PasswordHasher.Fingerprint(user.PasswordHash));
+                DialogResult = true;
             }
+            finally
+            {
+                _loginInProgress = false;
+                LoginButton.IsEnabled = true;
+            }
+        }
 
-            _currentUserService.SetCurrentUser(user);
-            _sessionStore.Save(user.Id);
-            DialogResult = true;
+        private static string FormatWait(TimeSpan wait)
+        {
+            if (wait.TotalSeconds < 60) return $"{Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds))} s";
+            return $"{(int)Math.Ceiling(wait.TotalMinutes)} min";
         }
 
         private void ShowError(string message)

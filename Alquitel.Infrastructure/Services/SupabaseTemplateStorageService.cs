@@ -83,6 +83,12 @@ namespace Alquitel.Infrastructure.Services
 
             byte[] bytes = await File.ReadAllBytesAsync(localFilePath);
 
+            // Se valida también al publicar: subir basura al bucket la replica a todos
+            // los puestos del equipo en la próxima generación de documento.
+            var rejection = Alquitel.Core.Security.DocxValidator.Describe(bytes);
+            if (rejection != null)
+                throw new InvalidOperationException($"El archivo elegido no es una plantilla de Word válida. {rejection}");
+
             using var req = NewRequest(HttpMethod.Post, $"object/{Bucket}/{ObjectName(kind)}", _serviceKey);
             req.Headers.Add("x-upsert", "true");
             req.Content = new ByteArrayContent(bytes);
@@ -140,6 +146,17 @@ namespace Alquitel.Infrastructure.Services
 
                 resp.EnsureSuccessStatusCode();
                 byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+
+                // La plantilla se abre después con Word: lo que baja del bucket se
+                // valida ANTES de tocar el cache. Un HTML de error del gateway, un
+                // archivo cortado o un .docm con macros no deben llegar nunca a Word,
+                // ni pisar la última plantilla buena que ya teníamos cacheada.
+                var rejection = Alquitel.Core.Security.DocxValidator.Describe(bytes);
+                if (rejection != null)
+                {
+                    AppLog.Error("Plantilla {Kind} descargada rechazada: {Reason} — se usa el cache local", kind, rejection);
+                    return File.Exists(cache) ? cache : null;
+                }
 
                 Directory.CreateDirectory(AppPaths.TemplatesCacheFolder);
                 // Escritura atómica: si la app se cierra a mitad de descarga no queda un docx corrupto.

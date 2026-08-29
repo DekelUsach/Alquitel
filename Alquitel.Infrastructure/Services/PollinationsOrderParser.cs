@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
 
 namespace Alquitel.Infrastructure.Services
@@ -27,8 +28,14 @@ namespace Alquitel.Infrastructure.Services
         private const string RetryModel = "openai-fast";
 
         // HttpClient compartido: la app es un singleton de larga vida y así se evita
-        // el socket exhaustion de crear clientes por request.
-        private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(45) };
+        // el socket exhaustion de crear clientes por request. PooledConnectionLifetime
+        // acota cuánto vive cada conexión para que un cambio de DNS del proveedor no
+        // deje la app pegada a una IP muerta hasta que se reinicie.
+        private static readonly HttpClient Http = new(new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        })
+        { Timeout = TimeSpan.FromSeconds(45) };
 
         private readonly string? _apiKey;
         private readonly string _model;
@@ -49,18 +56,48 @@ namespace Alquitel.Infrastructure.Services
             if (!IsConfigured || string.IsNullOrWhiteSpace(customerText) || catalog.Count == 0)
                 return null;
 
-            var result = await TryParseWithModelAsync(_model, customerText, catalog, cancellationToken);
+            var result = await TryModelWithRetriesAsync(_model, customerText, catalog, cancellationToken);
             if (result != null) return result;
 
             if (!string.Equals(_model, RetryModel, StringComparison.OrdinalIgnoreCase))
             {
                 AppLog.Warning("Pollinations: {Model} no devolvió JSON usable — reintento con {Retry}", _model, RetryModel);
-                result = await TryParseWithModelAsync(RetryModel, customerText, catalog, cancellationToken);
+                result = await TryModelWithRetriesAsync(RetryModel, customerText, catalog, cancellationToken);
             }
             return result;
         }
 
-        private async Task<AiOrderParseResult?> TryParseWithModelAsync(
+        /// <summary>
+        /// Reintenta el mismo modelo ante fallos transitorios (429 de rate limit, 5xx del
+        /// gateway, timeouts de red) con backoff exponencial. Antes, un único 429 —lo más
+        /// común en un plan gratuito— tiraba directamente al motor local aunque el
+        /// servicio hubiera respondido bien un segundo después.
+        /// </summary>
+        private async Task<AiOrderParseResult?> TryModelWithRetriesAsync(
+            string model, string customerText, IReadOnlyList<AiCatalogProduct> catalog, CancellationToken ct)
+        {
+            for (int attempt = 1; attempt <= HttpRetryPolicy.MaxAttempts; attempt++)
+            {
+                var (result, transient, retryAfter) =
+                    await TryParseWithModelAsync(model, customerText, catalog, ct);
+
+                if (result != null) return result;
+                if (!transient || attempt == HttpRetryPolicy.MaxAttempts) return null;
+
+                var delay = HttpRetryPolicy.DelayFor(attempt, retryAfter);
+                AppLog.Information("Pollinations {Model}: fallo transitorio, reintento {Attempt}/{Max} en {Delay}ms",
+                    model, attempt, HttpRetryPolicy.MaxAttempts - 1, (int)delay.TotalMilliseconds);
+                await Task.Delay(delay, ct);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Un intento contra un modelo. Además del resultado informa si el fallo es
+        /// transitorio (para que el llamador decida reintentar) y el Retry-After que
+        /// haya mandado el servidor.
+        /// </summary>
+        private async Task<(AiOrderParseResult? Result, bool Transient, TimeSpan? RetryAfter)> TryParseWithModelAsync(
             string model, string customerText, IReadOnlyList<AiCatalogProduct> catalog, CancellationToken ct)
         {
             try
@@ -91,9 +128,10 @@ namespace Alquitel.Infrastructure.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    int status = (int)response.StatusCode;
                     AppLog.Warning("Pollinations {Model} HTTP {Status}: {Body}",
-                        model, (int)response.StatusCode, Truncate(responseText, 400));
-                    return null;
+                        model, status, Truncate(responseText, 400));
+                    return (null, HttpRetryPolicy.IsTransient(status), response.Headers.RetryAfter?.Delta);
                 }
 
                 using var doc = JsonDocument.Parse(responseText);
@@ -103,16 +141,30 @@ namespace Alquitel.Infrastructure.Services
                     .GetProperty("content")
                     .GetString();
 
-                return ParseModelJson(content, catalog.Count);
+                // Una respuesta 200 con JSON ilegible no mejora reintentando el mismo
+                // modelo: lo que corresponde es cambiar de modelo (lo hace el llamador).
+                return (ParseModelJson(content, catalog.Count), false, null);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (TaskCanceledException ex)
+            {
+                // Sin cancelación pedida, un TaskCanceledException es el timeout del
+                // HttpClient: transitorio, vale la pena reintentar.
+                AppLog.Warning(ex, "Pollinations timeout for model {Model}", model);
+                return (null, true, null);
+            }
+            catch (HttpRequestException ex)
+            {
+                AppLog.Warning(ex, "Pollinations network error for model {Model}", model);
+                return (null, true, null);
             }
             catch (Exception ex)
             {
                 AppLog.Warning(ex, "Pollinations request failed for model {Model}", model);
-                return null;
+                return (null, false, null);
             }
         }
 

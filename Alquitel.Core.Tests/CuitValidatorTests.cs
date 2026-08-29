@@ -26,6 +26,66 @@ public class CuitValidatorTests
     public void IsValid_CuitsInvalidos_DevuelveFalse(string? cuit)
         => Assert.False(CuitValidator.IsValid(cuit));
 
+    // ── Regresión: entradas que hacían explotar el validador ─────────
+    // long.TryParse acepta signo y espacio en blanco de cabecera, así que estas cadenas
+    // pasaban el filtro de longitud y después int.Parse(cuit[i].ToString()) tiraba una
+    // FormatException que subía sin capturar hasta la UI.
+    [Theory]
+    [InlineData("+1234567890")]   // signo más, 11 caracteres
+    [InlineData("-1234567890")]   // signo menos
+    [InlineData("\t1234567890")]  // tabulador de cabecera
+    [InlineData("\n1234567890")]
+    [InlineData("1234567890\t")]
+    public void IsValid_EntradasQueRompianElParseo_DevuelveFalseSinExcepcion(string cuit)
+        => Assert.False(CuitValidator.IsValid(cuit));
+
+    // ── Normalize ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("30-71659554-0", "30716595540")]
+    [InlineData("30716595540", "30716595540")]
+    [InlineData("30 71659554 0", "30716595540")]
+    [InlineData("30.71659554.0", "30716595540")]
+    [InlineData("30/71659554/0", "30716595540")]
+    public void Normalize_DevuelveLosOnceDigitos(string entrada, string esperado)
+        => Assert.Equal(esperado, CuitValidator.Normalize(entrada));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("3071659554")]      // 10 dígitos
+    [InlineData("307165955400")]    // 12 dígitos
+    [InlineData("30-7165955A-0")]   // letra
+    [InlineData("+30716595540")]    // signo
+    public void Normalize_EntradaInvalida_DevuelveNull(string? entrada)
+        => Assert.Null(CuitValidator.Normalize(entrada));
+
+    // ── Format ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Format_AplicaElFormatoDeAfip()
+        => Assert.Equal("30-71659554-0", CuitValidator.Format("30716595540"));
+
+    [Fact]
+    public void Format_EsIdempotente()
+        => Assert.Equal("30-71659554-0", CuitValidator.Format(CuitValidator.Format("30716595540")));
+
+    [Fact]
+    public void Format_EntradaQueNoEsCuit_SeDevuelveIntacta()
+    {
+        // No se inventa un formato sobre basura: el usuario ve lo que escribió.
+        Assert.Equal("pendiente", CuitValidator.Format("pendiente"));
+        Assert.Equal(string.Empty, CuitValidator.Format(null));
+    }
+
+    [Fact]
+    public void Normalize_HaceComparableLoQueSeGuardoDeDosFormas()
+    {
+        // El bug de negocio: "30-71659554-0" y "30716595540" convivían como dos
+        // clientes distintos porque el chequeo de duplicados comparaba texto crudo.
+        Assert.Equal(CuitValidator.Normalize("30-71659554-0"), CuitValidator.Normalize("30716595540"));
+    }
+
     [Fact]
     public void IsValid_RestoUno_UsaDigitoNueve()
     {

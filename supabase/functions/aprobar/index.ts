@@ -33,6 +33,18 @@ const APPROVAL_REJECTED = 2;
 
 const VAT_RATE = 0.21;
 
+// Vigencia del link. Conocer el token ES la autorización, así que sin vencimiento el
+// link queda válido para siempre en la bandeja del cliente (y en cualquier reenvío
+// suyo). Debe coincidir con Alquitel.Core/Security/ApprovalTokenPolicy.MaxAgeDays.
+const APPROVAL_MAX_AGE_DAYS = 30;
+
+function isExpired(createdAtIso: string | null | undefined): boolean {
+  if (!createdAtIso) return false; // fila legada sin CreatedAt: no se cierra la puerta
+  const created = Date.parse(createdAtIso);
+  if (Number.isNaN(created)) return false;
+  return Date.now() - created > APPROVAL_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -660,6 +672,23 @@ function html(body: string, status = 200, wide = false): Response {
       // No "corregir" a minúsculas: rompe la página (se ve el código fuente).
       "Content-Type": "text/HTML; charset=utf-8",
       "Cache-Control": "no-store",
+      // El token viaja en la query string: sin esto, cualquier navegación saliente se
+      // lo lleva puesto en el header Referer hacia un tercero.
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      // La página es autocontenida: no carga nada de afuera y no debe poder hacerlo.
+      // 'unsafe-inline' es necesario porque el <style> y el <script> van embebidos.
+      "Content-Security-Policy": [
+        "default-src 'none'",
+        "style-src 'unsafe-inline'",
+        "script-src 'unsafe-inline'",
+        "img-src data:",
+        "connect-src 'self'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+      ].join("; "),
     },
   });
 }
@@ -675,12 +704,22 @@ Deno.serve(async (req) => {
 
   const { data: approval, error } = await supabase
     .from("OrderApprovals")
-    .select("Id, OrderId, Status, RespondedAt")
+    .select("Id, OrderId, Status, RespondedAt, CreatedAt")
     .eq("Token", token)
     .maybeSingle();
 
   if (error || !approval) {
     return html(`<h1>Link no encontrado</h1><p>Este link de aprobación no existe o fue dado de baja.</p>`, 404);
+  }
+
+  // Vencimiento: solo aplica a los que siguen pendientes. Un presupuesto ya respondido
+  // se puede seguir consultando (es el comprobante de lo que el cliente aceptó).
+  if (approval.Status === APPROVAL_PENDING && isExpired(approval.CreatedAt)) {
+    return html(
+      `<h1>Link vencido</h1><p>Este link de aprobación venció a los ${APPROVAL_MAX_AGE_DAYS} días de emitido. ` +
+        `Escribinos respondiendo el correo por el que lo recibiste y te enviamos uno nuevo.</p>`,
+      410,
+    );
   }
 
   if (req.method === "GET") {

@@ -406,21 +406,9 @@ namespace Alquitel.UI.ViewModels
                 AppLog.Warning("Rejected ShowInExplorer — invalid path: {Path}", SelectedFile.FullPath);
                 return;
             }
-            try
-            {
-                if (!File.Exists(SelectedFile.FullPath)) return;
-                var psi = new ProcessStartInfo("explorer.exe")
-                {
-                    Arguments = $"/select,\"{SelectedFile.FullPath}\"",
-                    UseShellExecute = false
-                };
-                Process.Start(psi);
-            }
-            catch (Exception ex)
-            {
-                AppLog.Error(ex, "ShowInExplorer failed for {Path}", SelectedFile.FullPath);
-                _dialogService.ShowError("Error", $"Error: {ex.Message}");
-            }
+            // ArgumentList vía ShellLauncher: un nombre de archivo con comillas
+            // (viene de la razón social del cliente) rompía la línea de comandos.
+            Alquitel.UI.Helpers.ShellLauncher.RevealInExplorer(SelectedFile.FullPath);
         }
 
         [RelayCommand]

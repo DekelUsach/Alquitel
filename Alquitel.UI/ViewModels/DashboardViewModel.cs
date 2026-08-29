@@ -98,8 +98,10 @@ namespace Alquitel.UI.ViewModels
 
             // IgnoreQueryFilters: el historial debe incluir órdenes de clientes o
             // productos archivados, igual que en PresupuestosViewModel.
-            var recentWindow = await db.Orders.IgnoreQueryFilters()
-                .Include(o => o.Client)
+            // AsNoTracking en todo el bloque: son métricas de solo lectura y trackear
+            // cientos de órdenes con sus ítems cargaba el ChangeTracker al pedo en cada
+            // entrada al Dashboard. Tampoco se incluye Client acá: solo se cuenta y suma.
+            var recentWindow = await db.Orders.IgnoreQueryFilters().AsNoTracking()
                 .Include(o => o.Items)
                 .Where(o => o.CreatedDate >= cutoff)
                 .ToListAsync();
@@ -107,15 +109,16 @@ namespace Alquitel.UI.ViewModels
             OrdersLast30Days = recentWindow.Count;
             RevenueLast30Days = recentWindow.Sum(o => o.Total);
 
-            var lastOrders = await db.Orders.IgnoreQueryFilters()
+            var lastOrders = await db.Orders.IgnoreQueryFilters().AsNoTracking()
                 .Include(o => o.Client)
                 .Include(o => o.Items)
                 .OrderByDescending(o => o.CreatedDate)
                 .Take(6)
                 .ToListAsync();
 
-            var topRaw = await db.Set<Alquitel.Core.Entities.OrderItem>().IgnoreQueryFilters()
-                .Include(i => i.Product)
+            // Sin Include: la consulta proyecta a un tipo anónimo, así que el Include se
+            // descartaba igual (EF lo ignora en queries con proyección) pero confundía.
+            var topRaw = await db.Set<Alquitel.Core.Entities.OrderItem>().IgnoreQueryFilters().AsNoTracking()
                 .Where(i => i.Product != null)
                 .GroupBy(i => i.Product!.Description)
                 .Select(g => new { Description = g.Key, Count = g.Count() })
