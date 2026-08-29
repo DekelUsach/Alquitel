@@ -12,13 +12,16 @@
     <Border Padding="32,28">
         <StackPanel>
             <!-- Marca -->
-            <StackPanel HorizontalAlignment="Center" Margin="0,0,0,22">
-                <Image Source="/Assets/logo.png" Height="58" Stretch="Uniform"
-                       HorizontalAlignment="Center" SnapsToDevicePixels="True"/>
-                <TextBlock Text="GESTIÓN CORPORATIVA" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource MutedTextBrush}" Opacity="0.8"
-                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
-            </StackPanel>
+            <Border Background="{DynamicResource LogoBackingBrush}" CornerRadius="10" Padding="12,8"
+                    HorizontalAlignment="Center" Margin="0,0,0,22">
+                <StackPanel HorizontalAlignment="Center">
+                    <Image Source="/Assets/logo.png" Height="58" Stretch="Uniform"
+                           HorizontalAlignment="Center" SnapsToDevicePixels="True"/>
+                    <TextBlock Text="GESTIÓN CORPORATIVA" FontSize="11" FontWeight="Bold"
+                               Foreground="{DynamicResource MutedTextBrush}" Opacity="0.85"
+                               HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
 
             <TextBlock Text="Usuario" Style="{StaticResource FieldLabel}"/>
             <ComboBox x:Name="UsersCombo" DisplayMemberPath="Name" Margin="0,0,0,14"
