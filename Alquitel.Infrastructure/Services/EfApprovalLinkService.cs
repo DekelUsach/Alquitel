@@ -40,34 +40,38 @@ namespace Alquitel.Infrastructure.Services
                     return null;
                 }
 
-                // Reutilizar el link pendiente si ya existe (reenviar el mismo mail no
-                // debe invalidar el link anterior que el cliente quizá ya tiene abierto),
-                // salvo que ya haya pasado su ventana de vigencia: ahí se emite uno nuevo
-                // en vez de mandar al cliente a una página que le va a decir "vencido".
-                var approval = await db.OrderApprovals
-                    .Where(a => a.OrderId == orderId && a.Status == ApprovalStatus.Pending)
-                    .OrderByDescending(a => a.CreatedAt)
-                    .FirstOrDefaultAsync();
+                // Antes se reutilizaba el link pendiente al reenviar el mail, para no
+                // invalidar el que el cliente quizá ya tenía abierto. Eso YA NO ES
+                // POSIBLE, y es a propósito: desde la migración
+                // supabase/migrations/20260829000700_approval_tokens_hashed.sql la base
+                // guarda únicamente el SHA-256 del token. Un token que no se puede leer
+                // de la base tampoco se puede volver a poner en una URL.
+                //
+                // El costo es que reenviar emite un link nuevo. La contrapartida es la
+                // que importa: un volcado de la base, un backup o alguien con el
+                // connection string dejan de alcanzar para aprobar presupuestos ajenos.
+                //
+                // Del lado servidor, un trigger AFTER INSERT revoca los links pendientes
+                // anteriores de la misma orden (RevokedAt), así que el link viejo que el
+                // cliente pudo haber reenviado a un tercero deja de servir en cuanto se
+                // emite el nuevo — con los precios que ese link mostraba, que además
+                // pueden haber cambiado.
+                var approval = new OrderApproval { OrderId = orderId };
+                var token = approval.Token;
 
-                if (approval != null &&
-                    Alquitel.Core.Security.ApprovalTokenPolicy.IsExpired(approval.CreatedAt, DateTime.UtcNow))
-                {
-                    AppLog.Information("Link de aprobación vencido para orden {OrderId}: se emite uno nuevo", orderId);
-                    approval = null;
-                }
+                db.OrderApprovals.Add(approval);
+                await db.SaveChangesAsync();
 
-                if (approval == null)
-                {
-                    approval = new OrderApproval { OrderId = orderId };
-                    db.OrderApprovals.Add(approval);
-                    await db.SaveChangesAsync();
-                    // No loguear el token: es la autorización del link público y los logs
-                    // de Serilog quedan 30 días en disco legibles por cualquier usuario.
-                    AppLog.Information("Link de aprobación creado para orden {OrderId} (approvalId {ApprovalId})",
-                        orderId, approval.Id);
-                }
+                // No loguear el token: es la autorización del link público y los logs
+                // de Serilog quedan 30 días en disco legibles por cualquier usuario.
+                AppLog.Information("Link de aprobación emitido para orden {OrderId} (approvalId {ApprovalId}); los pendientes anteriores quedan revocados",
+                    orderId, approval.Id);
 
-                return BuildUrl(approval.Token);
+                // `token` es el valor generado en memoria. En PostgreSQL la columna
+                // queda en NULL (el trigger hashea y descarta el plano), así que este
+                // es el único momento en toda la vida del link en que el texto claro
+                // está disponible.
+                return BuildUrl(token);
             }
             catch (Exception ex)
             {
@@ -81,9 +85,25 @@ namespace Alquitel.Infrastructure.Services
             try
             {
                 using var db = await _factory.CreateDbContextAsync();
+                // Proyección explícita SIN "Token": en PostgreSQL esa columna quedó en
+                // NULL (ver 20260829000700) y materializarla en un Guid no anulable
+                // reventaría acá. Además no hace falta: quien llama solo mira estado y
+                // fechas para mostrar "esperando respuesta / aprobado / rechazado".
                 return await db.OrderApprovals.AsNoTracking()
                     .Where(a => a.OrderId == orderId)
                     .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => new OrderApproval
+                    {
+                        Id          = a.Id,
+                        OrderId     = a.OrderId,
+                        // Explícito para que nadie lo confunda con un token real: el
+                        // valor no existe fuera del momento de la emisión.
+                        Token       = Guid.Empty,
+                        Status      = a.Status,
+                        CreatedAt   = a.CreatedAt,
+                        RespondedAt = a.RespondedAt,
+                        ClientIp    = a.ClientIp,
+                    })
                     .FirstOrDefaultAsync();
             }
             catch (Exception ex)
