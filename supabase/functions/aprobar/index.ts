@@ -1,49 +1,62 @@
 // Edge Function "aprobar" — portal público de aprobación de presupuestos.
 //
-// GET  /aprobar?token=<uuid>  → página HTML con el presupuesto COMPLETO (cliente,
-//                                evento, ítems, totales) y botones Aprobar/Rechazar.
-// POST /aprobar?token=<uuid>  → body {"action":"approve"|"reject"}; registra la respuesta
-//                                y actualiza el estado de la orden.
+// GET  /aprobar?token=<uuid>  → página HTML con el presupuesto y botones Aprobar/Rechazar.
+// POST /aprobar?token=<uuid>  → body {"action":"approve"|"reject"}.
 //
-// Seguridad: el token uuid ES la autorización (link secreto por presupuesto). La función
-// corre con la service role key (secret del proyecto, nunca viaja al navegador) y toca
-// solo la fila de OrderApprovals del token + el Status de su orden.
-// Todo dato de la base se escapa antes de interpolar en el HTML (XSS almacenado);
-// los colores de estilos dinámicos se validan contra /^#[0-9a-f]{6}$/i.
-// Nunca se exponen campos internos: InternalNotes, SpecialDiscountPercent, Cost.
+// ─────────────────────────────────────────────────────────────────────────────
+// SEGURIDAD — qué cambió respecto de la versión anterior
+//
+// 1. Ya NO usa la service role key. Esta función corre con la clave pública
+//    (anon) y toda la lógica vive en dos RPC SECURITY DEFINER de la base:
+//    public.get_approval_page() y public.respond_approval(). El secreto
+//    administrativo del proyecto deja de estar en el entorno de la función.
+//
+// 2. Ya NO decide nada acá. Antes esta función leía y escribía tablas sueltas
+//    con PostgREST y decidía en TypeScript si el token valía. La consecuencia
+//    fue una carrera real: un UPDATE condicional que no matchea ninguna fila NO
+//    devuelve error en PostgREST — devuelve 0 filas — y el código igual entraba
+//    a la rama de éxito y pisaba el estado de la orden con el veredicto
+//    contrario. Ahora el consumo del token, el cambio de estado de la orden y el
+//    registro en la bitácora ocurren en UNA transacción, con el número de filas
+//    afectadas verificado. Ver 20260829000800_approval_rpc_atomic.sql.
+//
+// 3. El token del link no se guarda en la base: se guarda su SHA-256. Acá se
+//    manda en claro (es lo que el cliente tiene) y la base lo hashea para
+//    buscarlo. Nunca se loguea, nunca se interpola en el HTML y nunca se incluye
+//    en un mensaje de error.
+//
+// 4. Los errores no exponen nada interno: el RPC devuelve un código de resultado
+//    acotado y acá se traduce a una página. Ningún SQLERRM, ningún nombre de
+//    tabla, ningún connection string llega al navegador.
+//
+// 5. La página no expone datos internos: la selección de columnas está en el
+//    RPC (parte del esquema, revisable en code review), no en este archivo.
+//    InternalNotes, SpecialDiscountPercent, Cost, AdminName y CreatedByUserId
+//    no salen nunca.
 //
 // Deploy (una vez, desde la máquina del Admin):
-//   supabase functions deploy aprobar --project-ref qgtaugmxmoxtpxvmugvt --no-verify-jwt
-// (--no-verify-jwt: el cliente final no tiene JWT de Supabase; el token propio autoriza.)
+//   supabase functions deploy aprobar --project-ref <ref> --no-verify-jwt
+// (--no-verify-jwt: el cliente final no tiene sesión de Supabase; el token del
+// link es la autorización.)
+//
+// Variables de entorno necesarias: SUPABASE_URL y SUPABASE_ANON_KEY.
+// Las inyecta Supabase automáticamente. NO configurar SUPABASE_SERVICE_ROLE_KEY.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  // Clave pública. Las dos RPC que se invocan son SECURITY DEFINER y validan el
+  // token, el vencimiento, la revocación y el límite de intentos del lado base.
+  Deno.env.get("SUPABASE_ANON_KEY")!,
 );
 
-// Valores del enum OrderStatus de la app de escritorio (Alquitel.Core/Entities/Order.cs)
-const ORDER_STATUS_APPROVED = 1;
-const ORDER_STATUS_REJECTED = 5;
-// Valores del enum ApprovalStatus (OrderApproval.cs)
 const APPROVAL_PENDING = 0;
 const APPROVAL_APPROVED = 1;
 const APPROVAL_REJECTED = 2;
 
 const VAT_RATE = 0.21;
-
-// Vigencia del link. Conocer el token ES la autorización, así que sin vencimiento el
-// link queda válido para siempre en la bandeja del cliente (y en cualquier reenvío
-// suyo). Debe coincidir con Alquitel.Core/Security/ApprovalTokenPolicy.MaxAgeDays.
-const APPROVAL_MAX_AGE_DAYS = 30;
-
-function isExpired(createdAtIso: string | null | undefined): boolean {
-  if (!createdAtIso) return false; // fila legada sin CreatedAt: no se cierra la puerta
-  const created = Date.parse(createdAtIso);
-  if (Number.isNaN(created)) return false;
-  return Date.now() - created > APPROVAL_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -172,33 +185,43 @@ function eventRange(start: string | null, end: string | null): string | null {
   return e && e !== s ? `Del ${s} al ${e}` : s;
 }
 
-// ─────────────────────────────── Tipos de filas ───────────────────────────────
+// ─────────────────────── Forma del payload que devuelve el RPC ───────────────────────
+// Espejo de public.get_approval_page(). La lista de campos vive en la base; acá
+// solo se tipa lo que llega.
 
-interface OrderRow {
-  Id: string;
-  BudgetNumber: string;
-  ClientId: string;
-  LocationId: string;
-  CreatedDate: string;
-  EventDate: string | null;
-  EventEndDate: string | null;
-  Status: number;
-  Comments: string | null;
-  DiscountPercent: number | null;
-  DiscountAmount: number | null;
-  AddVat: boolean | null;
+interface PageItem {
+  quantity: number;
+  unit_price: number;
+  dias: number;
+  technical_notes: string | null;
+  custom_fields_json: string | null;
+  requested_measure: string | null;
+  description: string;
 }
 
-interface ItemRow {
-  Id: string;
-  ProductId: string;
-  Quantity: number;
-  UnitPrice: number;
-  Dias: number;
-  TechnicalNotes: string | null;
-  CustomFieldsJson: string | null;
-  DescriptionSnapshot: string | null;
-  RequestedMeasure: string | null;
+interface PagePayload {
+  outcome: string;
+  detail_visible?: boolean;
+  approval_status?: number;
+  responded_at?: string | null;
+  budget_number?: string;
+  created_date?: string | null;
+  event_date?: string | null;
+  event_end_date?: string | null;
+  comments?: string | null;
+  discount_percent?: number | null;
+  discount_amount?: number | null;
+  add_vat?: boolean | null;
+  client?: {
+    company_name: string | null;
+    cuit: string | null;
+    contact_name: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
+  location?: string | null;
+  items?: PageItem[];
+  max_age_days?: number;
 }
 
 interface CustomField {
@@ -238,129 +261,42 @@ function renderCustomFields(json: string | null): string {
 
 // Fila de la tabla de ítems, estilo remito: descripción (con especificaciones y
 // notas debajo) + columnas numéricas alineadas a la derecha.
-function renderItemRow(item: ItemRow, fallbackDescription: string): string {
-  const desc = item.DescriptionSnapshot?.trim()
-    ? bbToHtml(item.DescriptionSnapshot)
-    : escapeHtml(fallbackDescription);
-  const total = item.Quantity * item.UnitPrice * item.Dias;
+function renderItemRow(item: PageItem): string {
+  const desc = bbToHtml(item.description);
+  const total = item.quantity * item.unit_price * item.dias;
 
   const extras: string[] = [];
-  if (item.RequestedMeasure?.trim()) {
-    extras.push(`<div class="item-measure">${escapeHtml(item.RequestedMeasure)}</div>`);
+  if (item.requested_measure?.trim()) {
+    extras.push(`<div class="item-measure">${escapeHtml(item.requested_measure)}</div>`);
   }
-  if (item.TechnicalNotes?.trim()) {
-    extras.push(`<div class="item-notes">${bbToHtml(item.TechnicalNotes)}</div>`);
+  if (item.technical_notes?.trim()) {
+    extras.push(`<div class="item-notes">${bbToHtml(item.technical_notes)}</div>`);
   }
 
   return `<tr>
     <td class="c-desc">
       <div class="item-name">${desc}</div>
-      ${renderCustomFields(item.CustomFieldsJson)}
+      ${renderCustomFields(item.custom_fields_json)}
       ${extras.join("")}
     </td>
-    <td class="c-num">${item.Quantity}</td>
-    <td class="c-num">${item.Dias}</td>
-    <td class="c-num col-unit">${fmtMoney(item.UnitPrice)}</td>
+    <td class="c-num">${item.quantity}</td>
+    <td class="c-num">${item.dias}</td>
+    <td class="c-num col-unit">${fmtMoney(item.unit_price)}</td>
     <td class="c-num c-total">${fmtMoney(total)}</td>
   </tr>`;
 }
 
-interface PageData {
-  approvalStatus: number;
-  order: OrderRow;
-  clientName: string;
-  clientCuit: string;
-  clientContact: string | null;
-  clientEmail: string | null;
-  clientPhone: string | null;
-  locationName: string | null;
-  items: ItemRow[];
-  productNames: Map<string, string>;
-  respondedAt: string | null;
+function renderStamp(status: number | undefined, respondedAt: string | null | undefined): string {
+  if (status === APPROVAL_APPROVED || status === APPROVAL_REJECTED) {
+    const when = fmtDate(respondedAt);
+    const ok = status === APPROVAL_APPROVED;
+    return `<div class="stamp-row"><span class="stamp ${ok ? "ok" : "no"}">${
+      ok ? "Aprobado" : "Rechazado"}${when ? ` · ${when}` : ""}</span></div>`;
+  }
+  return "";
 }
 
-function renderBudgetPage(d: PageData): string {
-  const o = d.order;
-  const budget = escapeHtml(o.BudgetNumber || "—");
-
-  // Totales — misma aritmética que Order.cs (Total/DiscountValue/NetTotal/VatValue/GrandTotal)
-  const subtotal = d.items.reduce((acc, i) => acc + i.Quantity * i.UnitPrice * i.Dias, 0);
-  const pct = Math.min(Math.max(o.DiscountPercent ?? 0, 0), 100);
-  const rawDisc = subtotal * pct / 100 + Math.max(0, o.DiscountAmount ?? 0);
-  const discount = Math.min(rawDisc, subtotal);
-  const net = subtotal - discount;
-  const addVat = o.AddVat === true;
-  const vat = addVat ? Math.round(net * VAT_RATE * 100) / 100 : 0;
-  const grand = net + vat;
-
-  // Sello de estado (cuando ya se respondió)
-  let stamp = "";
-  if (d.approvalStatus === APPROVAL_APPROVED) {
-    const when = fmtDate(d.respondedAt);
-    stamp = `<div class="stamp-row"><span class="stamp ok">Aprobado${when ? ` · ${when}` : ""}</span></div>`;
-  } else if (d.approvalStatus === APPROVAL_REJECTED) {
-    const when = fmtDate(d.respondedAt);
-    stamp = `<div class="stamp-row"><span class="stamp no">Rechazado${when ? ` · ${when}` : ""}</span></div>`;
-  }
-
-  const clientLines = [
-    `<div class="name">${escapeHtml(d.clientName)}</div>`,
-    d.clientCuit ? `<div class="line">CUIT ${escapeHtml(d.clientCuit)}</div>` : "",
-    d.clientContact ? `<div class="line">${escapeHtml(d.clientContact)}</div>` : "",
-    d.clientEmail ? `<div class="line">${escapeHtml(d.clientEmail)}</div>` : "",
-    d.clientPhone ? `<div class="line">${escapeHtml(d.clientPhone)}</div>` : "",
-  ].join("");
-  const range = eventRange(o.EventDate, o.EventEndDate);
-  const eventLines = [
-    range ? `<div class="name">${escapeHtml(range)}</div>` : "",
-    d.locationName ? `<div class="line">${escapeHtml(d.locationName)}</div>` : "",
-  ].join("");
-
-  const meta = `<section class="meta">
-    <div class="meta-block">
-      <div class="k">Preparado para</div>
-      ${clientLines}
-    </div>
-    ${eventLines.trim() ? `<div class="meta-block"><div class="k">Evento</div>${eventLines}</div>` : ""}
-  </section>`;
-
-  const comments = o.Comments?.trim()
-    ? `<section class="comments">
-         <div class="k">Comentarios</div>
-         <p>${bbToHtml(o.Comments)}</p>
-       </section>`
-    : "";
-
-  const itemRows = d.items.length
-    ? d.items.map((i) => renderItemRow(i, d.productNames.get(i.ProductId) ?? "Producto")).join("")
-    : `<tr><td class="c-desc" colspan="5"><span class="empty">Este presupuesto no tiene ítems cargados.</span></td></tr>`;
-
-  const totalsRows = [
-    `<div class="t-row"><span>Subtotal</span><span class="v">${fmtMoney(subtotal)}</span></div>`,
-    discount > 0
-      ? `<div class="t-row"><span>Descuento${pct > 0 ? ` (${pct}%${(o.DiscountAmount ?? 0) > 0 ? " + fijo" : ""})` : ""}</span><span class="v">−${fmtMoney(discount)}</span></div>`
-      : "",
-    addVat
-      ? `<div class="t-row"><span>Neto</span><span class="v">${fmtMoney(net)}</span></div>
-         <div class="t-row"><span>IVA 21%</span><span class="v">${fmtMoney(vat)}</span></div>`
-      : "",
-    `<div class="t-row grand"><span>Total</span><span class="v">${fmtMoney(grand)}</span></div>`,
-    !addVat ? `<div class="t-note">Precios finales, IVA no discriminado.</div>` : "",
-  ].join("");
-
-  const actions = d.approvalStatus === APPROVAL_PENDING
-    ? `<section class="decision">
-         <p class="decision-q">¿Confirma este presupuesto?</p>
-         <div class="decision-btns">
-           <button id="btn-approve" class="btn btn-approve">Aprobar presupuesto</button>
-           <button id="btn-reject" class="btn btn-reject">Rechazar</button>
-         </div>
-         <p class="fine">Al confirmar, su respuesta queda registrada con fecha y hora.</p>
-       </section>`
-    : "";
-
-  const created = fmtDate(o.CreatedDate);
-
+function renderHeader(budget: string, created: string | null): string {
   return `<header class="letterhead">
       <div class="brand">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="34" height="34" class="brand-mark" aria-hidden="true">
@@ -373,7 +309,95 @@ function renderBudgetPage(d: PageData): string {
         <div class="doc-num">N.º ${budget}</div>
         ${created ? `<div class="doc-date">Emitido el ${created}</div>` : ""}
       </div>
-    </header>
+    </header>`;
+}
+
+function renderBudgetPage(d: PagePayload): string {
+  const budget = escapeHtml(d.budget_number || "—");
+  const created = fmtDate(d.created_date);
+  const stamp = renderStamp(d.approval_status, d.responded_at);
+
+  // Retención: pasado el plazo del comprobante, la página se reduce al sello.
+  // El plazo lo decide la base (app.approval_detail_days), no este archivo.
+  if (d.detail_visible === false) {
+    return `${renderHeader(budget, created)}
+      ${stamp}
+      <p>Este presupuesto ya fue respondido. Por privacidad, el detalle completo
+      dejó de mostrarse en esta página; sigue disponible en nuestros registros.
+      Si necesitás una copia, respondé el correo por el que recibiste este link.</p>`;
+  }
+
+  const items = d.items ?? [];
+
+  // Totales — misma aritmética que Order.cs (Total/DiscountValue/NetTotal/VatValue/GrandTotal)
+  const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unit_price * i.dias, 0);
+  const pct = Math.min(Math.max(Number(d.discount_percent ?? 0), 0), 100);
+  const rawDisc = subtotal * pct / 100 + Math.max(0, Number(d.discount_amount ?? 0));
+  const discount = Math.min(rawDisc, subtotal);
+  const net = subtotal - discount;
+  const addVat = d.add_vat === true;
+  const vat = addVat ? Math.round(net * VAT_RATE * 100) / 100 : 0;
+  const grand = net + vat;
+
+  const c = d.client;
+  const clientLines = [
+    `<div class="name">${escapeHtml(c?.company_name ?? "—")}</div>`,
+    c?.cuit ? `<div class="line">CUIT ${escapeHtml(c.cuit)}</div>` : "",
+    c?.contact_name ? `<div class="line">${escapeHtml(c.contact_name)}</div>` : "",
+    c?.email ? `<div class="line">${escapeHtml(c.email)}</div>` : "",
+    c?.phone ? `<div class="line">${escapeHtml(c.phone)}</div>` : "",
+  ].join("");
+
+  const range = eventRange(d.event_date ?? null, d.event_end_date ?? null);
+  const eventLines = [
+    range ? `<div class="name">${escapeHtml(range)}</div>` : "",
+    d.location ? `<div class="line">${escapeHtml(d.location)}</div>` : "",
+  ].join("");
+
+  const meta = `<section class="meta">
+    <div class="meta-block">
+      <div class="k">Preparado para</div>
+      ${clientLines}
+    </div>
+    ${eventLines.trim() ? `<div class="meta-block"><div class="k">Evento</div>${eventLines}</div>` : ""}
+  </section>`;
+
+  const comments = d.comments?.trim()
+    ? `<section class="comments">
+         <div class="k">Comentarios</div>
+         <p>${bbToHtml(d.comments)}</p>
+       </section>`
+    : "";
+
+  const itemRows = items.length
+    ? items.map(renderItemRow).join("")
+    : `<tr><td class="c-desc" colspan="5"><span class="empty">Este presupuesto no tiene ítems cargados.</span></td></tr>`;
+
+  const totalsRows = [
+    `<div class="t-row"><span>Subtotal</span><span class="v">${fmtMoney(subtotal)}</span></div>`,
+    discount > 0
+      ? `<div class="t-row"><span>Descuento${pct > 0 ? ` (${pct}%${Number(d.discount_amount ?? 0) > 0 ? " + fijo" : ""})` : ""}</span><span class="v">−${fmtMoney(discount)}</span></div>`
+      : "",
+    addVat
+      ? `<div class="t-row"><span>Neto</span><span class="v">${fmtMoney(net)}</span></div>
+         <div class="t-row"><span>IVA 21%</span><span class="v">${fmtMoney(vat)}</span></div>`
+      : "",
+    `<div class="t-row grand"><span>Total</span><span class="v">${fmtMoney(grand)}</span></div>`,
+    !addVat ? `<div class="t-note">Precios finales, IVA no discriminado.</div>` : "",
+  ].join("");
+
+  const actions = d.approval_status === APPROVAL_PENDING
+    ? `<section class="decision">
+         <p class="decision-q">¿Confirma este presupuesto?</p>
+         <div class="decision-btns">
+           <button id="btn-approve" class="btn btn-approve">Aprobar presupuesto</button>
+           <button id="btn-reject" class="btn btn-reject">Rechazar</button>
+         </div>
+         <p class="fine">Al confirmar, su respuesta queda registrada con fecha y hora.</p>
+       </section>`
+    : "";
+
+  return `${renderHeader(budget, created)}
     ${stamp}
     ${meta}
     ${comments}
@@ -413,6 +437,9 @@ function html(body: string, status = 200, wide = false): Response {
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="robots" content="noindex, nofollow"/>
+  <!-- Refuerzo del header Referrer-Policy para el caso de que un intermediario
+       lo quite: el token viaja en la query string y no debe salir en el Referer. -->
+  <meta name="referrer" content="no-referrer"/>
   <title>Grupo Alquitel — Presupuesto</title>
   <style>
     /* Paleta corporativa Alquitel, derivada del azul de marca #1F68C7:
@@ -640,10 +667,15 @@ function html(body: string, status = 200, wide = false): Response {
     async function send(action) {
       document.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
       try {
+        // El token va en la URL, no en el body: el servidor lo lee de la query.
+        // La respuesta del POST se descarta y se recarga por GET, que vuelve a
+        // renderizar la página del lado servidor. Es a propósito: nada de HTML
+        // recibido por fetch se inyecta en este documento.
         await fetch(location.href, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: action })
+          body: JSON.stringify({ action: action }),
+          cache: 'no-store'
         });
       } finally {
         location.reload();
@@ -671,12 +703,16 @@ function html(body: string, status = 200, wide = false): Response {
       // los MIME types son case-insensitive para el navegador, así que renderiza igual.
       // No "corregir" a minúsculas: rompe la página (se ve el código fuente).
       "Content-Type": "text/HTML; charset=utf-8",
-      "Cache-Control": "no-store",
+      // La página contiene datos personales e importes de un tercero: no debe
+      // quedar en ninguna caché intermedia ni en la del navegador.
+      "Cache-Control": "no-store, no-cache, must-revalidate, private",
+      "Pragma": "no-cache",
       // El token viaja en la query string: sin esto, cualquier navegación saliente se
       // lo lleva puesto en el header Referer hacia un tercero.
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
+      "X-Robots-Tag": "noindex, nofollow, noarchive",
       // La página es autocontenida: no carga nada de afuera y no debe poder hacerlo.
       // 'unsafe-inline' es necesario porque el <style> y el <script> van embebidos.
       "Content-Security-Policy": [
@@ -693,140 +729,143 @@ function html(body: string, status = 200, wide = false): Response {
   });
 }
 
+function shortPage(title: string, body: string, status: number): Response {
+  return html(`<h1>${title}</h1><p>${body}</p>`, status);
+}
+
+function receiptPage(budget: string, approved: boolean, extra = ""): Response {
+  return html(`<div class="receipt"><h1>Muchas gracias</h1>
+    <div class="k">Presupuesto</div>
+    <div class="doc-num">N.º ${escapeHtml(budget)}</div>
+    <div class="stamp-row"><span class="stamp ${approved ? "ok" : "no"}">${approved ? "Aprobado" : "Rechazado"}</span></div>
+    <p class="fine">Su respuesta quedó registrada con éxito.${extra}</p></div>`);
+}
+
+// Traducción de los códigos que devuelve el RPC a páginas. Es la ÚNICA superficie
+// de error del portal: nada de lo que pase adentro de la base se filtra acá.
+function pageForOutcome(outcome: string, maxAgeDays?: number): Response | null {
+  switch (outcome) {
+    case "not_found":
+      return shortPage("Link no encontrado",
+        "Este link de aprobación no existe o fue dado de baja.", 404);
+    case "revoked":
+      return shortPage("Link reemplazado",
+        "Se emitió un presupuesto actualizado y este link quedó sin efecto. " +
+        "Usá el último correo que recibiste, o respondelo para que te enviemos uno nuevo.", 410);
+    case "expired":
+      return shortPage("Link vencido",
+        `Este link de aprobación venció a los ${maxAgeDays ?? 30} días de emitido. ` +
+        "Escribinos respondiendo el correo por el que lo recibiste y te enviamos uno nuevo.", 410);
+    case "rate_limited":
+      return shortPage("Demasiados intentos",
+        "Recibimos muchas solicitudes seguidas desde tu conexión. Esperá unos minutos y volvé a intentar.", 429);
+    case "order_missing":
+      return shortPage("Presupuesto no disponible",
+        "No pudimos cargar los datos de este presupuesto. Contactanos y lo resolvemos.", 404);
+    default:
+      return null;
+  }
+}
+
 // ─────────────────────────────── Handler ───────────────────────────────
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const token = url.searchParams.get("token") ?? "";
+
+  // Validación de forma antes de tocar la base: recorta el barrido trivial.
+  // El token NUNCA se registra ni se devuelve en un mensaje.
   if (!UUID_RE.test(token)) {
-    return html(`<h1>Link inválido</h1><p>El link de aprobación no es válido o está incompleto.</p>`, 400);
+    return shortPage("Link inválido",
+      "El link de aprobación no es válido o está incompleto.", 400);
   }
 
-  const { data: approval, error } = await supabase
-    .from("OrderApprovals")
-    .select("Id, OrderId, Status, RespondedAt, CreatedAt")
-    .eq("Token", token)
-    .maybeSingle();
-
-  if (error || !approval) {
-    return html(`<h1>Link no encontrado</h1><p>Este link de aprobación no existe o fue dado de baja.</p>`, 404);
-  }
-
-  // Vencimiento: solo aplica a los que siguen pendientes. Un presupuesto ya respondido
-  // se puede seguir consultando (es el comprobante de lo que el cliente aceptó).
-  if (approval.Status === APPROVAL_PENDING && isExpired(approval.CreatedAt)) {
-    return html(
-      `<h1>Link vencido</h1><p>Este link de aprobación venció a los ${APPROVAL_MAX_AGE_DAYS} días de emitido. ` +
-        `Escribinos respondiendo el correo por el que lo recibiste y te enviamos uno nuevo.</p>`,
-      410,
-    );
-  }
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 
   if (req.method === "GET") {
-    // Carga completa del presupuesto: orden + cliente + lugar + ítems + nombres
-    // de producto (fallback para ítems legados sin DescriptionSnapshot).
-    const { data: order } = await supabase
-      .from("Orders")
-      .select("Id, BudgetNumber, ClientId, LocationId, CreatedDate, EventDate, EventEndDate, Status, Comments, DiscountPercent, DiscountAmount, AddVat")
-      .eq("Id", approval.OrderId)
-      .maybeSingle();
-
-    if (!order) {
-      return html(`<h1>Presupuesto no disponible</h1><p>No pudimos cargar los datos de este presupuesto. Contáctenos.</p>`, 404);
-    }
-
-    const [clientRes, locationRes, itemsRes] = await Promise.all([
-      supabase.from("Clients")
-        .select("CompanyName, Cuit, ContactName, Email, Phone")
-        .eq("Id", order.ClientId).maybeSingle(),
-      supabase.from("Locations")
-        .select("Name")
-        .eq("Id", order.LocationId).maybeSingle(),
-      supabase.from("OrderItems")
-        .select("Id, ProductId, Quantity, UnitPrice, Dias, TechnicalNotes, CustomFieldsJson, DescriptionSnapshot, RequestedMeasure")
-        .eq("OrderId", order.Id),
-    ]);
-
-    const items = (itemsRes.data ?? []) as ItemRow[];
-
-    const productNames = new Map<string, string>();
-    const missingIds = [...new Set(
-      items.filter((i) => !i.DescriptionSnapshot?.trim()).map((i) => i.ProductId),
-    )];
-    if (missingIds.length > 0) {
-      const { data: products } = await supabase
-        .from("Products")
-        .select("Id, Description")
-        .in("Id", missingIds);
-      for (const p of products ?? []) {
-        // El catálogo también usa BBCode en la descripción: se limpia para el fallback.
-        productNames.set(p.Id, (p.Description ?? "").replace(/\[\/?[a-zA-Z]+\]/g, ""));
-      }
-    }
-
-    const page = renderBudgetPage({
-      approvalStatus: approval.Status,
-      order: order as OrderRow,
-      clientName: clientRes.data?.CompanyName ?? "—",
-      clientCuit: clientRes.data?.Cuit ?? "",
-      clientContact: clientRes.data?.ContactName ?? null,
-      clientEmail: clientRes.data?.Email ?? null,
-      clientPhone: clientRes.data?.Phone ?? null,
-      locationName: locationRes.data?.Name ?? null,
-      items,
-      productNames,
-      respondedAt: approval.RespondedAt,
+    const { data, error } = await supabase.rpc("get_approval_page", {
+      p_token: token,
+      p_client_ip: clientIp,
     });
-    return html(page, 200, true);
+
+    if (error) {
+      // No se propaga `error` al navegador: puede traer detalles del backend.
+      console.error("get_approval_page falló", { code: error.code, msg: error.message });
+      return shortPage("No pudimos abrir el presupuesto",
+        "Hubo un problema al cargar la página. Volvé a intentar en un momento.", 502);
+    }
+
+    const payload = data as PagePayload;
+    const errPage = pageForOutcome(payload?.outcome, payload?.max_age_days);
+    if (errPage) return errPage;
+    if (payload?.outcome !== "ok") {
+      return shortPage("No pudimos abrir el presupuesto",
+        "Hubo un problema al cargar la página. Volvé a intentar en un momento.", 502);
+    }
+
+    return html(renderBudgetPage(payload), 200, true);
   }
 
   if (req.method === "POST") {
-    const { data: order } = await supabase
-      .from("Orders")
-      .select("BudgetNumber")
-      .eq("Id", approval.OrderId)
-      .maybeSingle();
-    const budget = escapeHtml(order?.BudgetNumber ?? "—");
-
-    if (approval.Status !== APPROVAL_PENDING) {
-      return html(`<div class="receipt"><h1>Acción duplicada</h1>
-        <div class="k">Presupuesto</div>
-        <div class="doc-num">N.º ${budget}</div>
-        <p class="fine">Este link de aprobación ya fue utilizado previamente.</p></div>`, 409);
-    }
-
     let action = "";
     try { action = (await req.json()).action; } catch { /* body inválido */ }
-    if (action !== "approve" && action !== "reject") {
-      return html(`<h1>Solicitud inválida</h1>`, 400);
+
+    const { data, error } = await supabase.rpc("respond_approval", {
+      p_token: token,
+      p_action: action,
+      p_client_ip: clientIp,
+    });
+
+    if (error) {
+      console.error("respond_approval falló", { code: error.code, msg: error.message });
+      return shortPage("No pudimos registrar tu respuesta",
+        "Hubo un problema al guardar. Volvé a intentar en un momento; tu link sigue siendo válido.", 502);
     }
 
-    const approved = action === "approve";
-    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    const r = data as { outcome: string; status?: number; budget_number?: string; max_age_days?: number };
+    const budget = r?.budget_number ?? "—";
 
-    const { error: upErr } = await supabase
-      .from("OrderApprovals")
-      .update({
-        Status: approved ? APPROVAL_APPROVED : APPROVAL_REJECTED,
-        RespondedAt: new Date().toISOString(),
-        ClientIp: clientIp,
-      })
-      .eq("Id", approval.Id)
-      .eq("Status", APPROVAL_PENDING); // idempotencia ante doble clic
+    switch (r?.outcome) {
+      case "ok":
+        return receiptPage(budget, r.status === APPROVAL_APPROVED);
 
-    if (!upErr) {
-      await supabase
-        .from("Orders")
-        .update({ Status: approved ? ORDER_STATUS_APPROVED : ORDER_STATUS_REJECTED })
-        .eq("Id", approval.OrderId);
+      // Idempotencia: repetir la MISMA acción devuelve el mismo comprobante, sin
+      // volver a escribir. Es lo que ve el cliente que hace doble clic o recarga.
+      case "already_same":
+        return receiptPage(budget, r.status === APPROVAL_APPROVED,
+          " Ya lo habíamos registrado antes.");
+
+      // La acción contraria a un veredicto ya emitido no lo pisa. Antes de este
+      // cambio, dos pedidos simultáneos podían dejar la orden en un estado que
+      // contradecía la respuesta guardada.
+      case "already_other":
+        return html(`<div class="receipt"><h1>Ya respondido</h1>
+          <div class="k">Presupuesto</div>
+          <div class="doc-num">N.º ${escapeHtml(budget)}</div>
+          ${renderStamp(r.status, null)}
+          <p class="fine">Este presupuesto ya había sido respondido y se conserva la primera
+          respuesta. Si necesitás cambiarla, respondé el correo por el que recibiste el link.</p></div>`, 409);
+
+      case "invalid_action":
+        return shortPage("Solicitud inválida", "La acción solicitada no es válida.", 400);
+
+      case "order_state_conflict":
+        return shortPage("El presupuesto ya avanzó",
+          "Este presupuesto ya pasó a producción y no admite una respuesta por este medio. " +
+          "Escribinos respondiendo el correo y lo vemos.", 409);
+
+      case "approval_not_consumed":
+        return shortPage("No pudimos registrar tu respuesta",
+          "Hubo un conflicto al guardar. Volvé a intentar; tu link sigue siendo válido.", 409);
+
+      default: {
+        const errPage = pageForOutcome(r?.outcome, r?.max_age_days);
+        if (errPage) return errPage;
+        return shortPage("No pudimos registrar tu respuesta",
+          "Hubo un problema al guardar. Volvé a intentar en un momento.", 502);
+      }
     }
-
-    return html(`<div class="receipt"><h1>Muchas gracias</h1>
-      <div class="k">Presupuesto</div>
-      <div class="doc-num">N.º ${budget}</div>
-      <div class="stamp-row"><span class="stamp ${approved ? "ok" : "no"}">${approved ? "Aprobado" : "Rechazado"}</span></div>
-      <p class="fine">Su respuesta quedó registrada con éxito.</p></div>`);
   }
 
-  return html(`<h1>Método no soportado</h1>`, 405);
+  return shortPage("Método no soportado", "Esta página solo responde a GET y POST.", 405);
 });
