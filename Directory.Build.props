@@ -1,0 +1,20 @@
+﻿<Project>
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Compilacion determinista y reproducible -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PathMap Condition="'$(CI)' == 'true'">$(MSBuildThisFileDirectory)=/_/</PathMap>
+
+    <!-- Reproducibilidad de paquetes con lockfiles -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+
+  <Target Name="AutoSignBinaries" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell -ExecutionPolicy Bypass -Command &quot;&amp; { $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like '*CN=AlquitelLocalDev*' } | Select-Object -First 1; if ($cert) { if (Test-Path '$(TargetPath)') { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate $cert -HashAlgorithm SHA256 | Out-Null }; if (Test-Path '$(TargetDir)$(TargetName).exe') { Set-AuthenticodeSignature -FilePath '$(TargetDir)$(TargetName).exe' -Certificate $cert -HashAlgorithm SHA256 | Out-Null } } }&quot;" />
+  </Target>
+</Project>
