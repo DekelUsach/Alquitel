@@ -270,6 +270,28 @@ public sealed class OrderConcurrencyIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReintentarLaMismaOperacionConfirmaSinMutarNiAuditarDosVeces()
+    {
+        var order = await SeedOrderAsync();
+        var first = await LoadOrderAsync(order.Id);
+        var staleRetry = await LoadOrderAsync(order.Id);
+        var operationId = Guid.NewGuid();
+        var service = new OrderPersistenceService(_factory, _currentUser);
+        first.Comments = "operación aplicada";
+
+        var saved = await service.PersistAsync(first, operationId: operationId);
+        staleRetry.Comments = "reintento obsoleto que no debe aplicarse";
+        var confirmed = await service.PersistAsync(staleRetry, operationId: operationId);
+
+        Assert.Equal(OrderPersistStatus.Saved, saved.Status);
+        Assert.Equal(OrderPersistStatus.Saved, confirmed.Status);
+        Assert.Equal(saved.PersistedRowVersion, confirmed.PersistedRowVersion);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.Equal("operación aplicada", (await db.Orders.FindAsync(order.Id))!.Comments);
+        Assert.Equal(1, await db.OrderAuditEvents.CountAsync(e => e.Id == operationId));
+    }
+
+    [Fact]
     public async Task CambioDeEstadoValidaPoliticaConcurrenciaEIdempotencia()
     {
         var order = await SeedOrderAsync();

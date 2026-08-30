@@ -21,6 +21,7 @@ namespace Alquitel.UI
     public partial class App : Application
     {
         public static ServiceProvider? ServiceProvider { get; private set; }
+        private DatabaseBackupService.ApplicationDatabaseLease? _databaseLease;
 
         private static IConfiguration BuildConfiguration()
         {
@@ -51,10 +52,13 @@ namespace Alquitel.UI
 
                 ServiceProvider = serviceCollection.BuildServiceProvider();
 
+                var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
+                _databaseLease = backupService.AcquireApplicationDatabaseLease();
+                backupService.ApplyPendingRestoreAtStartup(_databaseLease);
+
                 var initService = ServiceProvider.GetRequiredService<DataInitializationService>();
                 initService.Initialize();
 
-                var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
                 backupService.Start();
 
                 // Reintento en segundo plano de órdenes que quedaron sin persistir
@@ -274,6 +278,8 @@ namespace Alquitel.UI
 
         protected override void OnExit(ExitEventArgs e)
         {
+            _databaseLease?.Dispose();
+            _databaseLease = null;
             AppLog.Information("Application exiting (code={Code})", e.ApplicationExitCode);
             AppLog.Shutdown();
             base.OnExit(e);

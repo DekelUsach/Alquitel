@@ -215,9 +215,10 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 _backupService.RestoreBackup(SelectedBackup.FilePath);
-                _dialogService.ShowInfo("Backup restaurado",
-                    "La base de datos fue restaurada correctamente.\n\n" +
-                    "Cerrá y volvé a abrir Alquitel para que todos los módulos lean la base restaurada.");
+                _dialogService.ShowInfo("Restauración programada",
+                    "El backup fue validado y quedó protegido para restaurarse.\n\n" +
+                    "Cerrá y volvé a abrir Alquitel: la base se reemplazará de forma segura " +
+                    "antes de iniciar los módulos.");
             }
             catch (Exception ex)
             {

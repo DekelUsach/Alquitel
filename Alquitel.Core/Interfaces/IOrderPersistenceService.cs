@@ -34,5 +34,6 @@ public interface IOrderPersistenceService
     Task<OrderPersistOutcome> PersistAsync(
         Order order,
         OrderConflictResolution resolution = OrderConflictResolution.Reject,
+        Guid? operationId = null,
         CancellationToken cancellationToken = default);
 }

@@ -24,10 +24,12 @@ public class OrderPersistenceService : IOrderPersistenceService
     public async Task<OrderPersistOutcome> PersistAsync(
         Order order,
         OrderConflictResolution resolution = OrderConflictResolution.Reject,
+        Guid? operationId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(order);
         var candidateBudgetNumber = order.BudgetNumber;
+        var auditEventId = operationId ?? Guid.NewGuid();
 
         for (var attempt = 0; ; attempt++)
         {
@@ -35,7 +37,7 @@ public class OrderPersistenceService : IOrderPersistenceService
             try
             {
                 var outcome = await PersistOnceAsync(
-                    order, candidateBudgetNumber, resolution, cancellationToken);
+                    order, candidateBudgetNumber, auditEventId, resolution, cancellationToken);
                 if (outcome.Status == OrderPersistStatus.Saved)
                 {
                     order.RowVersion = outcome.PersistedRowVersion!.Value;
@@ -59,6 +61,22 @@ public class OrderPersistenceService : IOrderPersistenceService
             }
             catch (Exception ex)
             {
+                try
+                {
+                    var applied = await TryGetAppliedOutcomeAsync(
+                        order.Id, auditEventId, cancellationToken);
+                    if (applied != null)
+                    {
+                        order.RowVersion = applied.PersistedRowVersion!.Value;
+                        order.BudgetNumber = applied.PersistedBudgetNumber!;
+                        return applied;
+                    }
+                }
+                catch
+                {
+                    // Se conserva el error original; la próxima pasada del outbox
+                    // verificará nuevamente la identidad de operación.
+                }
                 AppLog.Error(ex, "PersistAsync failed for order {OrderId}", order.Id);
                 return new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "persistence_failed");
             }
@@ -68,13 +86,31 @@ public class OrderPersistenceService : IOrderPersistenceService
     private async Task<OrderPersistOutcome> PersistOnceAsync(
         Order order,
         string budgetNumber,
+        Guid auditEventId,
         OrderConflictResolution resolution,
         CancellationToken cancellationToken)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var strategy = db.Database.CreateExecutionStrategy();
         var candidateRowVersion = Guid.NewGuid();
-        var auditEventId = Guid.NewGuid();
+
+        var appliedEvent = await db.OrderAuditEvents.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == auditEventId, cancellationToken);
+        if (appliedEvent != null)
+        {
+            if (appliedEvent.OrderId != order.Id)
+                return new OrderPersistOutcome(
+                    OrderPersistStatus.Error, ErrorCode: "operation_id_collision");
+
+            var appliedOrder = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+                .SingleOrDefaultAsync(o => o.Id == order.Id, cancellationToken);
+            return appliedOrder == null
+                ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
+                : new OrderPersistOutcome(
+                    OrderPersistStatus.Saved,
+                    appliedOrder.RowVersion,
+                    appliedOrder.BudgetNumber);
+        }
 
         try
         {
@@ -109,6 +145,9 @@ public class OrderPersistenceService : IOrderPersistenceService
         }
         catch (DbUpdateConcurrencyException)
         {
+            var applied = await TryGetAppliedOutcomeAsync(
+                order.Id, auditEventId, cancellationToken);
+            if (applied != null) return applied;
             var latest = await LoadLatestAsync(order.Id, cancellationToken);
             return latest == null
                 ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
@@ -327,6 +366,29 @@ public class OrderPersistenceService : IOrderPersistenceService
             .Include(o => o.Location)
             .Include(o => o.Items).ThenInclude(i => i.Product)
             .SingleOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+    }
+
+    private async Task<OrderPersistOutcome?> TryGetAppliedOutcomeAsync(
+        Guid orderId, Guid auditEventId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var auditOrderId = await db.OrderAuditEvents.AsNoTracking()
+            .Where(e => e.Id == auditEventId)
+            .Select(e => (Guid?)e.OrderId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (auditOrderId == null) return null;
+        if (auditOrderId != orderId)
+            return new OrderPersistOutcome(
+                OrderPersistStatus.Error, ErrorCode: "operation_id_collision");
+
+        var applied = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+            .Where(o => o.Id == orderId)
+            .Select(o => new { o.RowVersion, o.BudgetNumber })
+            .SingleOrDefaultAsync(cancellationToken);
+        return applied == null
+            ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
+            : new OrderPersistOutcome(
+                OrderPersistStatus.Saved, applied.RowVersion, applied.BudgetNumber);
     }
 
     private async Task<string> NextAvailableNumberAsync(

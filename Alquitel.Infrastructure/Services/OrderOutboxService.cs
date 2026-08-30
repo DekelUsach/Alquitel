@@ -22,6 +22,7 @@ namespace Alquitel.Infrastructure.Services
 
         private readonly string _outboxFolder;
         private readonly IOrderPersistenceService _persistence;
+        private readonly LocalProtectedFileStore _store;
         private readonly SemaphoreSlim _retryLock = new(1, 1);
         private Timer? _timer;
 
@@ -37,15 +38,17 @@ namespace Alquitel.Infrastructure.Services
             _persistence = persistence;
             _outboxFolder = outboxFolder;
             Directory.CreateDirectory(_outboxFolder);
+            _store = new LocalProtectedFileStore(_outboxFolder);
         }
 
         /// <summary>Arranca el reintento periódico (primer intento al minuto, luego cada 5).</summary>
         public void Start()
         {
+            if (_timer != null) return;
             _timer = new Timer(async _ =>
             {
                 try { await RetryPendingAsync(); }
-                catch (Exception ex) { AppLog.Warning(ex, "Outbox retry tick failed"); }
+                catch (Exception ex) { AppLog.Warning("Outbox retry tick failed ({ErrorType})", ex.GetType().Name); }
             }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
         }
 
@@ -58,7 +61,7 @@ namespace Alquitel.Infrastructure.Services
             }
         }
 
-        public void Enqueue(Order order)
+        public bool Enqueue(Order order, Guid? operationId = null)
         {
             try
             {
@@ -109,14 +112,21 @@ namespace Alquitel.Infrastructure.Services
                     }).ToList(),
                 };
 
-                var json = JsonSerializer.Serialize(snapshot, WriteOptions);
-                File.WriteAllText(PathFor(order.Id), json);
-                AppLog.Information("Orden {OrderId} ({Budget}) encolada en outbox para reintento",
-                    order.Id, order.BudgetNumber);
+                var envelope = new OutboxEnvelope
+                {
+                    OperationId = operationId ?? Guid.NewGuid(),
+                    Order = snapshot,
+                };
+                _store.WriteJson(PathFor(order.Id), envelope, WriteOptions);
+                AppLog.Information("Orden {OrderId} encolada para reintento", order.Id);
+                return true;
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "No se pudo encolar la orden {OrderId} en el outbox", order.Id);
+                AppLog.Error(
+                    "No se pudo encolar la orden {OrderId} en el outbox ({ErrorType})",
+                    order.Id, ex.GetType().Name);
+                return false;
             }
         }
 
@@ -132,35 +142,26 @@ namespace Alquitel.Infrastructure.Services
 
                 foreach (var file in files)
                 {
-                    Order? order;
-                    try
-                    {
-                        order = JsonSerializer.Deserialize<Order>(await File.ReadAllTextAsync(file), ReadOptions);
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLog.Warning(ex, "Outbox: archivo corrupto {File} — se descarta", file);
-                        TryDelete(file);
-                        continue;
-                    }
-                    if (order == null) { TryDelete(file); continue; }
+                    var stored = await ReadEnvelopeAsync(file);
+                    if (stored == null) continue;
+                    var envelope = stored.Value;
+                    var order = envelope.Order!;
 
-                    var result = await _persistence.PersistAsync(order);
+                    var result = await _persistence.PersistAsync(
+                        order, operationId: envelope.OperationId);
                     switch (result.Status)
                     {
                         case OrderPersistStatus.Saved:
-                            TryDelete(file);
+                            _store.DeleteIfUnchanged(file, stored.Fingerprint);
                             saved++;
-                            AppLog.Information("Outbox: orden {OrderId} ({Budget}) persistida en reintento",
-                                order.Id, order.BudgetNumber);
+                            AppLog.Information("Outbox: orden {OrderId} persistida en reintento", order.Id);
                             break;
                         case OrderPersistStatus.Conflict:
-                            // Alguien más ya guardó una versión más nueva de esta orden:
-                            // la copia encolada quedó obsoleta, no tiene sentido pisarla.
+                            _store.QuarantineIfUnchanged(
+                                file, stored.Fingerprint, "concurrency_conflict");
                             AppLog.Warning(
-                                "Outbox: orden {OrderId} descartada por conflicto de concurrencia (hay versión más nueva en la base)",
+                                "Outbox: orden {OrderId} preservada en cuarentena por conflicto",
                                 order.Id);
-                            TryDelete(file);
                             break;
                         case OrderPersistStatus.Error:
                             // Sigue sin conexión (u otro fallo): queda para el próximo tick.
@@ -177,16 +178,39 @@ namespace Alquitel.Infrastructure.Services
 
         private string PathFor(Guid orderId) => Path.Combine(_outboxFolder, $"order_{orderId}.json");
 
-        private static void TryDelete(string file)
+        private async Task<LocalProtectedFileStore.StoredJson<OutboxEnvelope>?> ReadEnvelopeAsync(
+            string file) => await _store.ReadJsonWithLegacyMigrationAsync<OutboxEnvelope, Order>(
+            file,
+            ReadOptions,
+            current => current.OperationId != Guid.Empty &&
+                       current.Order != null &&
+                       IsValidOrderPayload(current.Order),
+            IsValidOrderPayload,
+            legacy => new OutboxEnvelope { OperationId = Guid.NewGuid(), Order = legacy });
+
+        private static bool IsValidOrderPayload(Order order) =>
+            order.Id != Guid.Empty &&
+            !string.IsNullOrWhiteSpace(order.BudgetNumber) &&
+            order.Client != null &&
+            order.Location != null &&
+            order.Items != null;
+
+        private void TryDelete(string file)
         {
-            try { if (File.Exists(file)) File.Delete(file); }
-            catch (Exception ex) { AppLog.Warning(ex, "Outbox: no se pudo borrar {File}", file); }
+            try { _store.Delete(file); }
+            catch (Exception ex) { AppLog.Warning("Outbox: no se pudo borrar una entrada ({ErrorType})", ex.GetType().Name); }
         }
 
         public void Dispose()
         {
             _timer?.Dispose();
-            _retryLock.Dispose();
+            _timer = null;
+        }
+
+        private sealed class OutboxEnvelope
+        {
+            public Guid OperationId { get; set; }
+            public Order? Order { get; set; }
         }
     }
 }

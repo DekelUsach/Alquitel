@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -20,6 +19,7 @@ namespace Alquitel.Infrastructure.Services
         private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
 
         private readonly string _draftsFolder;
+        private readonly LocalProtectedFileStore _store;
 
         public DraftService() : this(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Alquitel", "Drafts"))
@@ -31,6 +31,7 @@ namespace Alquitel.Infrastructure.Services
         {
             _draftsFolder = draftsFolder;
             Directory.CreateDirectory(_draftsFolder);
+            _store = new LocalProtectedFileStore(_draftsFolder);
         }
 
         private string PathFor(Guid orderId) =>
@@ -70,8 +71,7 @@ namespace Alquitel.Infrastructure.Services
                 }).ToList()
             };
 
-            var json = JsonSerializer.Serialize(draft, WriteOptions);
-            await File.WriteAllTextAsync(PathFor(order.Id), json, token);
+            await _store.WriteJsonAsync(PathFor(order.Id), draft, WriteOptions, token);
         }
 
         public void DeleteDraft(Guid orderId) => DeleteDraftFile(PathFor(orderId));
@@ -80,11 +80,11 @@ namespace Alquitel.Infrastructure.Services
         {
             try
             {
-                if (File.Exists(filePath)) File.Delete(filePath);
+                _store.Delete(filePath);
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "Could not delete draft {Path}", filePath);
+                AppLog.Warning("No se pudo borrar un borrador local ({ErrorType})", ex.GetType().Name);
             }
         }
 
@@ -102,7 +102,7 @@ namespace Alquitel.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "GetRecentDrafts failed");
+                AppLog.Warning("GetRecentDrafts failed ({ErrorType})", ex.GetType().Name);
                 return Array.Empty<DraftInfo>();
             }
         }
@@ -111,13 +111,11 @@ namespace Alquitel.Infrastructure.Services
         {
             try
             {
-                if (!File.Exists(filePath)) return null;
-                var json = await File.ReadAllTextAsync(filePath);
-                return JsonSerializer.Deserialize<OrderDraft>(json, ReadOptions);
+                return await _store.ReadJsonAsync<OrderDraft>(filePath, ReadOptions);
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "LoadDraftAsync failed for {Path}", filePath);
+                AppLog.Warning("No se pudo cargar un borrador local ({ErrorType})", ex.GetType().Name);
                 return null;
             }
         }

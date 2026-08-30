@@ -1094,7 +1094,9 @@ namespace Alquitel.UI.ViewModels
                 CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
 
                 string numberBeforePersist = CurrentOrder.BudgetNumber;
-                var persistResult = await _orderPersistence.PersistAsync(CurrentOrder);
+                var persistenceOperationId = Guid.NewGuid();
+                var persistResult = await _orderPersistence.PersistAsync(
+                    CurrentOrder, operationId: persistenceOperationId);
 
                 if (persistResult.Status == OrderPersistStatus.Conflict &&
                     persistResult.Conflict is { } conflict)
@@ -1125,7 +1127,9 @@ namespace Alquitel.UI.ViewModels
                     }
 
                     persistResult = await _orderPersistence.PersistAsync(
-                        CurrentOrder, OrderConflictResolution.OverwriteLatest);
+                        CurrentOrder,
+                        OrderConflictResolution.OverwriteLatest,
+                        persistenceOperationId);
                     if (persistResult.Status == OrderPersistStatus.Conflict)
                     {
                         _dialogService.ShowWarning(
@@ -1178,12 +1182,22 @@ namespace Alquitel.UI.ViewModels
                                 : "El cambio de estado solicitado no es válido para esta orden.");
                         return;
                     }
-                    _orderOutbox.Enqueue(CurrentOrder);
-                    _dialogService.ShowWarning(
-                        "Documento generado, persistencia falló",
-                        $"El documento se generó correctamente:\n{outputPath}\n\n" +
-                        "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
-                        "Quedó encolada y se reintentará automáticamente cuando vuelva la conexión.");
+                    if (_orderOutbox.Enqueue(CurrentOrder, persistenceOperationId))
+                    {
+                        _dialogService.ShowWarning(
+                            "Documento generado, persistencia falló",
+                            $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                            "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
+                            "Quedó encolada y se reintentará automáticamente cuando vuelva la conexión.");
+                    }
+                    else
+                    {
+                        _dialogService.ShowError(
+                            "Orden sin respaldo local",
+                            $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                            "No se pudo guardar la orden en la base ni asegurarla en la cola local. " +
+                            "No cierres esta pantalla y volvé a intentar cuando haya espacio y conexión.");
+                    }
                 }
             }
             catch (Exception ex)
