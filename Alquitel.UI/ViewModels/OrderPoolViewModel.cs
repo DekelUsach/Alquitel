@@ -51,6 +51,7 @@ namespace Alquitel.UI.ViewModels
         public string EventLabel { get; }
         public decimal Total { get; }
         public string AdminName { get; }
+        public Guid RowVersion { get; private set; }
 
         /// <summary>Fecha de creación en UTC (CreatedDate es la versión local, para mostrar).</summary>
         private readonly DateTime _createdDateUtc;
@@ -101,7 +102,16 @@ namespace Alquitel.UI.ViewModels
                 : string.Empty;
             Total = order.Total;
             AdminName = order.AdminName;
+            RowVersion = order.RowVersion;
             _status = order.Status;
+        }
+
+        internal void ApplyPersistedState(OrderStatus status, Guid rowVersion)
+        {
+            SuppressPersist = true;
+            Status = status;
+            RowVersion = rowVersion;
+            SuppressPersist = false;
         }
     }
 
@@ -115,6 +125,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IDialogService _dialogService;
         private readonly INavigationService _navigationService;
         private readonly IServiceProvider _serviceProvider;
+        private readonly IOrderStatusService _orderStatusService;
         private readonly ICollectionView _rowsView;
 
         [ObservableProperty]
@@ -156,13 +167,15 @@ namespace Alquitel.UI.ViewModels
 
         public OrderPoolViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory,
             IDialogService dialogService, INavigationService navigationService,
-            IServiceProvider serviceProvider, Alquitel.Core.Interfaces.IOrderAuditService auditService)
+            IServiceProvider serviceProvider, Alquitel.Core.Interfaces.IOrderAuditService auditService,
+            IOrderStatusService orderStatusService)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
             _navigationService = navigationService;
             _serviceProvider = serviceProvider;
             _auditService = auditService;
+            _orderStatusService = orderStatusService;
 
             _rowsView = CollectionViewSource.GetDefaultView(Rows);
             _rowsView.Filter = FilterRow;
@@ -241,19 +254,66 @@ namespace Alquitel.UI.ViewModels
 
         private async Task PersistStatusChangeAsync(OrderPoolRow row, OrderStatus oldStatus, OrderStatus newStatus)
         {
+            var rollbackStatus = oldStatus;
+            var rollbackRowVersion = row.RowVersion;
             try
             {
-                using var db = await _dbContextFactory.CreateDbContextAsync();
-                var order = await db.Orders.IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(o => o.Id == row.OrderId);
-                if (order == null)
-                    throw new InvalidOperationException("La orden ya no existe en la base.");
+                var result = await _orderStatusService.ChangeAsync(
+                    row.OrderId, row.RowVersion, newStatus);
+                if (result.Status == OrderPersistStatus.Conflict && result.Conflict is { } conflict)
+                {
+                    row.ApplyPersistedState(conflict.LatestOrder.Status, conflict.ActualRowVersion);
+                    rollbackStatus = conflict.LatestOrder.Status;
+                    rollbackRowVersion = conflict.ActualRowVersion;
+                    var overwrite = _dialogService.ShowConfirm(
+                        "Conflicto de estado",
+                        $"La orden cambió en otro equipo. El estado vigente es " +
+                        $"{StatusLabel(conflict.LatestOrder.Status)}.\n\n" +
+                        $"¿Querés cambiarlo igualmente a {StatusLabel(newStatus)}?");
+                    if (!overwrite)
+                    {
+                        RefreshCounts();
+                        _rowsView.Refresh();
+                        return;
+                    }
 
-                order.Status = newStatus;
-                await db.SaveChangesAsync();
+                    result = await _orderStatusService.ChangeAsync(
+                        row.OrderId,
+                        conflict.ActualRowVersion,
+                        newStatus,
+                        OrderConflictResolution.OverwriteLatest);
+                }
+
+                if (result.Status == OrderPersistStatus.Conflict && result.Conflict is { } repeatedConflict)
+                {
+                    row.ApplyPersistedState(
+                        repeatedConflict.LatestOrder.Status,
+                        repeatedConflict.ActualRowVersion);
+                    _dialogService.ShowWarning(
+                        "Nuevo conflicto",
+                        "La orden volvió a cambiar antes de confirmar. Se recargó el estado vigente.");
+                    RefreshCounts();
+                    _rowsView.Refresh();
+                    return;
+                }
+
+                if (result.Status != OrderPersistStatus.Saved ||
+                    result.PersistedRowVersion is not Guid persistedVersion)
+                {
+                    row.ApplyPersistedState(rollbackStatus, rollbackRowVersion);
+                    var message = result.ErrorCode switch
+                    {
+                        "invalid_status_transition" => "Ese cambio de estado no está permitido.",
+                        "order_not_found" => "La orden ya no existe en la base.",
+                        _ => "No se pudo guardar el cambio de estado.",
+                    };
+                    _dialogService.ShowError("Error", message);
+                    return;
+                }
+
+                row.ApplyPersistedState(newStatus, persistedVersion);
                 AppLog.Information("Order {Budget} status: {Old} → {New}",
                     row.BudgetNumber, oldStatus, newStatus);
-                await _auditService.LogAsync(row.OrderId, $"Estado: {oldStatus} → {newStatus}");
 
                 RefreshCounts();
                 _rowsView.Refresh();
@@ -262,13 +322,22 @@ namespace Alquitel.UI.ViewModels
             {
                 AppLog.Error(ex, "PersistStatusChange failed for order {OrderId}", row.OrderId);
                 // Rollback visual sin volver a disparar la persistencia.
-                row.SuppressPersist = true;
-                row.Status = oldStatus;
-                row.SuppressPersist = false;
+                row.ApplyPersistedState(rollbackStatus, rollbackRowVersion);
                 _dialogService.ShowError("Error",
                     $"No se pudo guardar el cambio de estado: {ex.Message}");
             }
         }
+
+        private static string StatusLabel(OrderStatus status) => status switch
+        {
+            OrderStatus.Draft => "Borrador",
+            OrderStatus.Approved => "Aprobado",
+            OrderStatus.SentToOF => "Facturación (OF)",
+            OrderStatus.SentToOT => "Orden de Trabajo",
+            OrderStatus.Rejected => "Rechazado",
+            OrderStatus.Archived => "Archivado",
+            _ => status.ToString(),
+        };
 
         [RelayCommand]
         private async Task RefreshAsync() => await InitializeAsync();

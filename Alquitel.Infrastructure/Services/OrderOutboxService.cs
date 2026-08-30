@@ -146,15 +146,15 @@ namespace Alquitel.Infrastructure.Services
                     if (order == null) { TryDelete(file); continue; }
 
                     var result = await _persistence.PersistAsync(order);
-                    switch (result)
+                    switch (result.Status)
                     {
-                        case OrderPersistResult.Saved:
+                        case OrderPersistStatus.Saved:
                             TryDelete(file);
                             saved++;
                             AppLog.Information("Outbox: orden {OrderId} ({Budget}) persistida en reintento",
                                 order.Id, order.BudgetNumber);
                             break;
-                        case OrderPersistResult.Conflict:
+                        case OrderPersistStatus.Conflict:
                             // Alguien más ya guardó una versión más nueva de esta orden:
                             // la copia encolada quedó obsoleta, no tiene sentido pisarla.
                             AppLog.Warning(
@@ -162,7 +162,7 @@ namespace Alquitel.Infrastructure.Services
                                 order.Id);
                             TryDelete(file);
                             break;
-                        case OrderPersistResult.Error:
+                        case OrderPersistStatus.Error:
                             // Sigue sin conexión (u otro fallo): queda para el próximo tick.
                             break;
                     }

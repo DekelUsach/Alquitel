@@ -370,6 +370,7 @@ namespace Alquitel.UI
 
             // Persistencia de órdenes y borradores del armador (extraídos del VM).
             services.AddSingleton<IOrderPersistenceService, OrderPersistenceService>();
+            services.AddSingleton<IOrderStatusService, OrderStatusService>();
             services.AddSingleton<IDraftService, DraftService>();
 
             // Outbox offline: órdenes que no pudieron guardarse (sin internet en modo

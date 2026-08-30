@@ -1096,19 +1096,47 @@ namespace Alquitel.UI.ViewModels
                 string numberBeforePersist = CurrentOrder.BudgetNumber;
                 var persistResult = await _orderPersistence.PersistAsync(CurrentOrder);
 
-                if (persistResult == OrderPersistResult.Conflict)
+                if (persistResult.Status == OrderPersistStatus.Conflict &&
+                    persistResult.Conflict is { } conflict)
                 {
-                    // Otro usuario guardó esta misma orden desde que se cargó acá.
-                    var overwrite = _dialogService.ShowConfirm(
+                    var fields = conflict.ChangedFields.Count == 0
+                        ? "No se pudo determinar qué campos cambiaron."
+                        : "Cambios detectados: " + string.Join(", ", conflict.ChangedFields) + ".";
+                    var reload = _dialogService.ShowConfirm(
                         "Conflicto de edición",
                         "Otro usuario modificó este presupuesto mientras lo editabas.\n\n" +
-                        "¿Querés PISAR sus cambios con tu versión? (Si elegís No, recargá el " +
-                        "presupuesto desde el historial para ver la versión más nueva.)");
-                    if (overwrite)
-                        persistResult = await _orderPersistence.PersistAsync(CurrentOrder, forceOverwrite: true);
+                        fields + "\n\n¿Querés recargar la versión vigente? " +
+                        "Elegí No para conservar tus cambios locales y decidir si sobrescribir.");
+                    if (reload)
+                    {
+                        ApplyLoadedOrder(conflict.LatestOrder);
+                        _toastService.ShowInfo("Se recargó la versión más reciente del presupuesto.");
+                        return;
+                    }
+
+                    var overwrite = _dialogService.ShowConfirm(
+                        "Sobrescribir cambios",
+                        "Tus cambios siguen intactos y todavía no se guardaron.\n\n" +
+                        "¿Querés sobrescribir conscientemente la versión vigente?");
+                    if (!overwrite)
+                    {
+                        _toastService.ShowInfo("Se conservaron tus cambios locales sin guardar.");
+                        return;
+                    }
+
+                    persistResult = await _orderPersistence.PersistAsync(
+                        CurrentOrder, OrderConflictResolution.OverwriteLatest);
+                    if (persistResult.Status == OrderPersistStatus.Conflict)
+                    {
+                        _dialogService.ShowWarning(
+                            "Nuevo conflicto",
+                            "La orden volvió a cambiar antes de confirmar la sobrescritura. " +
+                            "No se guardó nada; revisá nuevamente la versión vigente.");
+                        return;
+                    }
                 }
 
-                if (persistResult == OrderPersistResult.Saved)
+                if (persistResult.Status == OrderPersistStatus.Saved)
                 {
                     _draftService.DeleteDraft(CurrentOrder.Id);
                     LastGeneratedPath = outputPath;
@@ -1139,8 +1167,17 @@ namespace Alquitel.UI.ViewModels
                             () => Alquitel.UI.Helpers.ShellLauncher.RevealInExplorer(revealPath));
                     }
                 }
-                else if (persistResult == OrderPersistResult.Error)
+                else if (persistResult.Status == OrderPersistStatus.Error)
                 {
+                    if (persistResult.ErrorCode is "invalid_status_transition" or "order_not_found")
+                    {
+                        _dialogService.ShowWarning(
+                            "No se guardó la orden",
+                            persistResult.ErrorCode == "order_not_found"
+                                ? "La orden ya no existe en la base. Recargá el historial antes de continuar."
+                                : "El cambio de estado solicitado no es válido para esta orden.");
+                        return;
+                    }
                     _orderOutbox.Enqueue(CurrentOrder);
                     _dialogService.ShowWarning(
                         "Documento generado, persistencia falló",
