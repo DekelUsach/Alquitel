@@ -224,6 +224,44 @@ regresión de RLS se detecte en el PR y no en producción.
 
 ---
 
+## 5.5 Estado real del proyecto al 2026-09-01
+
+**Ya aplicadas a producción** (con la confirmación del usuario):
+
+| Archivo del repo | Registrada en el proyecto como |
+|---|---|
+| `20260829000100_least_privilege_grants` | `20260901141622_least_privilege_grants` |
+| `20260829000200_app_identity_and_roles` | `20260901141716_app_identity_and_roles` |
+| `20260829000300_rls_policies` | `20260901141816_rls_policies` |
+| `20260829000600_audit_append_only` | `20260901141839_audit_append_only` |
+| (corrección del linter) | `20260901141922_fix_deny_audit_mutation_search_path` |
+
+⚠️ **Los números no coinciden.** Se aplicaron por la API de gestión, que asigna
+su propio timestamp. Antes de correr `supabase db push` desde el repo hay que
+reconciliar, o el CLI intentará re-aplicarlas. Las cuatro son idempotentes, así
+que un re-intento no rompería nada, pero conviene arreglarlo con
+`supabase migration repair --status applied <version>` o renombrando los archivos
+a las versiones de arriba.
+
+**Además:** el historial remoto tiene nueve migraciones anteriores que **no están
+en el repositorio** (`initial_alquitel_schema`, `templates_bucket_anon_readonly`,
+`add_event_end_date_to_orders`, …), consecuencia directa de la línea del
+`.gitignore`. Recuperarlas con `supabase db pull` es parte de cerrar el §5.1.a.
+
+Dato relevante: entre ellas está `templates_bucket_anon_readonly`, o sea que la
+lectura anónima del bucket de plantillas (T3 del modelo de amenazas) fue una
+decisión explícita en su momento, no un accidente de configuración.
+
+**Todavía NO aplicadas:** `000400` (esperando la validación de cantidad en la UI,
+§4 y abajo), `000500`, `000700`, `000800`, `000900`, `001000`, `001100`, `001200`.
+
+**Precondición para `20260829000400`:** `BudgetBuilderViewModel.ValidateBeforeSave`
+valida cliente, CUIT, número, fechas, días ≥ 1 y "al menos un producto", pero
+**no valida que `OrderItem.Quantity` sea mayor a cero**, y el setter tampoco tiene
+tope. Con la migración aplicada, guardar un ítem en cantidad 0 pasaría de
+funcionar a devolver un error de PostgreSQL en pantalla. Agregar la validación en
+la UI antes de aplicarla.
+
 ## 6. Qué queda sin validar
 
 - **La carrera real de dos peticiones HTTP simultáneas** contra el portal.
