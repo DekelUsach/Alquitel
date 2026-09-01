@@ -1,169 +1,366 @@
-using System;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Runtime.ExceptionServices;
 using Alquitel.Core.Entities;
 using Alquitel.Core.Interfaces;
-using Polly;
 using Alquitel.Infrastructure.Services.WordInterop;
+using Polly;
 
-namespace Alquitel.Infrastructure.Services
+namespace Alquitel.Infrastructure.Services;
+
+public interface IWordDocumentComposer
 {
-    public class WordDocumentService : IDocumentService
+    void Compose(
+        IWordComSession session,
+        Order order,
+        bool isTechnical,
+        ICollection<string> warnings,
+        IProgress<DocumentGenerationProgress>? progress,
+        CancellationToken cancellationToken);
+}
+
+public sealed class WordDocumentService : IDocumentService
+{
+    private static readonly SemaphoreSlim GenerationGate = new(1, 1);
+    private readonly IWordComSessionFactory _sessionFactory;
+    private readonly IWordDocumentComposer _composer;
+    private readonly TimeSpan _timeout;
+
+    private static bool IsFileInUseException(Exception ex)
     {
-        private static bool IsFileInUseException(Exception ex)
+        if (ex is IOException ioEx)
         {
-            if (ex is IOException ioEx)
+            int hResult = ioEx.HResult & 0xFFFF;
+            return hResult == 32 || hResult == 33;
+        }
+        if (ex is COMException comEx)
+        {
+            return comEx.ErrorCode == unchecked((int)0x800A1066) ||
+                   comEx.ErrorCode == unchecked((int)0x800A175D);
+        }
+        return false;
+    }
+
+    private static readonly IAsyncPolicy<DocumentGenerationResult> RetryPolicy = Policy<DocumentGenerationResult>
+        .Handle<Exception>(IsFileInUseException)
+        .WaitAndRetryAsync(
+            3,
+            retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+            onRetry: (outcome, _, retryCount, _) =>
+                AppLog.Warning(
+                    "Documento bloqueado; reintento {RetryCount} ({ErrorType}, 0x{HResult:X8})",
+                    retryCount,
+                    outcome.Exception?.GetType().Name ?? "Unknown",
+                    outcome.Exception?.HResult ?? 0));
+
+    public WordDocumentService()
+        : this(new WordComSessionFactory(), new WordDocumentComposer(), TimeSpan.FromMinutes(3))
+    {
+    }
+
+    public WordDocumentService(
+        IWordComSessionFactory sessionFactory,
+        IWordDocumentComposer composer,
+        TimeSpan? timeout = null)
+    {
+        _sessionFactory = sessionFactory;
+        _composer = composer;
+        _timeout = timeout ?? TimeSpan.FromMinutes(3);
+        if (_timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+    }
+
+    public async Task<DocumentGenerationResult> GenerateDocumentAsync(
+        Order order,
+        string templatePath,
+        string outputPath,
+        bool isTechnical,
+        bool exportPdf = false,
+        IProgress<DocumentGenerationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        progress?.Report(new DocumentGenerationProgress(
+            DocumentGenerationStage.Validating, 5, "Validando plantilla"));
+        var request = await Task.Run(
+            () => DocumentGenerationSafety.Validate(
+                templatePath, outputPath, allowLegacyProductBookmark: true, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+
+        var releaseImmediately = true;
+        var gateAcquired = false;
+        try
+        {
+            await GenerationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateAcquired = true;
+            return await RetryPolicy.ExecuteAsync(
+                ct => RunStaAsync(order, request, isTechnical, exportPdf, progress, ct),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (WordWorkerStillRunningException ex)
+        {
+            releaseImmediately = false;
+            _ = ReleaseWhenWorkerStopsAsync(ex.CleanupTask, request.TemplatePath);
+            ExceptionDispatchInfo.Capture(ex.UserException).Throw();
+            throw;
+        }
+        finally
+        {
+            if (releaseImmediately)
             {
-                int hResult = ioEx.HResult & 0xFFFF;
-                return hResult == 32 || hResult == 33;
+                DocumentGenerationSafety.TryDelete(request.TemplatePath);
+                if (gateAcquired) GenerationGate.Release();
             }
-            if (ex is System.Runtime.InteropServices.COMException comEx)
+        }
+    }
+
+    private async Task<DocumentGenerationResult> RunStaAsync(
+        Order order,
+        ValidatedDocumentRequest request,
+        bool isTechnical,
+        bool exportPdf,
+        IProgress<DocumentGenerationProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var operationToken = operationCts.Token;
+        var tcs = new TaskCompletionSource<DocumentGenerationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanupTcs = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var stagedDocument = DocumentGenerationSafety.CreateStagingPath(
+            request.RequestedOutputPath, ".docx");
+        var stagedPdf = exportPdf
+            ? DocumentGenerationSafety.CreateStagingPath(request.RequestedOutputPath, ".pdf")
+            : null;
+        var commitStarted = false;
+
+        var staThread = new Thread(() =>
+        {
+            try
             {
-                // 0x800A1066: Command failed (often because file is in use)
-                // 0x800A175D: Cannot open the document because it's locked by another user
-                return comEx.ErrorCode == unchecked((int)0x800A1066) || 
-                       comEx.ErrorCode == unchecked((int)0x800A175D);
+                var warnings = request.Warnings.ToList();
+                using (var session = _sessionFactory.Create())
+                {
+                    operationToken.ThrowIfCancellationRequested();
+                    progress?.Report(new DocumentGenerationProgress(
+                        DocumentGenerationStage.Preparing, 15, "Iniciando Word de forma segura"));
+                    session.Initialize();
+                    operationToken.ThrowIfCancellationRequested();
+                    session.OpenTemplate(request.TemplatePath);
+                    _composer.Compose(
+                        session, order, isTechnical, warnings, progress, operationToken);
+
+                    operationToken.ThrowIfCancellationRequested();
+                    progress?.Report(new DocumentGenerationProgress(
+                        DocumentGenerationStage.Saving, 82, "Guardando documento"));
+                    session.SaveWorkingCopy(stagedDocument);
+                    if (exportPdf)
+                    {
+                        operationToken.ThrowIfCancellationRequested();
+                        progress?.Report(new DocumentGenerationProgress(
+                            DocumentGenerationStage.ExportingPdf, 90, "Exportando PDF"));
+                        session.ExportAsPdf(stagedPdf!);
+                    }
+                }
+
+                operationToken.ThrowIfCancellationRequested();
+                FlushFile(stagedDocument);
+                if (stagedPdf != null) FlushFile(stagedPdf);
+                var published = DocumentGenerationSafety.Publish(
+                    stagedDocument,
+                    stagedPdf,
+                    request.RequestedOutputPath,
+                    operationToken,
+                    () => Volatile.Write(ref commitStarted, true));
+                progress?.Report(new DocumentGenerationProgress(
+                    DocumentGenerationStage.Completed, 100, "Documento generado"));
+                tcs.TrySetResult(new DocumentGenerationResult(
+                    published.DocumentPath, published.PdfPath, warnings.AsReadOnly()));
             }
+            catch (OperationCanceledException ex)
+            {
+                tcs.TrySetCanceled(ex.CancellationToken);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(
+                    "Falló la generación Word (plantilla {TemplateId}, {ErrorType}, 0x{HResult:X8})",
+                    request.TemplateId,
+                    ex.GetType().Name,
+                    ex.HResult);
+                tcs.TrySetException(ex);
+            }
+            finally
+            {
+                DocumentGenerationSafety.TryDelete(stagedDocument);
+                DocumentGenerationSafety.TryDelete(stagedPdf);
+                cleanupTcs.TrySetResult();
+            }
+        });
+
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.IsBackground = true;
+        staThread.Name = "Alquitel Word document generation";
+        staThread.Start();
+
+        try
+        {
+            return await tcs.Task.WaitAsync(_timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            if (Volatile.Read(ref commitStarted))
+                return await tcs.Task.ConfigureAwait(false);
+            operationCts.Cancel();
+            var userError = new TimeoutException(
+                "Word no respondió dentro del tiempo permitido. No se publicó ningún archivo; podés reintentar.");
+            if (!await AwaitCleanupAsync(cleanupTcs.Task).ConfigureAwait(false))
+                throw new WordWorkerStillRunningException(userError, cleanupTcs.Task);
+            throw userError;
+        }
+        catch (OperationCanceledException)
+        {
+            if (Volatile.Read(ref commitStarted))
+                return await tcs.Task.ConfigureAwait(false);
+            operationCts.Cancel();
+            var userError = new OperationCanceledException(cancellationToken);
+            if (!await AwaitCleanupAsync(cleanupTcs.Task).ConfigureAwait(false))
+                throw new WordWorkerStillRunningException(userError, cleanupTcs.Task);
+            throw userError;
+        }
+    }
+
+    private static void FlushFile(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        stream.Flush(flushToDisk: true);
+    }
+
+    private static async Task<bool> AwaitCleanupAsync(Task workerTask)
+    {
+        try
+        {
+            await workerTask.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
             return false;
         }
+    }
 
-        private static readonly IAsyncPolicy _retryPolicy = Policy
-            .Handle<Exception>(IsFileInUseException)
-            .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-                onRetry: (exception, timeSpan, retryCount, context) =>
-                {
-                    AppLog.Warning(exception, $"Error generating document (Retry {retryCount} due to file lock)");
-                });
-
-        /// <summary>
-        /// Mata el WINWORD lanzado por la última sesión COM (si sigue vivo). Se usa solo
-        /// en el camino de timeout: el hilo STA quedó bloqueado dentro de Word y nunca va
-        /// a llegar al Dispose de la sesión.
-        /// </summary>
-        private static void KillOrphanWinword()
+    private static async Task ReleaseWhenWorkerStopsAsync(Task cleanupTask, string templateSnapshotPath)
+    {
+        try
         {
-            if (WordComSession.LastLaunchedPid is not int pid) return;
-            try
-            {
-                using var proc = System.Diagnostics.Process.GetProcessById(pid);
-                if (!proc.HasExited && proc.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase))
-                {
-                    proc.Kill();
-                    AppLog.Warning("WINWORD colgado (PID {Pid}) terminado por timeout de generación", pid);
-                }
-            }
-            catch (ArgumentException) { /* ya salió */ }
-            catch (Exception ex) { AppLog.Warning(ex, "KillOrphanWinword failed for PID {Pid}", pid); }
+            await cleanupTask.ConfigureAwait(false);
+        }
+        finally
+        {
+            DocumentGenerationSafety.TryDelete(templateSnapshotPath);
+            GenerationGate.Release();
+        }
+    }
+
+    private sealed class WordWorkerStillRunningException(
+        Exception userException,
+        Task cleanupTask) : Exception("La sesión STA de Word continúa cerrándose.", userException)
+    {
+        public Exception UserException { get; } = userException;
+        public Task CleanupTask { get; } = cleanupTask;
+    }
+}
+
+public sealed class WordDocumentComposer : IWordDocumentComposer
+{
+    public void Compose(
+        IWordComSession session,
+        Order order,
+        bool isTechnical,
+        ICollection<string> warnings,
+        IProgress<DocumentGenerationProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        dynamic? document = session.Document;
+        if (document == null)
+            throw new InvalidOperationException("Word no pudo abrir la plantilla.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report(new DocumentGenerationProgress(
+            DocumentGenerationStage.ReplacingFields, 35, "Completando datos"));
+        PlaceholderReplacer.ReplaceAll(document, order, isTechnical);
+
+        if (isTechnical)
+        {
+            PlaceholderReplacer.UnderlineOccurrences(document, "PRODUCCION");
+            PlaceholderReplacer.UnderlineOccurrences(document, "PRODUCCIÓN");
         }
 
-        public async Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical, bool exportPdf = false)
+        cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report(new DocumentGenerationProgress(
+            DocumentGenerationStage.RenderingProducts, 60, "Agregando productos"));
+        dynamic? searchRange = null;
+        try
         {
-            await _retryPolicy.ExecuteAsync(async () =>
+            searchRange = document.Content;
+            if (!searchRange.Find.Execute("{{PRODUCTOS_AQUI}}")) return;
+            searchRange.Text = "";
+
+            if (isTechnical)
             {
-                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                WorkOrderProductRenderer.RenderProducts(document, searchRange, order.Items);
+                return;
+            }
 
-                var staThread = new Thread(() =>
-                {
-                    try
-                    {
-                        using var session = new WordComSession();
-                        session.Initialize();
-                        session.OpenTemplate(templatePath);
+            RenderBudgetProducts(session, searchRange, order, warnings, cancellationToken);
+        }
+        finally
+        {
+            if (searchRange != null && Marshal.IsComObject(searchRange))
+                Marshal.FinalReleaseComObject(searchRange);
+        }
+    }
 
-                        if (session.Document == null)
-                            throw new InvalidOperationException("Word no pudo abrir la plantilla (documento nulo).");
-
-                        PlaceholderReplacer.ReplaceAll(session.Document, order, isTechnical);
-
-                        if (isTechnical)
-                        {
-                            // La OT lleva el título de sección "PRODUCCION" subrayado;
-                            // la plantilla lo trae como texto plano.
-                            PlaceholderReplacer.UnderlineOccurrences(session.Document, "PRODUCCION");
-                            PlaceholderReplacer.UnderlineOccurrences(session.Document, "PRODUCCIÓN");
-                        }
-
-                        var searchRange = session.Document.Content;
-                        if (searchRange.Find.Execute("{{PRODUCTOS_AQUI}}"))
-                        {
-                            searchRange.Text = "";
-
-                            if (isTechnical)
-                            {
-                                // OT técnica: listado plano en Arial negrita, sin imágenes,
-                                // precios ni tablas (formato del OT de referencia).
-                                WorkOrderProductRenderer.RenderProducts(session.Document, searchRange, order.Items);
-                            }
-                            else
-                            {
-                                RenderBudgetProducts(session, searchRange, order, isTechnical);
-                            }
-                        }
-
-                        session.SaveAndClose(outputPath);
-                        if (exportPdf)
-                        {
-                            var pdfPath = Path.ChangeExtension(outputPath, ".pdf");
-                            session.ExportAsPdf(pdfPath);
-                        }
-                        tcs.SetResult(true);
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLog.Error(ex, "Word Document Generation Failed");
-                        tcs.SetException(ex);
-                    }
-                });
-
-                staThread.SetApartmentState(ApartmentState.STA);
-                staThread.IsBackground = true;
-                staThread.Start();
-
-                // Sin timeout, un diálogo modal imprevisto de Word (recuperación de
-                // documento, activación) dejaba el hilo STA bloqueado y este await
-                // colgado para siempre con un WINWORD invisible.
-                var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromMinutes(3)));
-                if (completed != tcs.Task)
-                {
-                    KillOrphanWinword();
-                    throw new TimeoutException(
-                        "Word no respondió en 3 minutos y se abortó la generación del documento. " +
-                        "Cerrá cualquier ventana de Word abierta y reintentá.");
-                }
-                await tcs.Task;
-            });
+    private static void RenderBudgetProducts(
+        IWordComSession session,
+        dynamic searchRange,
+        Order order,
+        ICollection<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        dynamic document = session.Document!;
+        try
+        {
+            int guardPos = (int)searchRange.Paragraphs[1].Range.End;
+            document.Bookmarks.Add(
+                ProductRenderer.EndGuardBookmark,
+                document.Range(guardPos, guardPos));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warning(
+                "No se pudo crear el límite de productos ({ErrorType}, 0x{HResult:X8})",
+                ex.GetType().Name, ex.HResult);
         }
 
-        /// <summary>
-        /// Renderizado clásico de presupuesto/OF: título Montserrat, imagen flotante,
-        /// campos dinámicos y tabla de costos por producto.
-        /// </summary>
-        private static void RenderBudgetProducts(WordComSession session, dynamic searchRange, Order order, bool isTechnical)
+        foreach (var item in order.Items)
         {
-            dynamic doc = session.Document!;
+            cancellationToken.ThrowIfCancellationRequested();
+            ProductRenderer.RenderProduct(
+                document, session.WordApp, ref searchRange, item, false, warnings);
+        }
 
-            // Guarda de fin de zona: el párrafo siguiente al tag ancla la
-            // línea divisoria celeste. Un bookmark lo marca para que el
-            // renderer nunca inserte productos dentro/después de él.
-            try
-            {
-                int guardPos = (int)searchRange.Paragraphs[1].Range.End;
-                doc.Bookmarks.Add(ProductRenderer.EndGuardBookmark, doc.Range(guardPos, guardPos));
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "Could not place product end-guard bookmark"); }
-
-            foreach (var item in order.Items)
-            {
-                ProductRenderer.RenderProduct(doc, session.WordApp, ref searchRange, item, isTechnical);
-            }
-
-            try
-            {
-                if (doc.Bookmarks.Exists(ProductRenderer.EndGuardBookmark))
-                    doc.Bookmarks(ProductRenderer.EndGuardBookmark).Delete();
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "Could not remove product end-guard bookmark"); }
+        try
+        {
+            if (document.Bookmarks.Exists(ProductRenderer.EndGuardBookmark))
+                document.Bookmarks(ProductRenderer.EndGuardBookmark).Delete();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warning(
+                "No se pudo retirar el límite de productos ({ErrorType}, 0x{HResult:X8})",
+                ex.GetType().Name, ex.HResult);
         }
     }
 }

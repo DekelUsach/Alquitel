@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Alquitel.Core.Entities;
 using Alquitel.Core.Parsing;
+using Alquitel.Infrastructure.Services;
 
 namespace Alquitel.Infrastructure.Services.WordInterop
 {
@@ -21,7 +22,13 @@ namespace Alquitel.Infrastructure.Services.WordInterop
         /// </summary>
         public const string EndGuardBookmark = "__ALQ_FIN_PRODUCTOS";
 
-        public static void RenderProduct(dynamic doc, dynamic wordApp, ref dynamic insertRange, OrderItem item, bool isTechnical)
+        public static void RenderProduct(
+            dynamic doc,
+            dynamic wordApp,
+            ref dynamic insertRange,
+            OrderItem item,
+            bool isTechnical,
+            ICollection<string>? warnings = null)
         {
             // Si el punto de inserción alcanzó (o pasó) el párrafo de cierre, crear un
             // párrafo nuevo ANTES de él y seguir ahí: el contenido del producto jamás
@@ -39,7 +46,10 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                     }
                 }
             }
-            catch (Exception ex) { AppLog.Warning(ex, "End-guard repositioning failed"); }
+            catch (Exception ex)
+            {
+                AppLog.Warning("Falló el reposicionamiento del límite ({ErrorType}, 0x{HResult:X8})", ex.GetType().Name, ex.HResult);
+            }
 
             // ── 1. TITLE PARAGRAPH ──
             insertRange.Collapse(0);
@@ -55,35 +65,58 @@ namespace Alquitel.Infrastructure.Services.WordInterop
             AppendSegments(insertRange, titleSegments, 12);
 
             // Insert floating image anchored to the title paragraph (left, wrap tight)
-            if (!string.IsNullOrEmpty(item.ImagePath) && System.IO.File.Exists(item.ImagePath))
+            if (!string.IsNullOrEmpty(item.ImagePath))
             {
-                try
+                if (!DocumentGenerationSafety.TryCreateImageSnapshot(
+                        item.ImagePath, out var imageSnapshot, out var imageWarning))
                 {
-                    int titleStart = (int)insertRange.Paragraphs[1].Range.Start;
-                    int titleEnd   = (int)insertRange.Paragraphs[1].Range.End;
-                    var anchorRange = doc.Range(titleStart, titleStart);
-
-                    // El presupuesto de referencia usa miniaturas de ~1.6 cm ancladas detrás
-                    // del texto, en el margen que deja la sangría de 1.9 cm del título.
-                    dynamic shape = doc.Shapes.AddPicture(
-                        FileName: item.ImagePath,
-                        LinkToFile: false,
-                        SaveWithDocument: true,
-                        Left: 0f,
-                        Top: 0f,
-                        Width: wordApp.CentimetersToPoints(1.6f),
-                        Height: wordApp.CentimetersToPoints(1.6f),
-                        Anchor: anchorRange);
-
-                    try { shape.WrapFormat.Type = 5; /* wdWrapBehind */ }
-                    catch { shape.WrapFormat.Type = 3; /* wdWrapNone */ }
-                    try { shape.ZOrder(5); /* msoSendBehindText */ } catch { }
-                    shape.RelativeHorizontalPosition = 2; // wdRelativeHorizontalPositionColumn
-                    shape.RelativeVerticalPosition   = 3; // wdRelativeVerticalPositionParagraph
-                    shape.Left = wordApp.CentimetersToPoints(0f);
-                    shape.Top  = wordApp.CentimetersToPoints(0f);
+                    if (!string.IsNullOrEmpty(imageWarning)) warnings?.Add(imageWarning);
                 }
-                catch (Exception ex) { AppLog.Warning(ex, "Best-effort image insert failed for {ImagePath}", item.ImagePath); }
+                else
+                {
+                    using (imageSnapshot)
+                    {
+                    dynamic? anchorRange = null;
+                    dynamic? shape = null;
+                    try
+                    {
+                        int titleStart = (int)insertRange.Paragraphs[1].Range.Start;
+                        anchorRange = doc.Range(titleStart, titleStart);
+
+                        // El presupuesto de referencia usa miniaturas de ~1.6 cm ancladas detrás
+                        // del texto, en el margen que deja la sangría de 1.9 cm del título.
+                        shape = doc.Shapes.AddPicture(
+                            FileName: imageSnapshot!.Path,
+                            LinkToFile: false,
+                            SaveWithDocument: true,
+                            Left: 0f,
+                            Top: 0f,
+                            Width: wordApp.CentimetersToPoints(1.6f),
+                            Height: wordApp.CentimetersToPoints(1.6f),
+                            Anchor: anchorRange);
+
+                        try { shape.WrapFormat.Type = 5; /* wdWrapBehind */ }
+                        catch { shape.WrapFormat.Type = 3; /* wdWrapNone */ }
+                        try { shape.ZOrder(5); /* msoSendBehindText */ } catch { }
+                        shape.RelativeHorizontalPosition = 2;
+                        shape.RelativeVerticalPosition = 3;
+                        shape.Left = wordApp.CentimetersToPoints(0f);
+                        shape.Top = wordApp.CentimetersToPoints(0f);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warning(
+                            "No se pudo insertar una imagen de producto en Word ({ErrorType})",
+                            ex.GetType().Name);
+                        warnings?.Add("Se omitió una imagen de producto que no pudo insertarse.");
+                    }
+                    finally
+                    {
+                        ReleaseCom(shape);
+                        ReleaseCom(anchorRange);
+                    }
+                    }
+                }
             }
 
             insertRange.Collapse(0);
@@ -129,7 +162,12 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                         }
                     }
                 }
-                catch (Exception ex) { AppLog.Warning(ex, "Rendering custom fields failed for item {ItemId}", item.Id); }
+                catch (Exception ex)
+                {
+                    AppLog.Warning(
+                        "Falló el render de campos del item {ItemId} ({ErrorType}, 0x{HResult:X8})",
+                        item.Id, ex.GetType().Name, ex.HResult);
+                }
             }
 
             // ── 3. REQUESTED MEASURE ──
@@ -225,6 +263,19 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                 insertRange.InsertParagraphAfter();
                 insertRange.InsertParagraphAfter();
                 insertRange.Collapse(0);
+            }
+        }
+
+        private static void ReleaseCom(object? value)
+        {
+            try
+            {
+                if (value != null && System.Runtime.InteropServices.Marshal.IsComObject(value))
+                    System.Runtime.InteropServices.Marshal.FinalReleaseComObject(value);
+            }
+            catch
+            {
+                // El cierre de la sesión completa es la última red de seguridad.
             }
         }
 

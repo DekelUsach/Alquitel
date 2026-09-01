@@ -1,219 +1,205 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace Alquitel.Infrastructure.Services.WordInterop
+namespace Alquitel.Infrastructure.Services.WordInterop;
+
+public interface IWordComSessionFactory
 {
-    public class WordComSession : IDisposable
+    IWordComSession Create();
+}
+
+public interface IWordComSession : IDisposable
+{
+    dynamic? WordApp { get; }
+    dynamic? Document { get; }
+    void Initialize();
+    void OpenTemplate(string templatePath);
+    void SaveWorkingCopy(string outputPath);
+    void ExportAsPdf(string pdfPath);
+}
+
+public sealed class WordComSessionFactory : IWordComSessionFactory
+{
+    public IWordComSession Create() => new WordComSession();
+}
+
+public sealed class WordComSession : IWordComSession
+{
+    private string? _tempPath;
+    private bool _disposed;
+
+    public dynamic? WordApp { get; private set; }
+    public dynamic? Document { get; private set; }
+    public void Initialize()
     {
-        public dynamic? WordApp { get; private set; }
-        public dynamic? Document { get; private set; }
-        private string? _tempPath;
+        ThrowIfDisposed();
+        SweepStaleTempFiles();
+        Type? wordType = Type.GetTypeFromProgID("Word.Application");
+        if (wordType == null)
+            throw new InvalidOperationException(
+                "Microsoft Word no está instalado o no está registrado correctamente en este sistema.");
 
-        // PID del WINWORD.EXE lanzado por esta sesión: red de seguridad para poder
-        // matarlo si Quit() no alcanza (RCWs intermedios vivos, diálogo colgado, etc.).
-        private int? _wordPid;
+        WordApp = Activator.CreateInstance(wordType)
+            ?? throw new InvalidOperationException("No se pudo iniciar Microsoft Word.");
 
-        /// <summary>
-        /// PID de la última sesión iniciada. WordDocumentService lo usa en el camino de
-        /// timeout, donde el hilo STA quedó bloqueado y nunca ejecuta este Dispose.
-        /// La app genera de a un documento por vez, así que un único slot alcanza.
-        /// </summary>
-        public static int? LastLaunchedPid { get; private set; }
+        WordApp.Visible = false;
+        WordApp.DisplayAlerts = 0;
+        WordApp.AutomationSecurity = 3;
+    }
 
-        private static HashSet<int> GetWinwordPids() =>
-            System.Diagnostics.Process.GetProcessesByName("WINWORD")
-                .Select(p => { int id = p.Id; p.Dispose(); return id; })
-                .ToHashSet();
+    public void OpenTemplate(string templatePath)
+    {
+        ThrowIfDisposed();
+        if (WordApp == null)
+            throw new InvalidOperationException("La sesión de Word no fue inicializada.");
 
-        public void Initialize()
+        var workDirectory = Path.Combine(AppPaths.AppDataRoot, "DocumentWork");
+        Directory.CreateDirectory(workDirectory);
+        _tempPath = Path.Combine(workDirectory, $"alquitel_word_{Guid.NewGuid():N}.docx");
+        File.Copy(templatePath, _tempPath, overwrite: false);
+
+        var attrs = File.GetAttributes(_tempPath);
+        if ((attrs & FileAttributes.ReadOnly) != 0)
+            File.SetAttributes(_tempPath, attrs & ~FileAttributes.ReadOnly);
+
+        // No se eliminan lockfiles de Word ni se modifica Protected View. La plantilla
+        // ya fue validada y se abre desde una copia propia sin actualizar vínculos.
+        Document = WordApp.Documents.Open(
+            _tempPath,
+            ConfirmConversions: false,
+            ReadOnly: false,
+            AddToRecentFiles: false,
+            Revert: false,
+            UpdateLinks: 0,
+            Visible: false,
+            OpenAndRepair: false,
+            NoEncodingDialog: true);
+
+        if (Document == null)
+            throw new InvalidOperationException("Word no pudo abrir la copia de trabajo de la plantilla.");
+
+        try
         {
-            Type? wordType = Type.GetTypeFromProgID("Word.Application");
-            if (wordType == null)
-                throw new Exception("Microsoft Word no está instalado o no está registrado correctamente en este sistema.");
+            if ((int)Document.ProtectionType != -1)
+                throw new DocumentTemplateValidationException(
+                    "La plantilla está protegida. Guardá una copia editable antes de usarla en Alquitel.");
+        }
+        catch (DocumentTemplateValidationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new DocumentTemplateValidationException(
+                "No se pudo comprobar si la plantilla permite edición segura.", ex);
+        }
+    }
 
-            var pidsBefore = GetWinwordPids();
+    public void SaveWorkingCopy(string outputPath)
+    {
+        ThrowIfDisposed();
+        if (Document == null)
+            throw new InvalidOperationException("No hay un documento abierto para guardar.");
+        Document.SaveAs2(outputPath, FileFormat: 16, AddToRecentFiles: false);
+    }
 
-            WordApp = Activator.CreateInstance(wordType);
-            if (WordApp == null)
-                throw new Exception("No se pudo iniciar la instancia de Microsoft Word.");
+    public void ExportAsPdf(string pdfPath)
+    {
+        ThrowIfDisposed();
+        if (Document == null)
+            throw new InvalidOperationException("No hay un documento abierto para exportar.");
 
-            try
+        Document.ExportAsFixedFormat(
+            OutputFileName: pdfPath,
+            ExportFormat: 17,
+            OpenAfterExport: false,
+            OptimizeFor: 0,
+            Range: 0,
+            Item: 0,
+            IncludeDocProps: true,
+            KeepIRM: true,
+            CreateBookmarks: 0,
+            DocStructureTags: true,
+            BitmapMissingFonts: true,
+            UseISO19005_1: false);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        if (Document != null)
+        {
+            try { Document.Close(false); }
+            catch (Exception ex)
             {
-                // Solo se adopta el PID si apareció EXACTAMENTE un WINWORD nuevo. Si el
-                // usuario abrió Word a mano en el mismo instante habría dos candidatos y
-                // elegir al azar terminaría matándole el documento con trabajo sin guardar.
-                var newPids = GetWinwordPids().Except(pidsBefore).ToList();
-                if (newPids.Count == 1)
-                {
-                    _wordPid = newPids[0];
-                }
-                else if (newPids.Count > 1)
-                {
-                    _wordPid = null;
-                    AppLog.Warning("Aparecieron {Count} procesos WINWORD nuevos: no se adopta ninguno para no matar el Word del usuario", newPids.Count);
-                }
-                LastLaunchedPid = _wordPid;
+                AppLog.Warning("No se pudo cerrar el documento de Word ({ErrorType}, 0x{HResult:X8})", ex.GetType().Name, ex.HResult);
             }
-            catch (Exception ex) { AppLog.Warning(ex, "Could not capture WINWORD PID"); }
-
-            WordApp.Visible = false;
-            WordApp.DisplayAlerts = 0;       // wdAlertsNone
-            WordApp.AutomationSecurity = 3;  // msoAutomationSecurityForceDisable
+            ReleaseComObject(Document, "documento");
+            Document = null;
+        }
+        if (WordApp != null)
+        {
+            try { WordApp.Quit(); }
+            catch (Exception ex)
+            {
+                AppLog.Warning("No se pudo cerrar la instancia de Word ({ErrorType}, 0x{HResult:X8})", ex.GetType().Name, ex.HResult);
+            }
+            ReleaseComObject(WordApp, "aplicación Word");
+            WordApp = null;
         }
 
-        public void OpenTemplate(string templatePath)
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        DocumentGenerationSafety.TryDelete(_tempPath);
+        _tempPath = null;
+    }
+
+    private static void ReleaseComObject(object value, string kind)
+    {
+        try
         {
-            string templateDir  = Path.GetDirectoryName(templatePath)!;
-            string templateFile = Path.GetFileName(templatePath);
-            string lockFile     = Path.Combine(templateDir, "~$" + templateFile);
-            try { if (File.Exists(lockFile)) File.Delete(lockFile); } catch (Exception ex) { AppLog.Warning(ex, "Could not delete lock file {LockFile}", lockFile); }
+            if (Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warning(
+                "No se pudo liberar la referencia COM de {Kind} ({ErrorType}, 0x{HResult:X8})",
+                kind, ex.GetType().Name, ex.HResult);
+        }
+    }
 
-            _tempPath = Path.Combine(Path.GetTempPath(), $"alquitel_tmp_{Guid.NewGuid():N}.docx");
-            File.Copy(templatePath, _tempPath, overwrite: true);
-
-            var attrs = File.GetAttributes(_tempPath);
-            if ((attrs & FileAttributes.ReadOnly) != 0)
-                File.SetAttributes(_tempPath, attrs & ~FileAttributes.ReadOnly);
-
-            try
-            {
-                WordApp!.Options.DisableHardwareGraphicsAcceleration = true;
-                dynamic pvOptions = WordApp.Options.ProtectedViewOptions;
-                pvOptions.OpenUnsafeLocationsInProtectedView  = false;
-                pvOptions.OpenFilesFromInternetInProtectedView = false;
-                pvOptions.OpenFilesInUnsafeLocationsInProtectedView = false;
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "Failed to set Word options/ProtectedViewOptions"); }
-
-            Document = WordApp!.Documents.Open(_tempPath, ReadOnly: false, AddToRecentFiles: false, ConfirmConversions: false);
-
-            if (WordApp.ProtectedViewWindows.Count > 0)
+    private static void SweepStaleTempFiles()
+    {
+        try
+        {
+            var workDirectory = Path.Combine(AppPaths.AppDataRoot, "DocumentWork");
+            if (!Directory.Exists(workDirectory)) return;
+            var cutoff = DateTime.UtcNow.AddDays(-1);
+            foreach (var file in Directory.EnumerateFiles(workDirectory, "alquitel_word_*.docx"))
             {
                 try
                 {
-                    dynamic pvw = WordApp.ProtectedViewWindows[1];
-                    Document = pvw.Edit();
+                    if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
                 }
-                catch (Exception ex) { AppLog.Warning(ex, "Failed to edit ProtectedViewWindow"); }
-            }
-
-            try
-            {
-                if ((int)Document!.ProtectionType != -1) // -1 = wdNoProtection
-                    Document.Unprotect(Password: "");
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "Failed to unprotect document"); }
-        }
-
-        public void SaveAndClose(string outputPath)
-        {
-            if (Document != null)
-            {
-                Document.SaveAs2(outputPath);
-            }
-        }
-
-        public void ExportAsPdf(string pdfPath)
-        {
-            if (Document != null)
-            {
-                // 17 = wdExportFormatPDF
-                Document.ExportAsFixedFormat(
-                    OutputFileName: pdfPath,
-                    ExportFormat: 17,
-                    OpenAfterExport: false,
-                    OptimizeFor: 0, // wdExportOptimizeForPrint
-                    Range: 0, // wdExportAllDocument
-                    Item: 0, // wdExportDocumentContent
-                    IncludeDocProps: true,
-                    KeepIRM: true,
-                    CreateBookmarks: 0, // wdExportCreateNoBookmarks
-                    DocStructureTags: true,
-                    BitmapMissingFonts: true,
-                    UseISO19005_1: false
-                );
-            }
-        }
-
-        public void Dispose()
-        {
-            // Release COM objects FIRST — Word holds the temp file open, so deleting
-            // it before Close/Quit always fails and temp files pile up in %TEMP%.
-            if (Document != null)
-            {
-                try { Document.Close(false); } catch (Exception ex) { AppLog.Warning(ex, "Failed to close document"); }
-                try { Marshal.ReleaseComObject(Document); } catch (Exception ex) { AppLog.Warning(ex, "Failed to release document COM object"); }
-                Document = null;
-            }
-            if (WordApp != null)
-            {
-                try { WordApp.Quit(); } catch (Exception ex) { AppLog.Warning(ex, "Failed to quit Word application"); }
-                try { Marshal.ReleaseComObject(WordApp); } catch (Exception ex) { AppLog.Warning(ex, "Failed to release Word COM object"); }
-                WordApp = null;
-            }
-
-            // El pipeline (PlaceholderReplacer/ProductRenderer) crea RCWs intermedios vía
-            // dynamic (StoryRanges, Find, Tables, Shapes...) imposibles de liberar uno a
-            // uno. Mientras el CLR los retenga, WINWORD.EXE puede sobrevivir a Quit():
-            // forzar la colección finaliza esos RCWs y suelta sus referencias COM.
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-
-            // Red de seguridad final: si el proceso de esta sesión sigue vivo, matarlo
-            // para no acumular WINWORD huérfanos en el equipo del usuario.
-            if (_wordPid is int pid)
-            {
-                try
+                catch
                 {
-                    using var proc = System.Diagnostics.Process.GetProcessById(pid);
-                    if (!proc.HasExited && proc.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!proc.WaitForExit(3000))
-                        {
-                            proc.Kill();
-                            AppLog.Warning("WINWORD huérfano (PID {Pid}) terminado a la fuerza tras Quit()", pid);
-                        }
-                    }
+                    // Se reintentará en la próxima sesión.
                 }
-                catch (ArgumentException) { /* el proceso ya salió */ }
-                catch (Exception ex) { AppLog.Warning(ex, "No se pudo verificar/terminar WINWORD PID {Pid}", pid); }
-                _wordPid = null;
             }
-
-            if (_tempPath != null)
-            {
-                try { if (File.Exists(_tempPath)) File.Delete(_tempPath); } catch (Exception ex) { AppLog.Warning(ex, "Failed to delete temp file {TempPath}", _tempPath); }
-                _tempPath = null;
-            }
-
-            // Barrido de temporales de corridas anteriores: si el proceso murió a mitad
-            // (crash, timeout, apagón) quedaron .docx con datos de clientes en %TEMP%.
-            SweepStaleTempFiles();
         }
-
-        /// <summary>
-        /// Borra los alquitel_tmp_*.docx de más de un día que hayan quedado en %TEMP%
-        /// por corridas abortadas. Best-effort y silencioso: nunca debe romper el flujo.
-        /// </summary>
-        private static void SweepStaleTempFiles()
+        catch (Exception ex)
         {
-            try
-            {
-                var cutoff = DateTime.UtcNow.AddDays(-1);
-                foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "alquitel_tmp_*.docx"))
-                {
-                    try
-                    {
-                        if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
-                    }
-                    catch { /* archivo en uso o sin permisos: se intentará la próxima vez */ }
-                }
-            }
-            catch (Exception ex) { AppLog.Warning(ex, "No se pudo barrer temporales viejos de Word"); }
+            AppLog.Warning(
+                "No se pudieron limpiar copias de trabajo documentales antiguas ({ErrorType})",
+                ex.GetType().Name);
         }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 }

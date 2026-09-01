@@ -342,7 +342,9 @@ namespace Alquitel.UI
             }
             else
             {
-                services.AddSingleton<IDocumentService, WordDocumentService>();
+                // La sesión COM y su compositor tienen una fábrica sustituible para pruebas;
+                // en producción se usa la composición segura predeterminada.
+                services.AddSingleton<IDocumentService>(_ => new WordDocumentService());
             }
             
             // Core Services

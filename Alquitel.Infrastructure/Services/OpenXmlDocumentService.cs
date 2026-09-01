@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Alquitel.Core.Entities;
 using Alquitel.Core.Helpers;
@@ -30,20 +31,39 @@ namespace Alquitel.Infrastructure.Services
     /// </summary>
     public class OpenXmlDocumentService : IDocumentService
     {
-        public Task GenerateDocumentAsync(Order order, string templatePath, string outputPath, bool isTechnical, bool exportPdf = false)
+        public async Task<DocumentGenerationResult> GenerateDocumentAsync(
+            Order order,
+            string templatePath,
+            string outputPath,
+            bool isTechnical,
+            bool exportPdf = false,
+            IProgress<DocumentGenerationProgress>? progress = null,
+            CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
-            {
-                if (!File.Exists(templatePath))
-                    throw new FileNotFoundException("No se encontró la plantilla.", templatePath);
+            ArgumentNullException.ThrowIfNull(order);
+            progress?.Report(new DocumentGenerationProgress(
+                DocumentGenerationStage.Validating, 5, "Validando plantilla"));
+            var request = await Task.Run(
+                () => DocumentGenerationSafety.Validate(
+                    templatePath, outputPath, allowLegacyProductBookmark: false, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
 
+            try
+            {
+                return await Task.Run(() =>
+                {
                 // Se trabaja sobre un temporal y se mueve al final: editar in-place sobre
                 // outputPath dejaba un .docx corrupto en la carpeta del usuario (que
                 // PresupuestosView cataloga como válido) si algo fallaba a mitad.
-                string tempPath = Path.Combine(Path.GetTempPath(), $"alquitel_oxml_{Guid.NewGuid():N}.docx");
+                var warnings = request.Warnings.ToList();
+                string tempPath = DocumentGenerationSafety.CreateStagingPath(
+                    request.RequestedOutputPath, ".docx");
                 try
                 {
-                    File.Copy(templatePath, tempPath, overwrite: true);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    progress?.Report(new DocumentGenerationProgress(
+                        DocumentGenerationStage.Preparing, 15, "Preparando documento"));
+                    CopyWithFlush(request.TemplatePath, tempPath);
 
                     using (var doc = WordprocessingDocument.Open(tempPath, isEditable: true))
                     {
@@ -55,25 +75,61 @@ namespace Alquitel.Infrastructure.Services
                         var body = mainPart.Document?.Body
                             ?? throw new InvalidOperationException("La plantilla no tiene cuerpo de documento.");
 
+                        cancellationToken.ThrowIfCancellationRequested();
+                        progress?.Report(new DocumentGenerationProgress(
+                            DocumentGenerationStage.ReplacingFields, 35, "Completando datos"));
                         ReplacePlaceholders(doc, order, isTechnical);
-                        RenderProducts(doc, body, order, isTechnical);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        progress?.Report(new DocumentGenerationProgress(
+                            DocumentGenerationStage.RenderingProducts, 60, "Agregando productos"));
+                        RenderProducts(doc, body, order, isTechnical, warnings, cancellationToken);
 
                         mainPart.Document.Save();
                     }
 
-                    File.Move(tempPath, outputPath, overwrite: true);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    using (var flushed = new FileStream(
+                               tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                        flushed.Flush(flushToDisk: true);
+
+                    progress?.Report(new DocumentGenerationProgress(
+                        DocumentGenerationStage.Saving, 85, "Publicando documento"));
+                    var published = DocumentGenerationSafety.Publish(
+                        tempPath, stagedPdfPath: null, request.RequestedOutputPath, cancellationToken);
+
+                    if (exportPdf)
+                    {
+                        warnings.Add("El motor OpenXML no genera PDF; se creó únicamente el documento .docx.");
+                        AppLog.Warning("Motor OpenXML: exportación a PDF no soportada; se generó solo DOCX");
+                    }
+
+                    progress?.Report(new DocumentGenerationProgress(
+                        DocumentGenerationStage.Completed, 100, "Documento generado"));
+                    AppLog.Information("Documento generado con motor OpenXML");
+                    return new DocumentGenerationResult(
+                        published.DocumentPath, published.PdfPath, warnings.AsReadOnly());
                 }
                 finally
                 {
-                    try { if (File.Exists(tempPath)) File.Delete(tempPath); }
-                    catch (Exception ex) { AppLog.Warning(ex, "No se pudo borrar el temporal {Temp}", tempPath); }
+                    DocumentGenerationSafety.TryDelete(tempPath);
                 }
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                DocumentGenerationSafety.TryDelete(request.TemplatePath);
+            }
+        }
 
-                if (exportPdf)
-                    AppLog.Warning("Motor OpenXML: exportación a PDF no soportada (requiere Word/COM) — se omitió para {Output}", outputPath);
-
-                AppLog.Information("Documento generado con motor OpenXML: {Output}", outputPath);
-            });
+        private static void CopyWithFlush(string sourcePath, string destinationPath)
+        {
+            using var source = new FileStream(
+                sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var destination = new FileStream(
+                destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                bufferSize: 81920, FileOptions.WriteThrough);
+            source.CopyTo(destination);
+            destination.Flush(flushToDisk: true);
         }
 
         // ── Reemplazo de placeholders ────────────────────────────────
@@ -200,21 +256,38 @@ namespace Alquitel.Infrastructure.Services
 
         // ── Render de productos ({{PRODUCTOS_AQUI}}) ─────────────────
 
-        private static void RenderProducts(WordprocessingDocument doc, W.Body body, Order order, bool isTechnical)
+        private static void RenderProducts(
+            WordprocessingDocument doc,
+            W.Body body,
+            Order order,
+            bool isTechnical,
+            ICollection<string> warnings,
+            CancellationToken cancellationToken)
         {
             var marker = body.Descendants<W.Paragraph>()
                 .FirstOrDefault(p => string.Concat(p.Descendants<W.Text>().Select(t => t.Text))
                     .Contains("{{PRODUCTOS_AQUI}}"));
             if (marker == null) return;
 
+            var markerTexts = marker.Descendants<W.Text>().ToList();
+            var markerParagraphText = string.Concat(markerTexts.Select(text => text.Text));
+            var remainingMarkerText = markerParagraphText.Replace("{{PRODUCTOS_AQUI}}", string.Empty);
+            if (markerTexts.Count > 0)
+            {
+                SetRunText(markerTexts[0], remainingMarkerText);
+                for (var i = 1; i < markerTexts.Count; i++) markerTexts[i].Text = string.Empty;
+            }
+            var removeMarkerParagraph = string.IsNullOrWhiteSpace(remainingMarkerText);
+
             uint drawingId = 9000; // IDs únicos para los DocProperties de las imágenes
             var cursor = (OpenXmlElement)marker;
             foreach (var item in order.Items)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // Título con estilos BBCode del snapshot
                 var title = new W.Paragraph(new W.ParagraphProperties(
-                    new W.Indentation { Left = "1077" }, // 1.9 cm, mismo margen que el motor COM
-                    new W.SpacingBetweenLines { After = "120", Before = "160" }));
+                    new W.SpacingBetweenLines { After = "120", Before = "160" },
+                    new W.Indentation { Left = "1077" })); // 1.9 cm, mismo margen que el motor COM
                 foreach (var seg in TagParser.Parse(item.DescriptionSnapshot ?? item.Product?.Description, defaultBold: true))
                 {
                     if (string.IsNullOrEmpty(seg.Text)) continue;
@@ -229,15 +302,30 @@ namespace Alquitel.Infrastructure.Services
 
                 // Miniatura flotante anclada al título (detrás del texto, en el margen que
                 // deja la sangría de 1.9 cm), paridad con Shapes.AddPicture del motor COM.
-                if (!string.IsNullOrEmpty(item.ImagePath) && File.Exists(item.ImagePath))
+                if (!string.IsNullOrEmpty(item.ImagePath))
                 {
-                    try
+                    if (DocumentGenerationSafety.TryCreateImageSnapshot(
+                            item.ImagePath, out var imageSnapshot, out var imageWarning))
                     {
-                        title.AppendChild(BuildFloatingImageRun(doc.MainDocumentPart!, item.ImagePath, ++drawingId));
+                        using (imageSnapshot)
+                        {
+                            try
+                            {
+                                title.AppendChild(BuildFloatingImageRun(
+                                    doc.MainDocumentPart!, imageSnapshot!.Path, ++drawingId));
+                            }
+                            catch (Exception ex)
+                            {
+                                AppLog.Warning(
+                                    "No se pudo insertar una imagen de producto en OpenXML ({ErrorType})",
+                                    ex.GetType().Name);
+                                warnings.Add("Se omitió una imagen de producto que no pudo insertarse.");
+                            }
+                        }
                     }
-                    catch (Exception ex)
+                    else if (!string.IsNullOrEmpty(imageWarning))
                     {
-                        AppLog.Warning(ex, "Best-effort image insert (OpenXML) failed for {ImagePath}", item.ImagePath);
+                        warnings.Add(imageWarning);
                     }
                 }
                 cursor = InsertAfter(cursor, title);
@@ -246,8 +334,8 @@ namespace Alquitel.Infrastructure.Services
                 foreach (var field in DeserializeFields(item.CustomFieldsJson))
                 {
                     var spec = new W.Paragraph(new W.ParagraphProperties(
-                        new W.Indentation { Left = "560" },
-                        new W.SpacingBetweenLines { After = "40" }));
+                        new W.SpacingBetweenLines { After = "40" },
+                        new W.Indentation { Left = "560" }));
                     string label = string.IsNullOrWhiteSpace(field.Label) ? "" : $"{field.Label}: ";
                     foreach (var seg in TagParser.Parse(label + field.Value, field.ColorHex ?? "#000000", field.IsBold, field.IsUnderline))
                     {
@@ -261,8 +349,8 @@ namespace Alquitel.Infrastructure.Services
                 if (!string.IsNullOrWhiteSpace(item.RequestedMeasure))
                 {
                     var measure = new W.Paragraph(new W.ParagraphProperties(
-                        new W.Indentation { Left = "560" },
-                        new W.SpacingBetweenLines { After = "60" }));
+                        new W.SpacingBetweenLines { After = "60" },
+                        new W.Indentation { Left = "560" }));
                     measure.AppendChild(MakeRun($"Medida solicitada: {item.RequestedMeasure}",
                         bold: true, italic: false, underline: false, colorHex: "#C00000", size: 20));
                     cursor = InsertAfter(cursor, measure);
@@ -273,8 +361,8 @@ namespace Alquitel.Infrastructure.Services
                     if (!string.IsNullOrWhiteSpace(item.TechnicalNotes))
                     {
                         var notes = new W.Paragraph(new W.ParagraphProperties(
-                            new W.Indentation { Left = "560" },
-                            new W.SpacingBetweenLines { After = "60" }));
+                            new W.SpacingBetweenLines { After = "60" },
+                            new W.Indentation { Left = "560" }));
                         notes.AppendChild(MakeRun($"Notas técnicas: {item.TechnicalNotes}",
                             bold: false, italic: true, underline: false, colorHex: "#1F68C7", size: 20));
                         cursor = InsertAfter(cursor, notes);
@@ -287,21 +375,26 @@ namespace Alquitel.Infrastructure.Services
                 }
             }
 
-            marker.Remove();
+            if (removeMarkerParagraph) marker.Remove();
         }
 
         private static W.Table BuildCostTable(OrderItem item)
         {
             var table = new W.Table(
                 new W.TableProperties(
+                    new W.TableWidth { Type = W.TableWidthUnitValues.Pct, Width = "5000" },
                     new W.TableBorders(
                         new W.TopBorder { Val = W.BorderValues.Single, Size = 4 },
-                        new W.BottomBorder { Val = W.BorderValues.Single, Size = 4 },
                         new W.LeftBorder { Val = W.BorderValues.Single, Size = 4 },
+                        new W.BottomBorder { Val = W.BorderValues.Single, Size = 4 },
                         new W.RightBorder { Val = W.BorderValues.Single, Size = 4 },
                         new W.InsideHorizontalBorder { Val = W.BorderValues.Single, Size = 4 },
-                        new W.InsideVerticalBorder { Val = W.BorderValues.Single, Size = 4 }),
-                    new W.TableWidth { Type = W.TableWidthUnitValues.Pct, Width = "5000" }));
+                        new W.InsideVerticalBorder { Val = W.BorderValues.Single, Size = 4 })),
+                new W.TableGrid(
+                    new W.GridColumn { Width = "1250" },
+                    new W.GridColumn { Width = "1250" },
+                    new W.GridColumn { Width = "1250" },
+                    new W.GridColumn { Width = "1250" }));
 
             var header = new W.TableRow();
             foreach (var text in new[] { "Cantidad", "Días", "Costo Unitario", "Costo Total" })
@@ -339,12 +432,12 @@ namespace Alquitel.Infrastructure.Services
         private static W.Run MakeRun(string text, bool bold, bool italic, bool underline, string colorHex, int size)
         {
             var props = new W.RunProperties(
-                new W.RunFonts { Ascii = "Montserrat", HighAnsi = "Montserrat" },
-                new W.FontSize { Val = size.ToString() });
+                new W.RunFonts { Ascii = "Montserrat", HighAnsi = "Montserrat" });
             if (bold) props.AppendChild(new W.Bold());
             if (italic) props.AppendChild(new W.Italic());
             if (underline) props.AppendChild(new W.Underline { Val = W.UnderlineValues.Single });
             props.AppendChild(new W.Color { Val = (colorHex ?? "#000000").TrimStart('#') });
+            props.AppendChild(new W.FontSize { Val = size.ToString() });
 
             var run = new W.Run(props);
             // '\n' embebido (notas técnicas, comentarios) no genera salto dentro de un

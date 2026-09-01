@@ -1088,7 +1088,16 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                await _documentService.GenerateDocumentAsync(CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
+                var generationResult = await _documentService.GenerateDocumentAsync(
+                    CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
+                outputPath = generationResult.DocumentPath;
+                fileName = Path.GetFileName(outputPath);
+                if (generationResult.Warnings.Count > 0)
+                {
+                    _dialogService.ShowWarning(
+                        "Documento generado con advertencias",
+                        string.Join("\n", generationResult.Warnings.Distinct()));
+                }
 
                 // Firma multi-usuario: la primera persistencia registra quién creó la orden.
                 CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
@@ -1147,7 +1156,8 @@ namespace Alquitel.UI.ViewModels
                     SendByEmailCommand.NotifyCanExecuteChanged();
                     CopyApprovalLinkCommand.NotifyCanExecuteChanged();
                     _ = _auditService.LogAsync(CurrentOrder.Id,
-                        $"Documento generado ({templateKind})", fileName);
+                        $"Documento generado ({templateKind})",
+                        generationResult.PdfPath == null ? "DOCX" : "DOCX y PDF");
 
                     if (!string.Equals(numberBeforePersist, CurrentOrder.BudgetNumber, StringComparison.Ordinal))
                     {
@@ -1202,7 +1212,11 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
+                AppLog.Error(
+                    "GenerateDocument failed ({TemplateKind}, {ErrorType}, 0x{HResult:X8})",
+                    templateKind,
+                    ex.GetType().Name,
+                    ex.HResult);
                 _dialogService.ShowError("Error de Generación", $"Error: {ex.Message}");
             }
         }
