@@ -131,14 +131,14 @@
 
                     <!-- Date From -->
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="DESDE (MODIFICADO)" FontSize="10" FontWeight="Bold"
+                        <TextBlock Text="DESDE (MODIFICADO)" FontSize="11.5" FontWeight="Bold"
                                    Foreground="{DynamicResource MutedTextBrush}" Margin="4,0,0,4"/>
                         <DatePicker SelectedDate="{Binding FilterDateFrom}" Height="42"/>
                     </StackPanel>
 
                     <!-- Date To -->
                     <StackPanel Grid.Column="4">
-                        <TextBlock Text="HASTA (MODIFICADO)" FontSize="10" FontWeight="Bold"
+                        <TextBlock Text="HASTA (MODIFICADO)" FontSize="11.5" FontWeight="Bold"
                                    Foreground="{DynamicResource MutedTextBrush}" Margin="4,0,0,4"/>
                         <DatePicker SelectedDate="{Binding FilterDateTo}" Height="42"/>
                     </StackPanel>
@@ -295,7 +295,7 @@
                                 Margin="0,0,0,12">
                             <StackPanel>
                                 <StackPanel Margin="0,0,0,14">
-                                    <TextBlock Text="EMPRESA / CLIENTE" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="EMPRESA / CLIENTE" FontSize="11.5" FontWeight="Bold"
                                                Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                     <TextBlock Text="{Binding SelectedFile.Company}"
                                                FontSize="15" FontWeight="SemiBold"
@@ -304,14 +304,14 @@
                                 </StackPanel>
 
                                 <StackPanel Margin="0,0,0,14">
-                                    <TextBlock Text="UBICACIÓN" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="UBICACIÓN" FontSize="11.5" FontWeight="Bold"
                                                Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                     <TextBlock Text="{Binding SelectedFile.LocationName}"
                                                FontSize="14" Foreground="{DynamicResource TextBrush}"/>
                                 </StackPanel>
 
                                 <StackPanel>
-                                    <TextBlock Text="INICIALES" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="INICIALES" FontSize="11.5" FontWeight="Bold"
                                                Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                     <TextBlock Text="{Binding SelectedFile.Initials}"
                                                FontSize="14" Foreground="{DynamicResource TextBrush}"/>
@@ -325,7 +325,7 @@
                                 Margin="0,0,0,12">
                             <StackPanel>
                                 <StackPanel Margin="0,0,0,14">
-                                    <TextBlock Text="ARCHIVO" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="ARCHIVO" FontSize="11.5" FontWeight="Bold"
                                                Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                     <TextBlock Text="{Binding SelectedFile.FileName}"
                                                FontFamily="Consolas" FontSize="12"
@@ -334,7 +334,7 @@
                                 </StackPanel>
 
                                 <StackPanel Margin="0,0,0,14">
-                                    <TextBlock Text="RUTA COMPLETA" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="RUTA COMPLETA" FontSize="11.5" FontWeight="Bold"
                                                Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                     <TextBlock Text="{Binding SelectedFile.FullPath}"
                                                FontFamily="Consolas" FontSize="11"
@@ -349,14 +349,14 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                                        <TextBlock Text="MODIFICADO" FontSize="10" FontWeight="Bold"
+                                        <TextBlock Text="MODIFICADO" FontSize="11.5" FontWeight="Bold"
                                                    Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                         <TextBlock Text="{Binding SelectedFile.ModifiedDate, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}"
                                                    FontSize="13" Foreground="{DynamicResource TextBrush}"/>
                                     </StackPanel>
 
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="TAMAÑO" FontSize="10" FontWeight="Bold"
+                                        <TextBlock Text="TAMAÑO" FontSize="11.5" FontWeight="Bold"
                                                    Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
                                         <TextBlock Text="{Binding SelectedFile.SizeFormatted}"
                                                    FontSize="13" FontWeight="SemiBold"

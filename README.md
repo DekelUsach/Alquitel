@@ -170,6 +170,33 @@ Alquitel/
 2. **Microsoft Word (Versión de Escritorio)**: Las versiones de la "Microsoft Store" a veces no exponen el componente COM, se exige el instalador clásico de Office (`Word.Application`).
 3. Permisos de escritura para que la base de datos interna `SQLite` pueda actualizar el esquema localmente.
 
+### 🔐 Configuración de Secretos y Variables de Entorno
+
+Alquitel no almacena secretos en `appsettings.json` (solo endpoints y claves públicas anónimas). Los valores sensibles por máquina o de producción se configuran mediante **variables de entorno** con prefijo `ALQUITEL_` o mediante el archivo `appsettings.local.json` (ubicado en la raíz de ejecución y excluido en `.gitignore`):
+
+| Configuración | Variable de Entorno | Ejemplo / Formato |
+|---|---|---|
+| Proveedor de Base de Datos | `ALQUITEL_Database__Provider` | `sqlite` (por defecto) o `supabase` |
+| Cadena de conexión PostgreSQL | `ALQUITEL_Database__Supabase__ConnectionString` | `Host=...;Port=5432;Database=postgres;Username=...;Password=...` |
+| Clave de Servicio Supabase | `ALQUITEL_Supabase__ServiceKey` | Clave JWT privada del rol de servicio |
+| API Key Asistente IA | `ALQUITEL_Ai__Pollinations__ApiKey` | Token de acceso para modelo de lenguaje |
+
+> [!TIP]
+> Para el entorno de desarrollo local basta con SQLite; no se requiere configurar cadenas de conexión remotas. Para usar Supabase, copie `appsettings.local.example.json` a `appsettings.local.json` y complete las credenciales de su proyecto.
+
+### 🛡️ Hook Anti-Secretos (Pre-Commit)
+
+Para evitar filtraciones accidentales de tokens JWT (`eyJ...`) o claves de API (`sk_...`), active el hook provisto una vez por clon del repositorio:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+### 🔏 Firma Digital Authenticode
+
+- **En desarrollo local**: Los scripts de compilación firman automáticamente los binarios con un certificado autofirmado local (`CN=AlquitelLocalDev`) para evitar bloqueos por parte de Windows Smart App Control. Se puede generar con `scripts/setup_dev_cert.ps1`.
+- **En Integración Continua (CI/CD)**: La firma de producción se realiza mediante certificados corporativos inyectados exclusivamente desde el almacén de secretos de GitHub (`ACTIONS_CERTIFICATE_PFX` y `ACTIONS_CERTIFICATE_PASSWORD`), sin versionar nunca certificados ni claves privadas en el repositorio.
+
 ---
 
 ## 📄 Funcionamiento del Motor de Documentos

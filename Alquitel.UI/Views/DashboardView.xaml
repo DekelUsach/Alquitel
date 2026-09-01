@@ -85,7 +85,7 @@
                             <Grid>
                                 <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="chevron" Text="&#xE76C;"
-                                           FontFamily="{StaticResource IconFont}" FontSize="10"
+                                           FontFamily="{StaticResource IconFont}" FontSize="12"
                                            Foreground="{DynamicResource MutedTextBrush}"
                                            HorizontalAlignment="Right" VerticalAlignment="Center"
                                            Opacity="0"/>

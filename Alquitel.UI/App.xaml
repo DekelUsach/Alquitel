@@ -172,8 +172,37 @@
                 <Setter Property="Margin" Value="4,0,0,6"/>
             </Style>
 
+            <!-- ════════════════ ESTILOS DE FOCO ACCESIBLES ════════════════ -->
+            <Style x:Key="AccessibleFocusVisualStyle">
+                <Setter Property="Control.Template">
+                    <Setter.Value>
+                        <ControlTemplate>
+                            <Rectangle Stroke="{DynamicResource SecondaryColorBrush}"
+                                       StrokeThickness="2"
+                                       StrokeDashArray="2 1"
+                                       SnapsToDevicePixels="True"
+                                       Margin="-2"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="RoundedFocusVisualStyle">
+                <Setter Property="Control.Template">
+                    <Setter.Value>
+                        <ControlTemplate>
+                            <Border BorderBrush="{DynamicResource SecondaryColorBrush}"
+                                    BorderThickness="2"
+                                    CornerRadius="11"
+                                    Margin="-3"
+                                    SnapsToDevicePixels="True"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- ════════════════ BOTONES ════════════════ -->
-            <!-- Base plana moderna: radio 10, estados hover/pressed/disabled -->
+            <!-- Base plana moderna: radio 10, estados hover/pressed/disabled/focus -->
             <Style x:Key="BaseFlatButton" TargetType="Button">
                 <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
@@ -181,6 +210,7 @@
                 <Setter Property="Height" Value="40"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisualStyle}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
@@ -251,6 +281,10 @@
                                         </BeginStoryboard>
                                     </Trigger.ExitActions>
                                 </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="border" Property="BorderThickness" Value="1.5"/>
+                                    <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
+                                </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Opacity" Value="0.4"/>
                                 </Trigger>
@@ -295,6 +329,7 @@
                 <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisualStyle}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
@@ -330,6 +365,11 @@
                                 </Trigger>
                                 <Trigger Property="IsPressed" Value="True">
                                     <Setter TargetName="hoverBg" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="hoverBg" Property="Opacity" Value="0.6"/>
+                                    <Setter TargetName="bg" Property="BorderThickness" Value="1.5"/>
+                                    <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -504,14 +544,19 @@
             </Style>
 
             <Style TargetType="DataGridCell">
-                <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="FocusVisualStyle" Value="{StaticResource AccessibleFocusVisualStyle}"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                 <Style.Triggers>
                     <Trigger Property="IsSelected" Value="True">
                         <Setter Property="Background" Value="Transparent"/>
-                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
                         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                    </Trigger>
+                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                        <Setter Property="BorderBrush" Value="{DynamicResource SecondaryColorBrush}"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -887,6 +932,7 @@
                 <Setter Property="FontSize" Value="13"/>
                 <Setter Property="Cursor" Value="Hand"/>
                 <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisualStyle}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="CheckBox">
@@ -917,6 +963,11 @@
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="box" Property="BorderBrush"
                                             Value="{DynamicResource SecondaryColorBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsFocused" Value="True">
+                                    <Setter TargetName="box" Property="BorderBrush"
+                                            Value="{DynamicResource SecondaryColorBrush}"/>
+                                    <Setter TargetName="box" Property="BorderThickness" Value="2"/>
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Opacity" Value="0.45"/>

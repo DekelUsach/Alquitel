@@ -242,7 +242,7 @@
                                                        Typography.NumeralAlignment="Tabular"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="{Binding CreatedDate, StringFormat='{}{0:MMM yy}'}"
-                                                       FontSize="10.5"
+                                                       FontSize="11.5"
                                                        Foreground="{DynamicResource MutedTextBrush}"/>
                                         </StackPanel>
 
@@ -279,7 +279,7 @@
                                                     </Style>
                                                 </Border.Style>
                                                 <TextBlock Text="{Binding ValidityLabel, Mode=OneWay}"
-                                                           FontSize="10.5" FontWeight="SemiBold">
+                                                           FontSize="11.5" FontWeight="SemiBold">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Foreground" Value="#B45309"/>

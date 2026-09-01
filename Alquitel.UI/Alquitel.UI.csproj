@@ -1,10 +1,8 @@
-
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <StartupObject>Alquitel.UI.Program</StartupObject>
     <UserSecretsId>alquitel-ui-7f3a9c2b-4d1e-4f8a-b6c0-2e5d9a3f7b1c</UserSecretsId>
@@ -20,26 +18,26 @@
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
-    <PackageReference Include="Extended.Wpf.Toolkit" Version="5.0.0" />
-    <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc5.4" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Extended.Wpf.Toolkit" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
-    <PackageReference Include="Velopack" Version="1.2.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Secretos por máquina (gitignoreado). Se copia al output solo si existe; el equipo
-         del Admin lo deja junto al .exe con la connection string real y la service key. -->
     <None Update="appsettings.local.json" Condition="Exists('appsettings.local.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -47,9 +45,4 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
-  <Target Name="AutoSignBinaries" AfterTargets="Build">
-    <Message Importance="high" Text="---- Firmando binarios para evitar bloqueo de Smart App Control ----" />
-    <Exec Command="powershell -ExecutionPolicy Bypass -Command &quot;&amp; { $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like '*CN=AlquitelLocalDev*' } | Select-Object -First 1; if ($cert) { Set-AuthenticodeSignature -FilePath '$(TargetDir)$(TargetName).dll' -Certificate $cert -HashAlgorithm SHA256 | Out-Null; Set-AuthenticodeSignature -FilePath '$(TargetDir)$(TargetName).exe' -Certificate $cert -HashAlgorithm SHA256 | Out-Null; Write-Output 'Binarios firmados exitosamente con AlquitelLocalDev.' } else { Write-Warning 'No se encontro el certificado AlquitelLocalDev. Corre el script setup_dev_cert.ps1 primero.' } }&quot;" />
-  </Target>
 </Project>

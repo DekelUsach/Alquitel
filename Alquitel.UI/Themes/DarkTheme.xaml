@@ -45,6 +45,7 @@
     <SolidColorBrush x:Key="WarningSubtleBrush" Color="{StaticResource WarningSubtleColor}"/>
     <SolidColorBrush x:Key="SidebarBrush" Color="{StaticResource SidebarColor}"/>
     <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}"/>
+    <SolidColorBrush x:Key="LogoBackingBrush" Color="#FFFFFF" Opacity="0.08"/>
 
     <!-- Gradiente del isologo: acento → azul corporativo (mismos colores de la paleta) -->
     <LinearGradientBrush x:Key="BrandGradientBrush" StartPoint="0,0" EndPoint="1,1">

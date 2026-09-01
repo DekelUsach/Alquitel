@@ -511,7 +511,7 @@
                                             <TextBlock Text="{Binding Events}" FontSize="15" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}"
                                                        Typography.NumeralAlignment="Tabular" TextAlignment="Right"/>
-                                            <TextBlock Text="{Binding EventsLabel}" FontSize="10.5"
+                                            <TextBlock Text="{Binding EventsLabel}" FontSize="11.5"
                                                        Foreground="{DynamicResource MutedTextBrush}"
                                                        TextAlignment="Right"/>
                                         </StackPanel>
@@ -524,7 +524,7 @@
                                                            FontSize="17" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextBrush}"
                                                            Typography.NumeralAlignment="Tabular" TextAlignment="Right"/>
-                                                <TextBlock Text="{Binding NextMonth}" FontSize="10.5"
+                                                <TextBlock Text="{Binding NextMonth}" FontSize="11.5"
                                                            Foreground="{DynamicResource MutedTextBrush}"
                                                            TextAlignment="Right"/>
                                             </StackPanel>
