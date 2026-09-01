@@ -30,7 +30,7 @@ producción.
 | `20260829000100_least_privilege_grants` | Revoca el sobre-privilegio de `anon`/`authenticated` | Sí — solo revoca; no toca `alquitel_app` |
 | `20260829000200_app_identity_and_roles` | Esquema `app`, roles, columnas de identidad en `Users`, triggers anti-escalada | Sí — columnas nuevas que EF ignora. Los triggers no actúan sin JWT |
 | `20260829000300_rls_policies` | Políticas por rol para `authenticated` | Sí — `alquitel_app` conserva sus políticas viejas hasta la baja |
-| `20260829000400_data_integrity_constraints` | CHECKs, unicidad de ubicación | Sí — **verificadas contra los 12 pedidos, 28 ítems, 9 productos y 8 ubicaciones reales** |
+| `20260829000400_data_integrity_constraints` | CHECKs, unicidad de ubicación | ⚠️ Pasan contra los datos actuales (12 pedidos, 28 ítems, 9 productos, 8 ubicaciones), pero **rechazan escrituras que hoy la UI permite** — ver §5.5 |
 | `20260829000500_order_status_state_machine` | Transiciones válidas de `Orders.Status` | ⚠️ **Cambia comportamiento** — ver §4 |
 | `20260829000600_audit_append_only` | Bitácora inmutable, actor puesto por el servidor | Sí — `EfOrderAuditService` solo hace INSERT |
 | `20260829000700_approval_tokens_hashed` | Token del link solo como SHA-256 | ⚠️ Requiere el cambio de `EfApprovalLinkService` de esta rama |
