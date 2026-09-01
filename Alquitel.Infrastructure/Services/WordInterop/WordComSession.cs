@@ -69,7 +69,6 @@ public sealed class WordComSession : IWordComSession
             ReadOnly: false,
             AddToRecentFiles: false,
             Revert: false,
-            UpdateLinks: 0,
             Visible: false,
             OpenAndRepair: false,
             NoEncodingDialog: true);
