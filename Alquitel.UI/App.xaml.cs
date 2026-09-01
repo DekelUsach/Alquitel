@@ -444,9 +444,13 @@ namespace Alquitel.UI
             services.AddSingleton<SettingsViewModel>();
             services.AddTransient<DashboardViewModel>();
             services.AddTransient<BudgetBuilderViewModel>();
+            services.AddSingleton<Func<BudgetBuilderViewModel>>(sp =>
+                () => sp.GetRequiredService<BudgetBuilderViewModel>());
             services.AddTransient<ProductEditorViewModel>();
             services.AddTransient<PresupuestosViewModel>();
             services.AddTransient<OrderPoolViewModel>();
+            services.AddSingleton<Func<OrderPoolViewModel>>(sp =>
+                () => sp.GetRequiredService<OrderPoolViewModel>());
             services.AddTransient<ClientsViewModel>();
             services.AddTransient<LocationsViewModel>();
             services.AddTransient<ReportsViewModel>();

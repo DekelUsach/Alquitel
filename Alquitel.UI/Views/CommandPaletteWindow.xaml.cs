@@ -22,14 +22,19 @@ namespace Alquitel.UI.Views
     {
         private readonly MainViewModel _main;
         private readonly IDbContextFactory<AlquitelDbContext> _dbFactory;
+        private readonly Func<BudgetBuilderViewModel> _budgetBuilderFactory;
         private readonly List<PaletteItem> _staticItems;
         private readonly ObservableCollection<PaletteItem> _results = new();
         private int _searchVersion;
 
-        public CommandPaletteWindow(MainViewModel main, IDbContextFactory<AlquitelDbContext> dbFactory)
+        public CommandPaletteWindow(
+            MainViewModel main,
+            IDbContextFactory<AlquitelDbContext> dbFactory,
+            Func<BudgetBuilderViewModel> budgetBuilderFactory)
         {
             _main = main;
             _dbFactory = dbFactory;
+            _budgetBuilderFactory = budgetBuilderFactory;
             InitializeComponent();
             ResultsList.ItemsSource = _results;
 
@@ -133,10 +138,7 @@ namespace Alquitel.UI.Views
 
         private async Task OpenOrderInBuilderAsync(Guid orderId)
         {
-            var sp = App.ServiceProvider;
-            if (sp == null) return;
-            var builder = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
-                .GetRequiredService<BudgetBuilderViewModel>(sp);
+            var builder = _budgetBuilderFactory();
             if (await builder.LoadOrderForEditAsync(orderId))
                 _main.NavigateToLoadedBuilder(builder);
         }

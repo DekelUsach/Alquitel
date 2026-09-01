@@ -26,6 +26,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IDialogService _dialogService;
         private readonly IWeeklySummaryService _weeklySummaryService;
         private readonly Alquitel.Core.Interfaces.ISessionStore _sessionStore;
+        private readonly Func<BudgetBuilderViewModel> _budgetBuilderFactory;
 
         [ObservableProperty]
         private ObservableObject? _currentViewModel;
@@ -112,10 +113,11 @@ namespace Alquitel.UI.ViewModels
         /// <summary>Host de toasts: MainWindow bindea Toasts.Items para el overlay.</summary>
         public Alquitel.UI.Services.ToastService Toasts { get; }
 
-        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService, IDialogService dialogService, IWeeklySummaryService weeklySummaryService, Alquitel.Core.Interfaces.ISessionStore sessionStore)
+        public MainViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory, IDocumentService documentService, INavigationService navigationService, IAppSettings appSettings, ICurrentUserService currentUserService, IRemoteSyncService remoteSyncService, Alquitel.UI.Services.ToastService toastService, IDialogService dialogService, IWeeklySummaryService weeklySummaryService, Alquitel.Core.Interfaces.ISessionStore sessionStore, Func<BudgetBuilderViewModel> budgetBuilderFactory)
         {
             _weeklySummaryService = weeklySummaryService;
             _sessionStore = sessionStore;
+            _budgetBuilderFactory = budgetBuilderFactory;
             _dbContextFactory = dbContextFactory;
             _documentService = documentService;
             _navigationService = navigationService;
@@ -129,10 +131,6 @@ namespace Alquitel.UI.ViewModels
             LoadThemePreference();
             ApplyTheme(IsDarkMode);
 
-            // Navigate to Dashboard initially. We need to run it via dispatcher or just set it manually 
-            // since NavigateTo<T> sets CurrentViewModel. Actually, since we are inside MainViewModel constructor,
-            // we can just let it finish and maybe set the first view model from App.xaml.cs or just resolve it manually here.
-            // But wait, NavigateTo<T> calls _serviceProvider.GetRequiredService<MainViewModel>() which is us!
         }
 
         public void Initialize()
@@ -193,7 +191,7 @@ namespace Alquitel.UI.ViewModels
         [RelayCommand]
         private void OpenCommandPalette()
         {
-            var palette = new Views.CommandPaletteWindow(this, _dbContextFactory)
+            var palette = new Views.CommandPaletteWindow(this, _dbContextFactory, _budgetBuilderFactory)
             {
                 Owner = System.Windows.Application.Current.MainWindow
             };

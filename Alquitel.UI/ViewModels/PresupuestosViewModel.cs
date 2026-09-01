@@ -4,7 +4,6 @@ using Alquitel.Infrastructure;
 using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
 using Alquitel.Core.Interfaces.Repositories;
-using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -25,7 +24,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IProductRepository _productRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly INavigationService _navigationService;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly Func<BudgetBuilderViewModel> _budgetBuilderFactory;
         private readonly ICollectionView _filesView;
         private FileSystemWatcher? _watcher;
 
@@ -59,7 +58,7 @@ namespace Alquitel.UI.ViewModels
         public PresupuestosViewModel(IAppSettings appSettings, IDialogService dialogService, IDispatcher dispatcher,
             IOrderRepository orderRepository, IProductRepository productRepository,
             ICurrentUserService currentUserService,
-            INavigationService navigationService, IServiceProvider serviceProvider)
+            INavigationService navigationService, Func<BudgetBuilderViewModel> budgetBuilderFactory)
         {
             _appSettings = appSettings;
             _dialogService = dialogService;
@@ -68,7 +67,7 @@ namespace Alquitel.UI.ViewModels
             _productRepository = productRepository;
             _currentUserService = currentUserService;
             _navigationService = navigationService;
-            _serviceProvider = serviceProvider;
+            _budgetBuilderFactory = budgetBuilderFactory;
 
             _filesView = CollectionViewSource.GetDefaultView(Files);
             _filesView.Filter = FilterFile;
@@ -345,7 +344,7 @@ namespace Alquitel.UI.ViewModels
                 IsCreatingVersion = true;
                 try
                 {
-                    var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+                    var builder = _budgetBuilderFactory();
                     builder.LoadBranchOrder(branch);
                     await builder.GenerateBudgetCommand.ExecuteAsync(null);
                 }
@@ -385,7 +384,7 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+                var builder = _budgetBuilderFactory();
                 await builder.LoadOrderCopyByIdAsync(order.Id);
                 _navigationService.NavigateTo(builder);
                 IsDetailPanelOpen = false;

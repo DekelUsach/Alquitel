@@ -193,7 +193,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IToastService _toastService;
         private readonly IOrderAuditService _auditService;
         private readonly INavigationService _navigationService;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly Func<OrderPoolViewModel> _orderPoolFactory;
 
         private readonly ICollectionView _rowsView;
 
@@ -306,7 +306,7 @@ namespace Alquitel.UI.ViewModels
             IToastService toastService,
             IOrderAuditService auditService,
             INavigationService navigationService,
-            IServiceProvider serviceProvider)
+            Func<OrderPoolViewModel> orderPoolFactory)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
@@ -314,7 +314,7 @@ namespace Alquitel.UI.ViewModels
             _toastService = toastService;
             _auditService = auditService;
             _navigationService = navigationService;
-            _serviceProvider = serviceProvider;
+            _orderPoolFactory = orderPoolFactory;
 
             ScopeOptions.Add(new(LocationScope.Todas, "Todas", "Todo el padrón"));
             ScopeOptions.Add(new(LocationScope.ConActividad, "Con actividad", "Tienen al menos un presupuesto"));
@@ -950,7 +950,7 @@ namespace Alquitel.UI.ViewModels
             // El buscador de Seguimiento ya filtra por nombre de lugar: reusarlo evita
             // mantener una segunda vista de las mismas órdenes que en seis meses diría
             // algo distinto.
-            var pool = _serviceProvider.GetRequiredService<OrderPoolViewModel>();
+            var pool = _orderPoolFactory();
             pool.FilterText = row.Name;
             IsEditing = false;
             _navigationService.NavigateTo(pool);

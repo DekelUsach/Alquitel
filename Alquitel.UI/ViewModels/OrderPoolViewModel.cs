@@ -124,7 +124,7 @@ namespace Alquitel.UI.ViewModels
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly IDialogService _dialogService;
         private readonly INavigationService _navigationService;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly Func<BudgetBuilderViewModel> _budgetBuilderFactory;
         private readonly IOrderStatusService _orderStatusService;
         private readonly ICollectionView _rowsView;
 
@@ -167,13 +167,13 @@ namespace Alquitel.UI.ViewModels
 
         public OrderPoolViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory,
             IDialogService dialogService, INavigationService navigationService,
-            IServiceProvider serviceProvider, Alquitel.Core.Interfaces.IOrderAuditService auditService,
+            Func<BudgetBuilderViewModel> budgetBuilderFactory, Alquitel.Core.Interfaces.IOrderAuditService auditService,
             IOrderStatusService orderStatusService)
         {
             _dbContextFactory = dbContextFactory;
             _dialogService = dialogService;
             _navigationService = navigationService;
-            _serviceProvider = serviceProvider;
+            _budgetBuilderFactory = budgetBuilderFactory;
             _auditService = auditService;
             _orderStatusService = orderStatusService;
 
@@ -378,7 +378,7 @@ namespace Alquitel.UI.ViewModels
         private async Task RepeatOrderAsync(OrderPoolRow? row)
         {
             if (row == null) return;
-            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            var builder = _budgetBuilderFactory();
             await builder.LoadOrderCopyByIdAsync(row.OrderId);
             _navigationService.NavigateTo(builder);
         }
@@ -388,7 +388,7 @@ namespace Alquitel.UI.ViewModels
         private async Task OpenOrderAsync(OrderPoolRow? row)
         {
             if (row == null) return;
-            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            var builder = _budgetBuilderFactory();
             if (!await builder.LoadOrderForEditAsync(row.OrderId))
             {
                 _dialogService.ShowWarning("Orden no encontrada", "La orden ya no existe en la base.");
