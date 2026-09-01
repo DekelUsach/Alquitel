@@ -82,27 +82,31 @@ namespace Alquitel.Core.Entities
         public bool AddVat { get; set; }
 
         /// <summary>Suma lineal de los subtotales de los ítems (histórico "Total").</summary>
-        public decimal Total => Items?.Sum(i => i.Total) ?? 0m;
+        public decimal Total => CommercialRound(Items?.Sum(i => i.Total) ?? 0m);
 
         /// <summary>Descuento efectivo: porcentual + monto fijo, nunca mayor al subtotal.</summary>
         public decimal DiscountValue
         {
             get
             {
-                var raw = Total * Math.Clamp(DiscountPercent, 0m, 100m) / 100m
-                          + Math.Max(0m, DiscountAmount);
-                return Math.Min(raw, Total);
+                var percentage = CommercialRound(
+                    Total * Math.Clamp(DiscountPercent, 0m, 100m) / 100m);
+                var fixedAmount = CommercialRound(Math.Max(0m, DiscountAmount));
+                return CommercialRound(Math.Min(percentage + fixedAmount, Total));
             }
         }
 
         /// <summary>Subtotal menos descuentos (base imponible si AddVat).</summary>
-        public decimal NetTotal => Total - DiscountValue;
+        public decimal NetTotal => CommercialRound(Total - DiscountValue);
 
         /// <summary>IVA discriminado (0 cuando AddVat es false).</summary>
-        public decimal VatValue => AddVat ? Math.Round(NetTotal * VatRate, 2) : 0m;
+        public decimal VatValue => AddVat ? CommercialRound(NetTotal * VatRate) : 0m;
 
         /// <summary>Total final del presupuesto: neto + IVA.</summary>
-        public decimal GrandTotal => NetTotal + VatValue;
+        public decimal GrandTotal => CommercialRound(NetTotal + VatValue);
+
+        private static decimal CommercialRound(decimal value) =>
+            Math.Round(value, 2, MidpointRounding.AwayFromZero);
     }
 
     public class OrderItem : INotifyPropertyChanged
@@ -152,7 +156,10 @@ namespace Alquitel.Core.Entities
             }
         }
 
-        public decimal Total => Quantity * UnitPrice * Dias;
+        public decimal Total => Math.Round(
+            checked(Quantity * UnitPrice * Dias),
+            2,
+            MidpointRounding.AwayFromZero);
 
         public string? TechnicalNotes { get; set; }
 

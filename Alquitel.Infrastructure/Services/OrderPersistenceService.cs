@@ -1,6 +1,7 @@
 using Alquitel.Core.Entities;
 using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
+using Alquitel.Core.Validation;
 using Alquitel.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,8 +29,43 @@ public class OrderPersistenceService : IOrderPersistenceService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(order);
-        var candidateBudgetNumber = order.BudgetNumber;
         var auditEventId = operationId ?? Guid.NewGuid();
+        if (operationId.HasValue)
+        {
+            try
+            {
+                var alreadyApplied = await TryGetAppliedOutcomeAsync(
+                    order.Id, auditEventId, cancellationToken);
+                if (alreadyApplied != null)
+                {
+                    if (alreadyApplied.Status == OrderPersistStatus.Saved)
+                    {
+                        order.RowVersion = alreadyApplied.PersistedRowVersion!.Value;
+                        order.BudgetNumber = alreadyApplied.PersistedBudgetNumber!;
+                    }
+                    return alreadyApplied;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(
+                    "No se pudo verificar la operación idempotente ({ErrorType})",
+                    ex.GetType().Name);
+                return new OrderPersistOutcome(
+                    OrderPersistStatus.Error, ErrorCode: "idempotency_check_failed");
+            }
+        }
+
+        var validation = OrderDomainValidator.ValidateAndNormalize(
+            order, requireDescriptionSnapshots: false);
+        if (!validation.IsValid)
+            return new OrderPersistOutcome(
+                OrderPersistStatus.Error, ErrorCode: validation.ErrorCode);
+        var candidateBudgetNumber = order.BudgetNumber;
 
         for (var attempt = 0; ; attempt++)
         {
@@ -172,6 +208,12 @@ public class OrderPersistenceService : IOrderPersistenceService
             .Include(o => o.Items).ThenInclude(i => i.Product)
             .SingleOrDefaultAsync(o => o.Id == order.Id, cancellationToken);
 
+        if (tracked != null)
+            HydrateHistoricalSnapshots(order.Items, tracked.Items);
+        var strictValidation = OrderDomainValidator.ValidateAndNormalize(order);
+        if (!strictValidation.IsValid)
+            return MutationAttempt.Error(strictValidation.ErrorCode!);
+
         if (tracked == null)
         {
             tracked = CloneOrderForInsert(
@@ -203,6 +245,20 @@ public class OrderPersistenceService : IOrderPersistenceService
 
         await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
         return MutationAttempt.Saved();
+    }
+
+    private static void HydrateHistoricalSnapshots(
+        IReadOnlyCollection<OrderItem> incoming,
+        IReadOnlyCollection<OrderItem> persisted)
+    {
+        var persistedById = persisted.ToDictionary(i => i.Id);
+        foreach (var item in incoming.Where(i => string.IsNullOrWhiteSpace(i.DescriptionSnapshot)))
+        {
+            if (persistedById.TryGetValue(item.Id, out var historical))
+                item.DescriptionSnapshot = historical.DescriptionSnapshot
+                    ?? historical.Product?.Description;
+            item.DescriptionSnapshot ??= item.Product?.Description;
+        }
     }
 
     private async Task<Location> ResolveLocationAsync(

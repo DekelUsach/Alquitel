@@ -112,6 +112,23 @@ public sealed class OrderConcurrencyIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OrdenInvalidaSeRechazaAntesDeEscribirOrdenItemsOAuditoria()
+    {
+        var order = CreateDetachedOrder("inválida", Guid.NewGuid());
+        order.Items[0].Quantity = 0;
+        var service = new OrderPersistenceService(_factory, _currentUser);
+
+        var outcome = await service.PersistAsync(order);
+
+        Assert.Equal(OrderPersistStatus.Error, outcome.Status);
+        Assert.Equal("invalid_quantity", outcome.ErrorCode);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.OrderItems.ToListAsync());
+        Assert.Empty(await db.OrderAuditEvents.ToListAsync());
+    }
+
+    [Fact]
     public async Task UnTercerEscritorInvalidaLaVersionTomadaParaSobrescribir()
     {
         var order = await SeedOrderAsync();
@@ -289,6 +306,49 @@ public sealed class OrderConcurrencyIntegrationTests : IAsyncLifetime
         await using var db = await _factory.CreateDbContextAsync();
         Assert.Equal("operación aplicada", (await db.Orders.FindAsync(order.Id))!.Comments);
         Assert.Equal(1, await db.OrderAuditEvents.CountAsync(e => e.Id == operationId));
+    }
+
+    [Fact]
+    public async Task ReintentoYaConfirmadoSeReconoceAunqueElPayloadAhoraSeaInvalido()
+    {
+        var order = await SeedOrderAsync();
+        var operationId = Guid.NewGuid();
+        var service = new OrderPersistenceService(_factory, _currentUser);
+        var saved = await service.PersistAsync(
+            await LoadOrderAsync(order.Id), operationId: operationId);
+        var invalidRetry = await LoadOrderAsync(order.Id);
+        invalidRetry.Items[0].Quantity = 0;
+
+        var confirmed = await service.PersistAsync(
+            invalidRetry, operationId: operationId);
+
+        Assert.Equal(OrderPersistStatus.Saved, confirmed.Status);
+        Assert.Equal(saved.PersistedRowVersion, confirmed.PersistedRowVersion);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.Equal(1, await db.OrderAuditEvents.CountAsync(e => e.Id == operationId));
+    }
+
+    [Fact]
+    public async Task EdicionLegadaRellenaSnapshotDesdeElProductoPersistido()
+    {
+        var order = await SeedOrderAsync();
+        await using (var legacyDb = await _factory.CreateDbContextAsync())
+        {
+            var item = await legacyDb.OrderItems.SingleAsync(i => i.OrderId == order.Id);
+            item.DescriptionSnapshot = null;
+            await legacyDb.SaveChangesAsync();
+        }
+        var detached = await LoadOrderAsync(order.Id); // intencionalmente sin Product
+        detached.Comments = "edición compatible";
+        var service = new OrderPersistenceService(_factory, _currentUser);
+
+        var result = await service.PersistAsync(detached);
+
+        Assert.Equal(OrderPersistStatus.Saved, result.Status);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.Equal(
+            "Pantalla",
+            (await db.OrderItems.SingleAsync(i => i.OrderId == order.Id)).DescriptionSnapshot);
     }
 
     [Fact]
