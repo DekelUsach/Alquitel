@@ -48,6 +48,9 @@ namespace Alquitel.UI.ViewModels
         private bool _exportPdf;
 
         [ObservableProperty]
+        private bool _externalAiProcessingEnabled;
+
+        [ObservableProperty]
         private string _statusMessage = string.Empty;
 
         // ── Servidor remoto (Supabase/PostgreSQL) ────────────────────
@@ -215,9 +218,10 @@ namespace Alquitel.UI.ViewModels
             try
             {
                 _backupService.RestoreBackup(SelectedBackup.FilePath);
-                _dialogService.ShowInfo("Backup restaurado",
-                    "La base de datos fue restaurada correctamente.\n\n" +
-                    "Cerrá y volvé a abrir Alquitel para que todos los módulos lean la base restaurada.");
+                _dialogService.ShowInfo("Restauración programada",
+                    "El backup fue validado y quedó protegido para restaurarse.\n\n" +
+                    "Cerrá y volvé a abrir Alquitel: la base se reemplazará de forma segura " +
+                    "antes de iniciar los módulos.");
             }
             catch (Exception ex)
             {
@@ -621,6 +625,7 @@ namespace Alquitel.UI.ViewModels
                 _appSettings.OtFolder = OtFolder;
                 _appSettings.OtTemplate = OtTemplate;
                 _appSettings.ExportPdf = ExportPdf;
+                _appSettings.ExternalAiProcessingEnabled = ExternalAiProcessingEnabled;
                 _appSettings.SaveSettings();
                 StatusMessage = "✓ Configuración guardada correctamente.";
             }
@@ -639,6 +644,7 @@ namespace Alquitel.UI.ViewModels
             OtFolder = _appSettings.OtFolder;
             OtTemplate = _appSettings.OtTemplate;
             ExportPdf = _appSettings.ExportPdf;
+            ExternalAiProcessingEnabled = _appSettings.ExternalAiProcessingEnabled;
         }
 
         private void BrowseFolder(Action<string> setter)

@@ -132,7 +132,12 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                             search.Collapse(0);        // wdCollapseEnd — seguir después del hallazgo
                         }
                     }
-                    catch (Exception ex) { AppLog.Warning(ex, "Underline failed for text {Text}", findText); }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warning(
+                            "Falló el subrayado de {Text} ({ErrorType}, 0x{HResult:X8})",
+                            findText, ex.GetType().Name, ex.HResult);
+                    }
 
                     try { currentRange = currentRange.NextStoryRange; }
                     catch { currentRange = null; }
@@ -183,7 +188,12 @@ namespace Alquitel.Infrastructure.Services.WordInterop
                             }
                         }
                     }
-                    catch (Exception ex) { AppLog.Warning(ex, "Find/Replace failed for placeholder {Placeholder}", findText); }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warning(
+                            "Falló el reemplazo de {Placeholder} ({ErrorType}, 0x{HResult:X8})",
+                            findText, ex.GetType().Name, ex.HResult);
+                    }
 
                     try { currentRange = currentRange.NextStoryRange; }
                     catch { currentRange = null; }

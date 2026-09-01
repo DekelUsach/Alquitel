@@ -24,6 +24,9 @@ namespace Alquitel.Infrastructure.Persistence
             // Without the filter, the second client saved without CUIT ('') collides.
             modelBuilder.Entity<Client>().HasIndex(c => c.Cuit).IsUnique().HasFilter("\"Cuit\" <> ''");
             modelBuilder.Entity<Order>().HasIndex(o => o.BudgetNumber).IsUnique();
+            modelBuilder.Entity<Order>()
+                .Property(o => o.RowVersion)
+                .IsConcurrencyToken();
             modelBuilder.Entity<User>().HasIndex(u => u.Name).IsUnique();
             // Un combo por nombre: "Guardar como combo" con nombre repetido lo pisa (upsert en UI).
             modelBuilder.Entity<EventTemplate>().HasIndex(t => t.Name).IsUnique();

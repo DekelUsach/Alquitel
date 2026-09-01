@@ -116,14 +116,14 @@
                 <Button Style="{StaticResource GhostButton}" Height="34" Margin="0,0,6,0"
                         Command="{Binding SuggestTechnicalNotesCommand}"
                         AutomationProperties.Name="Sugerir notas técnicas con inteligencia artificial"
-                        ToolTip="IA: redacta una nota técnica breve para cada ítem sin nota (revisar antes de generar la OT)">
+                        ToolTip="IA externa: envía texto redactado para sugerir una nota técnica breve (revisar antes de generar la OT)">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
                                    VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock VerticalAlignment="Center" FontSize="12">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Notas IA"/>
+                                    <Setter Property="Text" Value="Notas IA externa"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsSuggestingNotes}" Value="True">
                                             <Setter Property="Text" Value="Redactando…"/>
@@ -267,7 +267,7 @@
                                                        VerticalAlignment="Center" Margin="0,0,7,0"/>
                                             <TextBlock Text="Armar pedido desde texto" FontSize="12" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                        <TextBlock Text="Analizando con IA…" FontSize="12" VerticalAlignment="Center"
+                                        <TextBlock Text="Analizando con IA externa…" FontSize="12" VerticalAlignment="Center"
                                                    HorizontalAlignment="Center"
                                                    Visibility="{Binding IsAiParsing, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                     </Grid>

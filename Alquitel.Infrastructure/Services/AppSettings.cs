@@ -18,6 +18,7 @@ namespace Alquitel.Infrastructure.Services
         public string OtTemplate { get; set; } = AppPaths.DefaultOtTemplate;
         public bool IsDarkMode { get; set; }
         public bool ExportPdf { get; set; } = true;
+        public bool ExternalAiProcessingEnabled { get; set; }
         public DateTime? LastWeeklySummary { get; set; }
         public List<string> SmartSearchStopWords { get; set; } = new List<string> { "de", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "plus", "pro", "edition", "business", "servicio" };
         public double SmartSearchThreshold { get; set; } = 4.0;
@@ -50,6 +51,9 @@ namespace Alquitel.Infrastructure.Services
                         IsDarkMode = isDark;
                     if (settings.TryGetValue("ExportPdf", out var expPdf) && bool.TryParse(expPdf, out var ePdf))
                         ExportPdf = ePdf;
+                    if (settings.TryGetValue("ExternalAiProcessingEnabled", out var externalAi) &&
+                        bool.TryParse(externalAi, out var externalAiEnabled))
+                        ExternalAiProcessingEnabled = externalAiEnabled;
 
                     if (settings.TryGetValue("LastWeeklySummary", out var lws) &&
                         DateTime.TryParse(lws, System.Globalization.CultureInfo.InvariantCulture,
@@ -89,6 +93,7 @@ namespace Alquitel.Infrastructure.Services
                     ["OtTemplate"] = OtTemplate,
                     ["IsDarkMode"] = IsDarkMode.ToString(),
                     ["ExportPdf"] = ExportPdf.ToString(),
+                    ["ExternalAiProcessingEnabled"] = ExternalAiProcessingEnabled.ToString(),
                     ["LastWeeklySummary"] = LastWeeklySummary?.ToString("yyyy-MM-dd",
                         System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
                     ["SmartSearchThreshold"] = SmartSearchThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),

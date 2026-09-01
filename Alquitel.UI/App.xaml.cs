@@ -21,6 +21,7 @@ namespace Alquitel.UI
     public partial class App : Application
     {
         public static ServiceProvider? ServiceProvider { get; private set; }
+        private DatabaseBackupService.ApplicationDatabaseLease? _databaseLease;
 
         private static IConfiguration BuildConfiguration()
         {
@@ -51,10 +52,13 @@ namespace Alquitel.UI
 
                 ServiceProvider = serviceCollection.BuildServiceProvider();
 
+                var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
+                _databaseLease = backupService.AcquireApplicationDatabaseLease();
+                backupService.ApplyPendingRestoreAtStartup(_databaseLease);
+
                 var initService = ServiceProvider.GetRequiredService<DataInitializationService>();
                 initService.Initialize();
 
-                var backupService = ServiceProvider.GetRequiredService<DatabaseBackupService>();
                 backupService.Start();
 
                 // Reintento en segundo plano de órdenes que quedaron sin persistir
@@ -274,6 +278,8 @@ namespace Alquitel.UI
 
         protected override void OnExit(ExitEventArgs e)
         {
+            _databaseLease?.Dispose();
+            _databaseLease = null;
             AppLog.Information("Application exiting (code={Code})", e.ApplicationExitCode);
             AppLog.Shutdown();
             base.OnExit(e);
@@ -336,7 +342,9 @@ namespace Alquitel.UI
             }
             else
             {
-                services.AddSingleton<IDocumentService, WordDocumentService>();
+                // La sesión COM y su compositor tienen una fábrica sustituible para pruebas;
+                // en producción se usa la composición segura predeterminada.
+                services.AddSingleton<IDocumentService>(_ => new WordDocumentService());
             }
             
             // Core Services
@@ -370,6 +378,7 @@ namespace Alquitel.UI
 
             // Persistencia de órdenes y borradores del armador (extraídos del VM).
             services.AddSingleton<IOrderPersistenceService, OrderPersistenceService>();
+            services.AddSingleton<IOrderStatusService, OrderStatusService>();
             services.AddSingleton<IDraftService, DraftService>();
 
             // Outbox offline: órdenes que no pudieron guardarse (sin internet en modo
@@ -392,13 +401,15 @@ namespace Alquitel.UI
             // Key por máquina: appsettings.local.json o ALQUITEL_Ai__Pollinations__ApiKey.
             services.AddSingleton<IAiOrderParser>(sp => new PollinationsOrderParser(
                 configuration["Ai:Pollinations:ApiKey"],
-                configuration["Ai:Pollinations:Model"]));
+                configuration["Ai:Pollinations:Model"],
+                () => sp.GetRequiredService<IAppSettings>().ExternalAiProcessingEnabled));
 
             // Asistente de texto para los quick-wins de IA (notas OT, resumen de cliente,
             // detección de datos de contacto). Misma key barata de Pollinations.
             services.AddSingleton<IAiTextAssistant>(sp => new PollinationsTextAssistant(
                 configuration["Ai:Pollinations:ApiKey"],
-                configuration["Ai:Pollinations:Model"]));
+                configuration["Ai:Pollinations:Model"],
+                () => sp.GetRequiredService<IAppSettings>().ExternalAiProcessingEnabled));
 
             // Plantillas centralizadas en Supabase Storage (bucket "templates").
             // - Url/AnonKey: solo LECTURA (viajan en el binario) -> descargar plantillas.
@@ -433,9 +444,13 @@ namespace Alquitel.UI
             services.AddSingleton<SettingsViewModel>();
             services.AddTransient<DashboardViewModel>();
             services.AddTransient<BudgetBuilderViewModel>();
+            services.AddSingleton<Func<BudgetBuilderViewModel>>(sp =>
+                () => sp.GetRequiredService<BudgetBuilderViewModel>());
             services.AddTransient<ProductEditorViewModel>();
             services.AddTransient<PresupuestosViewModel>();
             services.AddTransient<OrderPoolViewModel>();
+            services.AddSingleton<Func<OrderPoolViewModel>>(sp =>
+                () => sp.GetRequiredService<OrderPoolViewModel>());
             services.AddTransient<ClientsViewModel>();
             services.AddTransient<LocationsViewModel>();
             services.AddTransient<ReportsViewModel>();

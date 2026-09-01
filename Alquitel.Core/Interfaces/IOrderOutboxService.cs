@@ -11,8 +11,8 @@ namespace Alquitel.Core.Interfaces
     /// </summary>
     public interface IOrderOutboxService
     {
-        /// <summary>Encola la orden (con sus ítems) para reintento. Nunca lanza.</summary>
-        void Enqueue(Order order);
+        /// <summary>Encola durablemente la orden. Devuelve false si no pudo asegurar la copia.</summary>
+        bool Enqueue(Order order, Guid? operationId = null);
 
         /// <summary>Cantidad de órdenes pendientes de subir.</summary>
         int PendingCount { get; }

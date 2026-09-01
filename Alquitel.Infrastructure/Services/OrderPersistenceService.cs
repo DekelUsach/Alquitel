@@ -1,286 +1,485 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 using Alquitel.Core.Entities;
 using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
+using Alquitel.Core.Validation;
 using Alquitel.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
-namespace Alquitel.Infrastructure.Services
+namespace Alquitel.Infrastructure.Services;
+
+public class OrderPersistenceService : IOrderPersistenceService
 {
-    /// <summary>
-    /// Implementación EF de <see cref="IOrderPersistenceService"/>. Lógica movida tal
-    /// cual desde BudgetBuilderViewModel.PersistOrderAsync/ResolveClientIdAsync, más:
-    /// - Reintento con renumeración ante colisión del índice único de BudgetNumber
-    ///   (dos usuarios creando presupuestos a la vez sobre la base compartida).
-    /// - Concurrencia optimista vía Order.RowVersion (edición simultánea de la misma orden).
-    /// </summary>
-    public class OrderPersistenceService : IOrderPersistenceService
+    private const int MaxBudgetNumberRetries = 3;
+
+    private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
+    private readonly ICurrentUserService _currentUser;
+
+    public OrderPersistenceService(
+        IDbContextFactory<AlquitelDbContext> dbContextFactory,
+        ICurrentUserService currentUser)
     {
-        private const int MaxBudgetNumberRetries = 3;
+        _dbContextFactory = dbContextFactory;
+        _currentUser = currentUser;
+    }
 
-        private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
-        private readonly IOrderAuditService _audit;
-
-        public OrderPersistenceService(IDbContextFactory<AlquitelDbContext> dbContextFactory, IOrderAuditService audit)
+    public async Task<OrderPersistOutcome> PersistAsync(
+        Order order,
+        OrderConflictResolution resolution = OrderConflictResolution.Reject,
+        Guid? operationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        var auditEventId = operationId ?? Guid.NewGuid();
+        if (operationId.HasValue)
         {
-            _dbContextFactory = dbContextFactory;
-            _audit = audit;
+            try
+            {
+                var alreadyApplied = await TryGetAppliedOutcomeAsync(
+                    order.Id, auditEventId, cancellationToken);
+                if (alreadyApplied != null)
+                {
+                    if (alreadyApplied.Status == OrderPersistStatus.Saved)
+                    {
+                        order.RowVersion = alreadyApplied.PersistedRowVersion!.Value;
+                        order.BudgetNumber = alreadyApplied.PersistedBudgetNumber!;
+                    }
+                    return alreadyApplied;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warning(
+                    "No se pudo verificar la operación idempotente ({ErrorType})",
+                    ex.GetType().Name);
+                return new OrderPersistOutcome(
+                    OrderPersistStatus.Error, ErrorCode: "idempotency_check_failed");
+            }
         }
 
-        public async Task<OrderPersistResult> PersistAsync(Order order, bool forceOverwrite = false)
+        var validation = OrderDomainValidator.ValidateAndNormalize(
+            order, requireDescriptionSnapshots: false);
+        if (!validation.IsValid)
+            return new OrderPersistOutcome(
+                OrderPersistStatus.Error, ErrorCode: validation.ErrorCode);
+        var candidateBudgetNumber = order.BudgetNumber;
+
+        for (var attempt = 0; ; attempt++)
         {
-            for (int attempt = 0; ; attempt++)
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var outcome = await PersistOnceAsync(
+                    order, candidateBudgetNumber, auditEventId, resolution, cancellationToken);
+                if (outcome.Status == OrderPersistStatus.Saved)
+                {
+                    order.RowVersion = outcome.PersistedRowVersion!.Value;
+                    order.BudgetNumber = outcome.PersistedBudgetNumber!;
+                }
+                return outcome;
+            }
+            catch (DbUpdateException ex) when (
+                attempt < MaxBudgetNumberRetries && IsBudgetNumberCollision(ex))
+            {
+                var previous = candidateBudgetNumber;
+                candidateBudgetNumber = await NextAvailableNumberAsync(
+                    candidateBudgetNumber, cancellationToken);
+                AppLog.Warning(
+                    "Colisión de número de presupuesto {Old}: renumerado a {New}, reintento {Attempt}",
+                    previous, candidateBudgetNumber, attempt + 1);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 try
                 {
-                    return await PersistOnceAsync(order, forceOverwrite);
-                }
-                catch (DbUpdateException ex) when (attempt < MaxBudgetNumberRetries && IsBudgetNumberCollision(ex))
-                {
-                    // Otro usuario tomó el mismo número entre la asignación y el guardado.
-                    // Se renumera (misma serie si es versión, próximo serial si no) y se
-                    // reintenta. El VM detecta el cambio comparando BudgetNumber pre/post.
-                    var oldNumber = order.BudgetNumber;
-                    order.BudgetNumber = await NextAvailableNumberAsync(order.BudgetNumber);
-                    AppLog.Warning(
-                        "Colisión de número de presupuesto {Old} (índice único): renumerado a {New}, reintento {Attempt}",
-                        oldNumber, order.BudgetNumber, attempt + 1);
-                }
-                catch (Exception ex)
-                {
-                    AppLog.Error(ex, "PersistAsync failed for order {OrderId}", order.Id);
-                    return OrderPersistResult.Error;
-                }
-            }
-        }
-
-        private async Task<OrderPersistResult> PersistOnceAsync(Order order, bool forceOverwrite)
-        {
-            using var db = await _dbContextFactory.CreateDbContextAsync();
-
-            // En modo servidor el DbContext trae EnableRetryOnFailure: abrir una
-            // transacción a mano sin pasar por la estrategia de ejecución hace que EF
-            // lance InvalidOperationException y ningún presupuesto se guarde.
-            var strategy = db.Database.CreateExecutionStrategy();
-
-            // El cuerpo se puede re-ejecutar tras un corte de red. RowVersion se muta
-            // dentro (rotación del token de concurrencia): si no se restaura el valor
-            // con el que se cargó la orden, el segundo intento se compara contra un
-            // token que la base nunca vio y devuelve un Conflict inventado.
-            var loadedRowVersion = order.RowVersion;
-
-            var (result, existed) = await strategy.ExecuteAsync(async () =>
-            {
-                db.ChangeTracker.Clear();
-                order.RowVersion = loadedRowVersion;
-                return await PersistCoreAsync(db, order, forceOverwrite);
-            });
-
-            if (result == OrderPersistResult.Saved)
-            {
-                // Bitácora: fuera de la transacción y fuera del reintento (un fallo de
-                // auditoría no revierte la orden, y un reintento no la duplica).
-                await _audit.LogAsync(order.Id,
-                    existed ? "Editado" : "Creado",
-                    $"Presupuesto {order.BudgetNumber} · {order.Items.Count} ítem(s) · total {order.GrandTotal:C}");
-            }
-
-            return result;
-        }
-
-        private async Task<(OrderPersistResult Result, bool OrderExisted)> PersistCoreAsync(
-            AlquitelDbContext db, Order order, bool forceOverwrite)
-        {
-            await using var tx = await db.Database.BeginTransactionAsync();
-
-            // ── Location: find-or-create so Order.LocationId always references a real row.
-            // A Guid.Empty FK violated the constraint and silently failed the whole persist. ──
-            var locName = (order.Location?.Name ?? string.Empty).Trim();
-            var location = await db.Locations.FirstOrDefaultAsync(l => l.Name == locName);
-            if (location == null)
-            {
-                location = new Location { Name = locName };
-                db.Locations.Add(location);
-                await db.SaveChangesAsync();
-            }
-
-            // ── Client: reuse existing (by Id, then by CUIT) or create it.
-            // A client typed manually never existed in the DB and broke the FK. ──
-            var clientId = await ResolveClientIdAsync(db, order);
-            var locationId = location.Id;
-
-            var orderExists = await db.Orders.AnyAsync(o => o.Id == order.Id);
-
-            if (!orderExists)
-            {
-                var orderToSave = new Order
-                {
-                    Id = order.Id,
-                    BudgetNumber = order.BudgetNumber,
-                    AdminName = order.AdminName,
-                    CreatedByUserId = order.CreatedByUserId,
-                    ClientId = clientId,
-                    LocationId = locationId,
-                    CreatedDate = order.CreatedDate,
-                    EventDate = order.EventDate,
-                    EventEndDate = order.EventEndDate,
-                    Status = order.Status,
-                    Comments = order.Comments,
-                    DiscountPercent = order.DiscountPercent,
-                    DiscountAmount = order.DiscountAmount,
-                    AddVat = order.AddVat,
-                    RowVersion = order.RowVersion == Guid.Empty ? Guid.NewGuid() : order.RowVersion,
-                };
-                db.Orders.Add(orderToSave);
-                await db.SaveChangesAsync();
-                order.RowVersion = orderToSave.RowVersion;
-
-                foreach (var item in order.Items)
-                {
-                    db.OrderItems.Add(CloneForInsert(item, orderToSave.Id, keepId: true));
-                }
-                await db.SaveChangesAsync();
-            }
-            else
-            {
-                var tracked = await db.Orders.FindAsync(order.Id);
-                if (tracked != null)
-                {
-                    // ── Concurrencia optimista: si la fila cambió desde que este usuario
-                    // la cargó, no pisar en silencio. Guid.Empty = fila legada sin token.
-                    if (!forceOverwrite &&
-                        tracked.RowVersion != Guid.Empty &&
-                        order.RowVersion != Guid.Empty &&
-                        tracked.RowVersion != order.RowVersion)
+                    var applied = await TryGetAppliedOutcomeAsync(
+                        order.Id, auditEventId, cancellationToken);
+                    if (applied != null)
                     {
-                        await tx.RollbackAsync();
-                        AppLog.Warning(
-                            "Conflicto de concurrencia en orden {OrderId}: RowVersion base {Db} ≠ cargada {Loaded}",
-                            order.Id, tracked.RowVersion, order.RowVersion);
-                        return (OrderPersistResult.Conflict, true);
+                        order.RowVersion = applied.PersistedRowVersion!.Value;
+                        order.BudgetNumber = applied.PersistedBudgetNumber!;
+                        return applied;
                     }
-
-                    tracked.BudgetNumber = order.BudgetNumber;
-                    tracked.AdminName = order.AdminName;
-                    // No pisar al creador original al editar una orden ajena.
-                    tracked.CreatedByUserId ??= order.CreatedByUserId;
-                    tracked.ClientId = clientId;
-                    tracked.LocationId = locationId;
-                    tracked.EventDate = order.EventDate;
-                    tracked.EventEndDate = order.EventEndDate;
-                    tracked.Status = order.Status;
-                    tracked.Comments = order.Comments;
-                    tracked.DiscountPercent = order.DiscountPercent;
-                    tracked.DiscountAmount = order.DiscountAmount;
-                    tracked.AddVat = order.AddVat;
-
-                    // Rotar el token: los guardados posteriores de OTRO usuario con la
-                    // versión vieja caerán en Conflict. El de este usuario sigue en sync.
-                    tracked.RowVersion = Guid.NewGuid();
-                    order.RowVersion = tracked.RowVersion;
                 }
-
-                var oldItems = await db.OrderItems.Where(i => i.OrderId == order.Id).ToListAsync();
-                db.OrderItems.RemoveRange(oldItems);
-                await db.SaveChangesAsync();
-
-                foreach (var item in order.Items)
+                catch
                 {
-                    db.OrderItems.Add(CloneForInsert(item, order.Id, keepId: false));
+                    // Se conserva el error original; la próxima pasada del outbox
+                    // verificará nuevamente la identidad de operación.
                 }
-                await db.SaveChangesAsync();
+                AppLog.Error(ex, "PersistAsync failed for order {OrderId}", order.Id);
+                return new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "persistence_failed");
             }
+        }
+    }
 
-            await tx.CommitAsync();
-            AppLog.Information("Order persisted: {OrderId} ({Budget})", order.Id, order.BudgetNumber);
-            return (OrderPersistResult.Saved, orderExists);
+    private async Task<OrderPersistOutcome> PersistOnceAsync(
+        Order order,
+        string budgetNumber,
+        Guid auditEventId,
+        OrderConflictResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var strategy = db.Database.CreateExecutionStrategy();
+        var candidateRowVersion = Guid.NewGuid();
+
+        var appliedEvent = await db.OrderAuditEvents.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == auditEventId, cancellationToken);
+        if (appliedEvent != null)
+        {
+            if (appliedEvent.OrderId != order.Id)
+                return new OrderPersistOutcome(
+                    OrderPersistStatus.Error, ErrorCode: "operation_id_collision");
+
+            var appliedOrder = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+                .SingleOrDefaultAsync(o => o.Id == order.Id, cancellationToken);
+            return appliedOrder == null
+                ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
+                : new OrderPersistOutcome(
+                    OrderPersistStatus.Saved,
+                    appliedOrder.RowVersion,
+                    appliedOrder.BudgetNumber);
         }
 
-        /// <summary>
-        /// True si la excepción es una violación del índice único de Orders.BudgetNumber
-        /// (SQLite error 19 / PostgreSQL 23505).
-        /// </summary>
-        private static bool IsBudgetNumberCollision(DbUpdateException ex)
+        try
         {
-            return ex.InnerException switch
-            {
-                Microsoft.Data.Sqlite.SqliteException sq =>
-                    sq.SqliteErrorCode == 19 &&
-                    sq.Message.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase),
-                Npgsql.PostgresException pg =>
-                    pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation &&
-                    (pg.ConstraintName?.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase) ?? false),
-                _ => false,
-            };
+            var attempt = await strategy.ExecuteInTransactionAsync(
+                async ct =>
+                {
+                    db.ChangeTracker.Clear();
+                    return await ApplyMutationAsync(
+                        db, order, budgetNumber, candidateRowVersion, auditEventId, resolution, ct);
+                },
+                async ct =>
+                {
+                    db.ChangeTracker.Clear();
+                    return await db.Orders.AsNoTracking().AnyAsync(
+                               o => o.Id == order.Id && o.RowVersion == candidateRowVersion, ct)
+                           && await db.OrderAuditEvents.AsNoTracking().AnyAsync(
+                               e => e.Id == auditEventId, ct);
+                },
+                cancellationToken);
+
+            if (attempt.Status == OrderPersistStatus.Conflict)
+                return CreateConflict(order, attempt.LatestOrder!);
+
+            if (attempt.Status == OrderPersistStatus.Error)
+                return new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: attempt.ErrorCode);
+
+            AppLog.Information("Order persisted: {OrderId} ({Budget})", order.Id, budgetNumber);
+            return new OrderPersistOutcome(
+                OrderPersistStatus.Saved,
+                candidateRowVersion,
+                budgetNumber);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var applied = await TryGetAppliedOutcomeAsync(
+                order.Id, auditEventId, cancellationToken);
+            if (applied != null) return applied;
+            var latest = await LoadLatestAsync(order.Id, cancellationToken);
+            return latest == null
+                ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
+                : CreateConflict(order, latest);
+        }
+    }
+
+    private async Task<MutationAttempt> ApplyMutationAsync(
+        AlquitelDbContext db,
+        Order order,
+        string budgetNumber,
+        Guid candidateRowVersion,
+        Guid auditEventId,
+        OrderConflictResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        var location = await ResolveLocationAsync(db, order, cancellationToken);
+        var client = await ResolveClientAsync(db, order, cancellationToken);
+        var tracked = await db.Orders.IgnoreQueryFilters()
+            .Include(o => o.Client)
+            .Include(o => o.Location)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .SingleOrDefaultAsync(o => o.Id == order.Id, cancellationToken);
+
+        if (tracked != null)
+            HydrateHistoricalSnapshots(order.Items, tracked.Items);
+        var strictValidation = OrderDomainValidator.ValidateAndNormalize(order);
+        if (!strictValidation.IsValid)
+            return MutationAttempt.Error(strictValidation.ErrorCode!);
+
+        if (tracked == null)
+        {
+            tracked = CloneOrderForInsert(
+                order, client.Id, location.Id, budgetNumber, candidateRowVersion);
+            db.Orders.Add(tracked);
+            db.OrderAuditEvents.Add(CreateAuditEvent(
+                auditEventId, order.Id, "Creado", budgetNumber, order.Items.Count));
+        }
+        else
+        {
+            var actualRowVersion = tracked.RowVersion;
+            if (resolution == OrderConflictResolution.Reject && actualRowVersion != order.RowVersion)
+                return MutationAttempt.Conflict(tracked);
+
+            if (!OrderStatusTransitionPolicy.CanTransition(tracked.Status, order.Status))
+                return MutationAttempt.Error("invalid_status_transition");
+
+            db.Entry(tracked).Property(o => o.RowVersion).OriginalValue =
+                resolution == OrderConflictResolution.OverwriteLatest
+                    ? actualRowVersion
+                    : order.RowVersion;
+
+            ApplyEditableValues(tracked, order, client.Id, location.Id, budgetNumber);
+            SynchronizeItems(db, tracked, order.Items);
+            tracked.RowVersion = candidateRowVersion;
+            db.OrderAuditEvents.Add(CreateAuditEvent(
+                auditEventId, order.Id, "Editado", budgetNumber, order.Items.Count));
         }
 
-        /// <summary>
-        /// Próximo número libre tras una colisión: si el número era una versión
-        /// ("31294/2") se calcula la próxima versión de esa serie; si era un serial
-        /// se toma el próximo serial global.
-        /// </summary>
-        private async Task<string> NextAvailableNumberAsync(string collidedNumber)
-        {
-            using var db = await _dbContextFactory.CreateDbContextAsync();
-            var numbers = await db.Orders.IgnoreQueryFilters().AsNoTracking()
-                .Select(o => o.BudgetNumber)
-                .ToListAsync();
+        await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+        return MutationAttempt.Saved();
+    }
 
-            return BudgetNumberHelper.VersionPart(collidedNumber) > 1
-                ? BudgetNumberHelper.NextVersion(collidedNumber, numbers)
-                : BudgetNumberHelper.NextSerial(numbers);
+    private static void HydrateHistoricalSnapshots(
+        IReadOnlyCollection<OrderItem> incoming,
+        IReadOnlyCollection<OrderItem> persisted)
+    {
+        var persistedById = persisted.ToDictionary(i => i.Id);
+        foreach (var item in incoming.Where(i => string.IsNullOrWhiteSpace(i.DescriptionSnapshot)))
+        {
+            if (persistedById.TryGetValue(item.Id, out var historical))
+                item.DescriptionSnapshot = historical.DescriptionSnapshot
+                    ?? historical.Product?.Description;
+            item.DescriptionSnapshot ??= item.Product?.Description;
+        }
+    }
+
+    private async Task<Location> ResolveLocationAsync(
+        AlquitelDbContext db, Order order, CancellationToken cancellationToken)
+    {
+        var name = (order.Location?.Name ?? string.Empty).Trim();
+        var location = await db.Locations.FirstOrDefaultAsync(
+            l => l.Name == name, cancellationToken);
+        if (location != null) return location;
+
+        location = new Location { Id = Guid.NewGuid(), Name = name };
+        db.Locations.Add(location);
+        return location;
+    }
+
+    private static async Task<Client> ResolveClientAsync(
+        AlquitelDbContext db, Order order, CancellationToken cancellationToken)
+    {
+        var source = order.Client ?? new Client();
+        if (source.Id != Guid.Empty)
+        {
+            var byId = await db.Clients.IgnoreQueryFilters().FirstOrDefaultAsync(
+                c => c.Id == source.Id, cancellationToken);
+            if (byId != null) return byId;
         }
 
-        private static OrderItem CloneForInsert(OrderItem item, Guid orderId, bool keepId) => new()
+        if (!string.IsNullOrWhiteSpace(source.Cuit))
         {
-            Id = keepId ? item.Id : Guid.NewGuid(),
-            OrderId = orderId,
-            ProductId = item.ProductId,
-            Quantity = item.Quantity,
-            UnitPrice = item.UnitPrice,
-            Dias = item.Dias,
-            TechnicalNotes = item.TechnicalNotes,
-            ImagePath = item.ImagePath,
-            CustomFieldsJson = item.CustomFieldsJson,
-            DescriptionSnapshot = item.DescriptionSnapshot,
-            RequestedMeasure = item.RequestedMeasure,
+            var cuit = source.Cuit.Trim();
+            var byCuit = await db.Clients.IgnoreQueryFilters().FirstOrDefaultAsync(
+                c => c.Cuit == cuit, cancellationToken);
+            if (byCuit != null) return byCuit;
+        }
+
+        var created = new Client
+        {
+            Id = source.Id == Guid.Empty ? Guid.NewGuid() : source.Id,
+            CompanyName = source.CompanyName?.Trim() ?? string.Empty,
+            Cuit = source.Cuit?.Trim() ?? string.Empty,
+            ContactName = source.ContactName,
+            Phone = source.Phone,
+            Email = source.Email,
+            InternalNotes = source.InternalNotes,
+            SpecialDiscountPercent = source.SpecialDiscountPercent,
         };
+        db.Clients.Add(created);
+        return created;
+    }
 
-        /// <summary>
-        /// Returns the Id of a Client row guaranteed to exist in the DB for the order:
-        /// the tracked client if already persisted, an existing client with the same CUIT,
-        /// or a newly inserted row built from the manually typed data.
-        /// </summary>
-        private static async Task<Guid> ResolveClientIdAsync(AlquitelDbContext db, Order order)
+    private OrderAuditEvent CreateAuditEvent(
+        Guid eventId, Guid orderId, string eventType, string budgetNumber, int itemCount) => new()
+    {
+        Id = eventId,
+        OrderId = orderId,
+        UserName = _currentUser.Current?.Name ?? "(desconocido)",
+        UserId = _currentUser.Current?.Id,
+        EventType = eventType,
+        Detail = $"Presupuesto {budgetNumber} · {itemCount} ítem(s)",
+    };
+
+    private static Order CloneOrderForInsert(
+        Order source, Guid clientId, Guid locationId, string budgetNumber, Guid rowVersion) => new()
+    {
+        Id = source.Id,
+        BudgetNumber = budgetNumber,
+        AdminName = source.AdminName,
+        CreatedByUserId = source.CreatedByUserId,
+        ClientId = clientId,
+        LocationId = locationId,
+        CreatedDate = source.CreatedDate,
+        EventDate = source.EventDate,
+        EventEndDate = source.EventEndDate,
+        Status = source.Status,
+        Comments = source.Comments,
+        DiscountPercent = source.DiscountPercent,
+        DiscountAmount = source.DiscountAmount,
+        AddVat = source.AddVat,
+        RowVersion = rowVersion,
+        Items = source.Items.Select(i => CloneItem(i, source.Id)).ToList(),
+    };
+
+    private static void ApplyEditableValues(
+        Order target, Order source, Guid clientId, Guid locationId, string budgetNumber)
+    {
+        target.BudgetNumber = budgetNumber;
+        target.AdminName = source.AdminName;
+        target.CreatedByUserId ??= source.CreatedByUserId;
+        target.ClientId = clientId;
+        target.LocationId = locationId;
+        target.EventDate = source.EventDate;
+        target.EventEndDate = source.EventEndDate;
+        target.Status = source.Status;
+        target.Comments = source.Comments;
+        target.DiscountPercent = source.DiscountPercent;
+        target.DiscountAmount = source.DiscountAmount;
+        target.AddVat = source.AddVat;
+    }
+
+    private static void SynchronizeItems(
+        AlquitelDbContext db, Order trackedOrder, IReadOnlyCollection<OrderItem> sourceItems)
+    {
+        var existingById = trackedOrder.Items.ToDictionary(i => i.Id);
+        var incomingIds = sourceItems.Select(i => i.Id).ToHashSet();
+
+        foreach (var removed in trackedOrder.Items.Where(i => !incomingIds.Contains(i.Id)).ToList())
+            db.OrderItems.Remove(removed);
+
+        foreach (var source in sourceItems)
         {
-            var client = order.Client ?? new Client();
-
-            if (client.Id != Guid.Empty &&
-                await db.Clients.IgnoreQueryFilters().AnyAsync(c => c.Id == client.Id))
-                return client.Id;
-
-            if (!string.IsNullOrWhiteSpace(client.Cuit))
-            {
-                var cuit = client.Cuit.Trim();
-                var byCuit = await db.Clients.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Cuit == cuit);
-                if (byCuit != null) return byCuit.Id;
-            }
-
-            var newClient = new Client
-            {
-                Id = client.Id == Guid.Empty ? Guid.NewGuid() : client.Id,
-                CompanyName = client.CompanyName?.Trim() ?? string.Empty,
-                Cuit = client.Cuit?.Trim() ?? string.Empty,
-                ContactName = client.ContactName,
-                Phone = client.Phone,
-                Email = client.Email,
-            };
-            db.Clients.Add(newClient);
-            await db.SaveChangesAsync();
-            AppLog.Information("Client auto-created from budget: {Company} ({Cuit})", newClient.CompanyName, newClient.Cuit);
-            return newClient.Id;
+            if (existingById.TryGetValue(source.Id, out var target))
+                ApplyItemValues(target, source, trackedOrder.Id);
+            else
+                db.OrderItems.Add(CloneItem(source, trackedOrder.Id));
         }
+    }
+
+    private static OrderItem CloneItem(OrderItem source, Guid orderId)
+    {
+        var clone = new OrderItem
+        {
+            Id = source.Id == Guid.Empty ? Guid.NewGuid() : source.Id,
+        };
+        ApplyItemValues(clone, source, orderId);
+        return clone;
+    }
+
+    private static void ApplyItemValues(OrderItem target, OrderItem source, Guid orderId)
+    {
+        target.OrderId = orderId;
+        target.ProductId = source.ProductId;
+        target.Quantity = source.Quantity;
+        target.UnitPrice = source.UnitPrice;
+        target.Dias = source.Dias;
+        target.TechnicalNotes = source.TechnicalNotes;
+        target.ImagePath = source.ImagePath;
+        target.CustomFieldsJson = source.CustomFieldsJson;
+        target.DescriptionSnapshot = source.DescriptionSnapshot;
+        target.RequestedMeasure = source.RequestedMeasure;
+    }
+
+    private OrderPersistOutcome CreateConflict(Order expected, Order latest)
+    {
+        AppLog.Warning(
+            "Conflicto de concurrencia en orden {OrderId}: esperada {Expected}, vigente {Actual}",
+            expected.Id, expected.RowVersion, latest.RowVersion);
+        return new OrderPersistOutcome(
+            OrderPersistStatus.Conflict,
+            Conflict: new OrderConflictDetails(
+                expected.Id,
+                expected.RowVersion,
+                latest.RowVersion,
+                OrderConflictComparer.Compare(expected, latest),
+                latest));
+    }
+
+    private async Task<Order?> LoadLatestAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Orders.AsNoTracking().IgnoreQueryFilters()
+            .Include(o => o.Client)
+            .Include(o => o.Location)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .SingleOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+    }
+
+    private async Task<OrderPersistOutcome?> TryGetAppliedOutcomeAsync(
+        Guid orderId, Guid auditEventId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var auditOrderId = await db.OrderAuditEvents.AsNoTracking()
+            .Where(e => e.Id == auditEventId)
+            .Select(e => (Guid?)e.OrderId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (auditOrderId == null) return null;
+        if (auditOrderId != orderId)
+            return new OrderPersistOutcome(
+                OrderPersistStatus.Error, ErrorCode: "operation_id_collision");
+
+        var applied = await db.Orders.AsNoTracking().IgnoreQueryFilters()
+            .Where(o => o.Id == orderId)
+            .Select(o => new { o.RowVersion, o.BudgetNumber })
+            .SingleOrDefaultAsync(cancellationToken);
+        return applied == null
+            ? new OrderPersistOutcome(OrderPersistStatus.Error, ErrorCode: "order_not_found")
+            : new OrderPersistOutcome(
+                OrderPersistStatus.Saved, applied.RowVersion, applied.BudgetNumber);
+    }
+
+    private async Task<string> NextAvailableNumberAsync(
+        string collidedNumber, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var numbers = await db.Orders.IgnoreQueryFilters().AsNoTracking()
+            .Select(o => o.BudgetNumber)
+            .ToListAsync(cancellationToken);
+
+        return BudgetNumberHelper.VersionPart(collidedNumber) > 1
+            ? BudgetNumberHelper.NextVersion(collidedNumber, numbers)
+            : BudgetNumberHelper.NextSerial(numbers);
+    }
+
+    private static bool IsBudgetNumberCollision(DbUpdateException ex) => ex.InnerException switch
+    {
+        Microsoft.Data.Sqlite.SqliteException sq =>
+            sq.SqliteErrorCode == 19 &&
+            sq.Message.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase),
+        Npgsql.PostgresException pg =>
+            pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation &&
+            (pg.ConstraintName?.Contains("BudgetNumber", StringComparison.OrdinalIgnoreCase) ?? false),
+        _ => false,
+    };
+
+    private sealed record MutationAttempt(
+        OrderPersistStatus Status,
+        Order? LatestOrder = null,
+        string? ErrorCode = null)
+    {
+        public static MutationAttempt Saved() => new(OrderPersistStatus.Saved);
+        public static MutationAttempt Conflict(Order latest) =>
+            new(OrderPersistStatus.Conflict, latest);
+        public static MutationAttempt Error(string errorCode) =>
+            new(OrderPersistStatus.Error, ErrorCode: errorCode);
     }
 }

@@ -10,6 +10,11 @@ namespace Alquitel.Core.Interfaces
         string OtTemplate { get; set; }
         bool IsDarkMode { get; set; }
         bool ExportPdf { get; set; }
+        /// <summary>
+        /// Consentimiento explícito para enviar texto redactado a un proveedor de IA.
+        /// El valor predeterminado es false y una API key por sí sola no lo habilita.
+        /// </summary>
+        bool ExternalAiProcessingEnabled { get; set; }
         /// <summary>Fecha del último resumen semanal generado (null = nunca).</summary>
         DateTime? LastWeeklySummary { get; set; }
         List<string> SmartSearchStopWords { get; set; }

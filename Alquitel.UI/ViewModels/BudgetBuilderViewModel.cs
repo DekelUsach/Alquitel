@@ -924,7 +924,8 @@ namespace Alquitel.UI.ViewModels
                 }
                 catch (Exception ex)
                 {
-                    AppLog.Warning(ex, "Pedido automático: la IA falló — se usa el motor local");
+                    AppLog.Warning("Pedido automático: la IA falló — se usa el motor local ({ErrorType})",
+                        ex.GetType().Name);
                 }
                 finally
                 {
@@ -987,7 +988,9 @@ namespace Alquitel.UI.ViewModels
 
             var summary = new StringBuilder();
             summary.Append($"Se agregaron {addedCount} producto(s)");
-            summary.Append(aiSucceeded ? " con IA." : " con el motor local.");
+            summary.Append(aiSucceeded
+                ? " con IA externa (datos sensibles redactados)."
+                : " con el motor local.");
             if (aiDays is int d) summary.Append($"\nDías detectados: {d}.");
             if (unmatched.Any())
             {
@@ -1088,34 +1091,76 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                await _documentService.GenerateDocumentAsync(CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
+                var generationResult = await _documentService.GenerateDocumentAsync(
+                    CurrentOrder, effectiveTemplate, outputPath, isTechnical, _appSettings.ExportPdf);
+                outputPath = generationResult.DocumentPath;
+                fileName = Path.GetFileName(outputPath);
+                if (generationResult.Warnings.Count > 0)
+                {
+                    _dialogService.ShowWarning(
+                        "Documento generado con advertencias",
+                        string.Join("\n", generationResult.Warnings.Distinct()));
+                }
 
                 // Firma multi-usuario: la primera persistencia registra quién creó la orden.
                 CurrentOrder.CreatedByUserId ??= _currentUserService.Current?.Id;
 
                 string numberBeforePersist = CurrentOrder.BudgetNumber;
-                var persistResult = await _orderPersistence.PersistAsync(CurrentOrder);
+                var persistenceOperationId = Guid.NewGuid();
+                var persistResult = await _orderPersistence.PersistAsync(
+                    CurrentOrder, operationId: persistenceOperationId);
 
-                if (persistResult == OrderPersistResult.Conflict)
+                if (persistResult.Status == OrderPersistStatus.Conflict &&
+                    persistResult.Conflict is { } conflict)
                 {
-                    // Otro usuario guardó esta misma orden desde que se cargó acá.
-                    var overwrite = _dialogService.ShowConfirm(
+                    var fields = conflict.ChangedFields.Count == 0
+                        ? "No se pudo determinar qué campos cambiaron."
+                        : "Cambios detectados: " + string.Join(", ", conflict.ChangedFields) + ".";
+                    var reload = _dialogService.ShowConfirm(
                         "Conflicto de edición",
                         "Otro usuario modificó este presupuesto mientras lo editabas.\n\n" +
-                        "¿Querés PISAR sus cambios con tu versión? (Si elegís No, recargá el " +
-                        "presupuesto desde el historial para ver la versión más nueva.)");
-                    if (overwrite)
-                        persistResult = await _orderPersistence.PersistAsync(CurrentOrder, forceOverwrite: true);
+                        fields + "\n\n¿Querés recargar la versión vigente? " +
+                        "Elegí No para conservar tus cambios locales y decidir si sobrescribir.");
+                    if (reload)
+                    {
+                        ApplyLoadedOrder(conflict.LatestOrder);
+                        _toastService.ShowInfo("Se recargó la versión más reciente del presupuesto.");
+                        return;
+                    }
+
+                    var overwrite = _dialogService.ShowConfirm(
+                        "Sobrescribir cambios",
+                        "Tus cambios siguen intactos y todavía no se guardaron.\n\n" +
+                        "¿Querés sobrescribir conscientemente la versión vigente?");
+                    if (!overwrite)
+                    {
+                        _toastService.ShowInfo("Se conservaron tus cambios locales sin guardar.");
+                        return;
+                    }
+
+                    persistResult = await _orderPersistence.PersistAsync(
+                        CurrentOrder,
+                        OrderConflictResolution.OverwriteLatest,
+                        persistenceOperationId);
+                    if (persistResult.Status == OrderPersistStatus.Conflict)
+                    {
+                        _dialogService.ShowWarning(
+                            "Nuevo conflicto",
+                            "La orden volvió a cambiar antes de confirmar la sobrescritura. " +
+                            "No se guardó nada; revisá nuevamente la versión vigente.");
+                        return;
+                    }
                 }
 
-                if (persistResult == OrderPersistResult.Saved)
+                if (persistResult.Status == OrderPersistStatus.Saved)
                 {
                     _draftService.DeleteDraft(CurrentOrder.Id);
                     LastGeneratedPath = outputPath;
                     SendByEmailCommand.NotifyCanExecuteChanged();
                     CopyApprovalLinkCommand.NotifyCanExecuteChanged();
                     _ = _auditService.LogAsync(CurrentOrder.Id,
-                        $"Documento generado ({templateKind})", fileName);
+                        $"Documento generado ({templateKind})",
+                        generationResult.PdfPath == null ? "DOCX" : "DOCX y PDF");
 
                     if (!string.Equals(numberBeforePersist, CurrentOrder.BudgetNumber, StringComparison.Ordinal))
                     {
@@ -1139,19 +1184,42 @@ namespace Alquitel.UI.ViewModels
                             () => Alquitel.UI.Helpers.ShellLauncher.RevealInExplorer(revealPath));
                     }
                 }
-                else if (persistResult == OrderPersistResult.Error)
+                else if (persistResult.Status == OrderPersistStatus.Error)
                 {
-                    _orderOutbox.Enqueue(CurrentOrder);
-                    _dialogService.ShowWarning(
-                        "Documento generado, persistencia falló",
-                        $"El documento se generó correctamente:\n{outputPath}\n\n" +
-                        "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
-                        "Quedó encolada y se reintentará automáticamente cuando vuelva la conexión.");
+                    if (persistResult.ErrorCode is "invalid_status_transition" or "order_not_found")
+                    {
+                        _dialogService.ShowWarning(
+                            "No se guardó la orden",
+                            persistResult.ErrorCode == "order_not_found"
+                                ? "La orden ya no existe en la base. Recargá el historial antes de continuar."
+                                : "El cambio de estado solicitado no es válido para esta orden.");
+                        return;
+                    }
+                    if (_orderOutbox.Enqueue(CurrentOrder, persistenceOperationId))
+                    {
+                        _dialogService.ShowWarning(
+                            "Documento generado, persistencia falló",
+                            $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                            "ATENCIÓN: la orden no pudo guardarse en la base de datos. " +
+                            "Quedó encolada y se reintentará automáticamente cuando vuelva la conexión.");
+                    }
+                    else
+                    {
+                        _dialogService.ShowError(
+                            "Orden sin respaldo local",
+                            $"El documento se generó correctamente:\n{outputPath}\n\n" +
+                            "No se pudo guardar la orden en la base ni asegurarla en la cola local. " +
+                            "No cierres esta pantalla y volvé a intentar cuando haya espacio y conexión.");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                AppLog.Error(ex, "GenerateDocument failed (template={Template}, target={Target})", templatePath, targetDir);
+                AppLog.Error(
+                    "GenerateDocument failed ({TemplateKind}, {ErrorType}, 0x{HResult:X8})",
+                    templateKind,
+                    ex.GetType().Name,
+                    ex.HResult);
                 _dialogService.ShowError("Error de Generación", $"Error: {ex.Message}");
             }
         }
@@ -1566,7 +1634,8 @@ namespace Alquitel.UI.ViewModels
         {
             if (!_aiAssistant.IsConfigured)
             {
-                _toastService.ShowInfo("La IA no está configurada (falta la API key de Pollinations).");
+                _toastService.ShowInfo(
+                    "La IA externa está desactivada o falta la API key. Habilitala en Configuración para enviar texto redactado.");
                 return;
             }
             var pending = SelectedItems
@@ -1603,22 +1672,29 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                int applied = 0;
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("notas", out var notas))
+                var pendingByIndex = pending.ToDictionary(x => x.idx, x => x.item);
+                if (!Alquitel.Core.Privacy.AiTechnicalNoteValidator.TryParse(
+                        json, pendingByIndex.Keys.ToHashSet(), out var proposals))
                 {
-                    foreach (var n in notas.EnumerateArray())
-                    {
-                        if (!n.TryGetProperty("idx", out var idxEl) || !n.TryGetProperty("nota", out var notaEl)) continue;
-                        int idx = idxEl.GetInt32();
-                        string? nota = notaEl.GetString();
-                        if (string.IsNullOrWhiteSpace(nota)) continue;
-                        if (idx < 0 || idx >= SelectedItems.Count) continue;
-                        if (!string.IsNullOrWhiteSpace(SelectedItems[idx].TechnicalNotes)) continue;
-                        SelectedItems[idx].TechnicalNotes = nota.Trim();
-                        applied++;
-                    }
+                    _toastService.ShowInfo("La IA devolvió notas con un formato inseguro; no se aplicó ninguna.");
+                    return;
                 }
+
+                // La colección pudo cambiar durante el await. Se valida el snapshot
+                // completo antes de mutar un solo ítem para evitar resultados parciales.
+                if (proposals.Any(proposal =>
+                        proposal.Index < 0 || proposal.Index >= SelectedItems.Count ||
+                        !pendingByIndex.TryGetValue(proposal.Index, out var original) ||
+                        !ReferenceEquals(SelectedItems[proposal.Index], original) ||
+                        !string.IsNullOrWhiteSpace(original.TechnicalNotes)))
+                {
+                    _toastService.ShowInfo("El pedido cambió mientras se generaban las notas; no se aplicó ninguna.");
+                    return;
+                }
+
+                foreach (var proposal in proposals)
+                    pendingByIndex[proposal.Index].TechnicalNotes = proposal.Text;
+                var applied = proposals.Count;
 
                 SelectionVersion++; // refrescar las tarjetas con la nota nueva
                 _toastService.ShowSuccess(applied > 0
@@ -1627,7 +1703,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "SuggestTechnicalNotesAsync failed");
+                AppLog.Warning("SuggestTechnicalNotesAsync failed ({ErrorType})", ex.GetType().Name);
                 _toastService.ShowInfo("No se pudieron sugerir notas técnicas.");
             }
             finally
@@ -1640,42 +1716,29 @@ namespace Alquitel.UI.ViewModels
         /// Busca datos del cliente (empresa, contacto, teléfono, email, CUIT) en el mismo
         /// texto pegado del pedido automático y completa SOLO los campos vacíos del formulario.
         /// </summary>
-        private async Task DetectClientDataFromTextAsync(string customerText)
+        private Task DetectClientDataFromTextAsync(string customerText)
         {
-            if (!_aiAssistant.IsConfigured) return;
             var client = CurrentOrder.Client ??= new Client();
 
             // Con la ficha ya completa no hay nada que detectar.
             if (!string.IsNullOrWhiteSpace(client.CompanyName) &&
                 !string.IsNullOrWhiteSpace(client.ContactName) &&
-                !string.IsNullOrWhiteSpace(client.Phone)) return;
+                !string.IsNullOrWhiteSpace(client.Phone)) return Task.CompletedTask;
 
             try
             {
-                const string system =
-                    "Extraé los datos del REMITENTE/cliente de este texto de pedido (mail o WhatsApp argentino). " +
-                    "Respondé SOLO JSON: {\"empresa\":null,\"contacto\":null,\"telefono\":null,\"email\":null,\"cuit\":null}. " +
-                    "Usá null para todo dato que el texto no mencione explícitamente. Nunca inventes.";
-
-                var json = await _aiAssistant.CompleteToJsonAsync(system, customerText);
-                if (json == null) return;
-
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                string? Get(string prop) =>
-                    doc.RootElement.TryGetProperty(prop, out var el) && el.ValueKind == System.Text.Json.JsonValueKind.String
-                        ? el.GetString()?.Trim()
-                        : null;
+                var extracted = Alquitel.Core.Privacy.ClientContactExtractor.Extract(customerText);
 
                 var filled = new List<string>();
-                if (string.IsNullOrWhiteSpace(client.CompanyName) && Get("empresa") is string emp && emp.Length > 1)
+                if (string.IsNullOrWhiteSpace(client.CompanyName) && extracted.CompanyName is string emp && emp.Length > 1)
                 { client.CompanyName = emp; filled.Add("empresa"); }
-                if (string.IsNullOrWhiteSpace(client.ContactName) && Get("contacto") is string con && con.Length > 1)
+                if (string.IsNullOrWhiteSpace(client.ContactName) && extracted.ContactName is string con && con.Length > 1)
                 { client.ContactName = con; filled.Add("contacto"); }
-                if (string.IsNullOrWhiteSpace(client.Phone) && Get("telefono") is string tel && tel.Length > 5)
+                if (string.IsNullOrWhiteSpace(client.Phone) && extracted.Phone is string tel && tel.Length > 5)
                 { client.Phone = tel; filled.Add("teléfono"); }
-                if (string.IsNullOrWhiteSpace(client.Email) && Get("email") is string mail && mail.Contains('@'))
+                if (string.IsNullOrWhiteSpace(client.Email) && extracted.Email is string mail && mail.Contains('@'))
                 { client.Email = mail; filled.Add("email"); }
-                if (string.IsNullOrWhiteSpace(client.Cuit) && Get("cuit") is string cuit && CuitValidator.IsValid(cuit))
+                if (string.IsNullOrWhiteSpace(client.Cuit) && extracted.Cuit is string cuit && CuitValidator.IsValid(cuit))
                 { client.Cuit = cuit; CuitInput = cuit; filled.Add("CUIT"); }
 
                 if (filled.Count > 0)
@@ -1686,8 +1749,9 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "DetectClientDataFromTextAsync failed");
+                AppLog.Warning("DetectClientDataFromTextAsync failed ({ErrorType})", ex.GetType().Name);
             }
+            return Task.CompletedTask;
         }
 
         // ── Envío por correo del último documento generado ──────────

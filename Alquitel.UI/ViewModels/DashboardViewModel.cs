@@ -4,7 +4,6 @@ using Alquitel.Core.Entities;
 using Alquitel.Infrastructure.Persistence;
 using Alquitel.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -23,7 +22,7 @@ namespace Alquitel.UI.ViewModels
     {
         private readonly IDbContextFactory<AlquitelDbContext> _dbContextFactory;
         private readonly INavigationService _navigationService;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly Func<BudgetBuilderViewModel> _budgetBuilderFactory;
 
         [ObservableProperty]
         private int _totalProducts;
@@ -53,11 +52,11 @@ namespace Alquitel.UI.ViewModels
             System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
 
         public DashboardViewModel(IDbContextFactory<AlquitelDbContext> dbContextFactory,
-            INavigationService navigationService, IServiceProvider serviceProvider)
+            INavigationService navigationService, Func<BudgetBuilderViewModel> budgetBuilderFactory)
         {
             _dbContextFactory = dbContextFactory;
             _navigationService = navigationService;
-            _serviceProvider = serviceProvider;
+            _budgetBuilderFactory = budgetBuilderFactory;
 
             var hour = DateTime.Now.Hour;
             WelcomeMessage = hour switch
@@ -167,7 +166,7 @@ namespace Alquitel.UI.ViewModels
         private async System.Threading.Tasks.Task RepeatOrderAsync(RecentOrderRow? row)
         {
             if (row == null) return;
-            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            var builder = _budgetBuilderFactory();
             await builder.LoadOrderCopyByIdAsync(row.OrderId);
             _navigationService.NavigateTo(builder);
         }
@@ -180,7 +179,7 @@ namespace Alquitel.UI.ViewModels
         private async System.Threading.Tasks.Task OpenOrderAsync(RecentOrderRow? row)
         {
             if (row == null) return;
-            var builder = _serviceProvider.GetRequiredService<BudgetBuilderViewModel>();
+            var builder = _budgetBuilderFactory();
             if (!await builder.LoadOrderForEditAsync(row.OrderId)) return;
             _navigationService.NavigateTo(builder);
         }
