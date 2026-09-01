@@ -51,10 +51,45 @@ autorización es el token uuid del link (secreto por presupuesto, un solo uso).
 
 ## Seguridad
 
-- El token es un uuid aleatorio: adivinar uno equivale a adivinar 122 bits.
-- El link se invalida al responder (idempotencia ante doble clic vía
-  `UPDATE ... WHERE Status = Pending`).
-- La Edge Function usa la service role key **del lado servidor** (secret del
-  proyecto); al navegador solo viaja HTML.
-- `BudgetNumber` se escapa antes de interpolar en el HTML (XSS almacenado).
-- `OrderApprovals` tiene RLS deny-all para los roles de PostgREST.
+Endurecido el 2026-08-29. Detalle en `docs/THREAT_MODEL.md` (T4, T5, T7, T9) y
+en los encabezados de las migraciones.
+
+- **El token no se guarda.** La base conserva solo su SHA-256
+  (`20260829000700`); un trigger hashea y descarta el texto plano, así que ni un
+  cliente viejo puede persistirlo. Consecuencia buscada: un token no se puede
+  recuperar de la base, así que reenviar el presupuesto emite un link nuevo y
+  revoca el anterior.
+- **Un solo uso, sin carreras.** Consumir el token, cambiar el estado de la orden
+  y registrar en la bitácora ocurren en una transacción, con el número de filas
+  afectadas verificado (`20260829000800`). La versión anterior tenía una carrera
+  real: un UPDATE que no matchea ninguna fila no devuelve error en PostgREST, así
+  que dos pedidos simultáneos podían dejar la aprobación en "Aprobado" y la orden
+  en "Rechazado", mostrándole al cliente un cartel de éxito en los dos casos.
+- **Idempotente.** Repetir la misma acción devuelve el mismo comprobante sin
+  volver a escribir. La acción contraria devuelve 409 y respeta el primer
+  veredicto.
+- **Sin service role key.** La Edge Function corre con la clave pública; toda la
+  autorización está en dos RPC `SECURITY DEFINER`. El secreto administrativo
+  salió del entorno de una función expuesta a internet.
+- **Vencimiento y revocación** validados en la base, no en el navegador: 30 días
+  para responder, y un link queda revocado en cuanto se emite otro para la misma
+  orden.
+- **Límite de intentos**: 20 respuestas por IP y 10 por token cada 10 minutos.
+- **Retención** (`20260829000900`): detalle completo mientras está pendiente y 90
+  días después de responder como comprobante; luego solo el sello; a los 180 días
+  se anonimiza la IP a su /24.
+- **Nunca se exponen** `InternalNotes`, `SpecialDiscountPercent`, `Products.Cost`,
+  `AdminName` ni `CreatedByUserId`. La lista de columnas públicas vive en el RPC
+  --o sea en el esquema, revisable en code review--, no en TypeScript.
+- **El token no se loguea** en ningún lado, ni aparece en mensajes de error. Los
+  errores del portal son genéricos: nada del backend llega al navegador.
+- **Cabeceras**: `Referrer-Policy: no-referrer` (más un `<meta>` de respaldo),
+  `Cache-Control: no-store, private`, `X-Robots-Tag: noindex`, CSP restrictiva,
+  `nosniff` y `X-Frame-Options: DENY`.
+- Todo dato de la base se escapa antes de interpolar en el HTML, y los colores de
+  estilos dinámicos se validan contra `/^#[0-9a-f]{6}$/i`.
+
+**Riesgo residual aceptado**: el token viaja en la query string, así que queda en
+el historial del navegador del cliente y en su casilla. Cambiarlo a un fragmento
+o a un POST rompería los links ya emitidos; el vencimiento, la revocación y las
+cabeceras acotan el daño.
