@@ -401,13 +401,15 @@ namespace Alquitel.UI
             // Key por máquina: appsettings.local.json o ALQUITEL_Ai__Pollinations__ApiKey.
             services.AddSingleton<IAiOrderParser>(sp => new PollinationsOrderParser(
                 configuration["Ai:Pollinations:ApiKey"],
-                configuration["Ai:Pollinations:Model"]));
+                configuration["Ai:Pollinations:Model"],
+                () => sp.GetRequiredService<IAppSettings>().ExternalAiProcessingEnabled));
 
             // Asistente de texto para los quick-wins de IA (notas OT, resumen de cliente,
             // detección de datos de contacto). Misma key barata de Pollinations.
             services.AddSingleton<IAiTextAssistant>(sp => new PollinationsTextAssistant(
                 configuration["Ai:Pollinations:ApiKey"],
-                configuration["Ai:Pollinations:Model"]));
+                configuration["Ai:Pollinations:Model"],
+                () => sp.GetRequiredService<IAppSettings>().ExternalAiProcessingEnabled));
 
             // Plantillas centralizadas en Supabase Storage (bucket "templates").
             // - Url/AnonKey: solo LECTURA (viajan en el binario) -> descargar plantillas.

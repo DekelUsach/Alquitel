@@ -924,7 +924,8 @@ namespace Alquitel.UI.ViewModels
                 }
                 catch (Exception ex)
                 {
-                    AppLog.Warning(ex, "Pedido automático: la IA falló — se usa el motor local");
+                    AppLog.Warning("Pedido automático: la IA falló — se usa el motor local ({ErrorType})",
+                        ex.GetType().Name);
                 }
                 finally
                 {
@@ -987,7 +988,9 @@ namespace Alquitel.UI.ViewModels
 
             var summary = new StringBuilder();
             summary.Append($"Se agregaron {addedCount} producto(s)");
-            summary.Append(aiSucceeded ? " con IA." : " con el motor local.");
+            summary.Append(aiSucceeded
+                ? " con IA externa (datos sensibles redactados)."
+                : " con el motor local.");
             if (aiDays is int d) summary.Append($"\nDías detectados: {d}.");
             if (unmatched.Any())
             {
@@ -1631,7 +1634,8 @@ namespace Alquitel.UI.ViewModels
         {
             if (!_aiAssistant.IsConfigured)
             {
-                _toastService.ShowInfo("La IA no está configurada (falta la API key de Pollinations).");
+                _toastService.ShowInfo(
+                    "La IA externa está desactivada o falta la API key. Habilitala en Configuración para enviar texto redactado.");
                 return;
             }
             var pending = SelectedItems
@@ -1668,22 +1672,29 @@ namespace Alquitel.UI.ViewModels
                     return;
                 }
 
-                int applied = 0;
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("notas", out var notas))
+                var pendingByIndex = pending.ToDictionary(x => x.idx, x => x.item);
+                if (!Alquitel.Core.Privacy.AiTechnicalNoteValidator.TryParse(
+                        json, pendingByIndex.Keys.ToHashSet(), out var proposals))
                 {
-                    foreach (var n in notas.EnumerateArray())
-                    {
-                        if (!n.TryGetProperty("idx", out var idxEl) || !n.TryGetProperty("nota", out var notaEl)) continue;
-                        int idx = idxEl.GetInt32();
-                        string? nota = notaEl.GetString();
-                        if (string.IsNullOrWhiteSpace(nota)) continue;
-                        if (idx < 0 || idx >= SelectedItems.Count) continue;
-                        if (!string.IsNullOrWhiteSpace(SelectedItems[idx].TechnicalNotes)) continue;
-                        SelectedItems[idx].TechnicalNotes = nota.Trim();
-                        applied++;
-                    }
+                    _toastService.ShowInfo("La IA devolvió notas con un formato inseguro; no se aplicó ninguna.");
+                    return;
                 }
+
+                // La colección pudo cambiar durante el await. Se valida el snapshot
+                // completo antes de mutar un solo ítem para evitar resultados parciales.
+                if (proposals.Any(proposal =>
+                        proposal.Index < 0 || proposal.Index >= SelectedItems.Count ||
+                        !pendingByIndex.TryGetValue(proposal.Index, out var original) ||
+                        !ReferenceEquals(SelectedItems[proposal.Index], original) ||
+                        !string.IsNullOrWhiteSpace(original.TechnicalNotes)))
+                {
+                    _toastService.ShowInfo("El pedido cambió mientras se generaban las notas; no se aplicó ninguna.");
+                    return;
+                }
+
+                foreach (var proposal in proposals)
+                    pendingByIndex[proposal.Index].TechnicalNotes = proposal.Text;
+                var applied = proposals.Count;
 
                 SelectionVersion++; // refrescar las tarjetas con la nota nueva
                 _toastService.ShowSuccess(applied > 0
@@ -1692,7 +1703,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "SuggestTechnicalNotesAsync failed");
+                AppLog.Warning("SuggestTechnicalNotesAsync failed ({ErrorType})", ex.GetType().Name);
                 _toastService.ShowInfo("No se pudieron sugerir notas técnicas.");
             }
             finally
@@ -1705,42 +1716,29 @@ namespace Alquitel.UI.ViewModels
         /// Busca datos del cliente (empresa, contacto, teléfono, email, CUIT) en el mismo
         /// texto pegado del pedido automático y completa SOLO los campos vacíos del formulario.
         /// </summary>
-        private async Task DetectClientDataFromTextAsync(string customerText)
+        private Task DetectClientDataFromTextAsync(string customerText)
         {
-            if (!_aiAssistant.IsConfigured) return;
             var client = CurrentOrder.Client ??= new Client();
 
             // Con la ficha ya completa no hay nada que detectar.
             if (!string.IsNullOrWhiteSpace(client.CompanyName) &&
                 !string.IsNullOrWhiteSpace(client.ContactName) &&
-                !string.IsNullOrWhiteSpace(client.Phone)) return;
+                !string.IsNullOrWhiteSpace(client.Phone)) return Task.CompletedTask;
 
             try
             {
-                const string system =
-                    "Extraé los datos del REMITENTE/cliente de este texto de pedido (mail o WhatsApp argentino). " +
-                    "Respondé SOLO JSON: {\"empresa\":null,\"contacto\":null,\"telefono\":null,\"email\":null,\"cuit\":null}. " +
-                    "Usá null para todo dato que el texto no mencione explícitamente. Nunca inventes.";
-
-                var json = await _aiAssistant.CompleteToJsonAsync(system, customerText);
-                if (json == null) return;
-
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                string? Get(string prop) =>
-                    doc.RootElement.TryGetProperty(prop, out var el) && el.ValueKind == System.Text.Json.JsonValueKind.String
-                        ? el.GetString()?.Trim()
-                        : null;
+                var extracted = Alquitel.Core.Privacy.ClientContactExtractor.Extract(customerText);
 
                 var filled = new List<string>();
-                if (string.IsNullOrWhiteSpace(client.CompanyName) && Get("empresa") is string emp && emp.Length > 1)
+                if (string.IsNullOrWhiteSpace(client.CompanyName) && extracted.CompanyName is string emp && emp.Length > 1)
                 { client.CompanyName = emp; filled.Add("empresa"); }
-                if (string.IsNullOrWhiteSpace(client.ContactName) && Get("contacto") is string con && con.Length > 1)
+                if (string.IsNullOrWhiteSpace(client.ContactName) && extracted.ContactName is string con && con.Length > 1)
                 { client.ContactName = con; filled.Add("contacto"); }
-                if (string.IsNullOrWhiteSpace(client.Phone) && Get("telefono") is string tel && tel.Length > 5)
+                if (string.IsNullOrWhiteSpace(client.Phone) && extracted.Phone is string tel && tel.Length > 5)
                 { client.Phone = tel; filled.Add("teléfono"); }
-                if (string.IsNullOrWhiteSpace(client.Email) && Get("email") is string mail && mail.Contains('@'))
+                if (string.IsNullOrWhiteSpace(client.Email) && extracted.Email is string mail && mail.Contains('@'))
                 { client.Email = mail; filled.Add("email"); }
-                if (string.IsNullOrWhiteSpace(client.Cuit) && Get("cuit") is string cuit && CuitValidator.IsValid(cuit))
+                if (string.IsNullOrWhiteSpace(client.Cuit) && extracted.Cuit is string cuit && CuitValidator.IsValid(cuit))
                 { client.Cuit = cuit; CuitInput = cuit; filled.Add("CUIT"); }
 
                 if (filled.Count > 0)
@@ -1751,8 +1749,9 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "DetectClientDataFromTextAsync failed");
+                AppLog.Warning("DetectClientDataFromTextAsync failed ({ErrorType})", ex.GetType().Name);
             }
+            return Task.CompletedTask;
         }
 
         // ── Envío por correo del último documento generado ──────────

@@ -48,6 +48,9 @@ namespace Alquitel.UI.ViewModels
         private bool _exportPdf;
 
         [ObservableProperty]
+        private bool _externalAiProcessingEnabled;
+
+        [ObservableProperty]
         private string _statusMessage = string.Empty;
 
         // ── Servidor remoto (Supabase/PostgreSQL) ────────────────────
@@ -622,6 +625,7 @@ namespace Alquitel.UI.ViewModels
                 _appSettings.OtFolder = OtFolder;
                 _appSettings.OtTemplate = OtTemplate;
                 _appSettings.ExportPdf = ExportPdf;
+                _appSettings.ExternalAiProcessingEnabled = ExternalAiProcessingEnabled;
                 _appSettings.SaveSettings();
                 StatusMessage = "✓ Configuración guardada correctamente.";
             }
@@ -640,6 +644,7 @@ namespace Alquitel.UI.ViewModels
             OtFolder = _appSettings.OtFolder;
             OtTemplate = _appSettings.OtTemplate;
             ExportPdf = _appSettings.ExportPdf;
+            ExternalAiProcessingEnabled = _appSettings.ExternalAiProcessingEnabled;
         }
 
         private void BrowseFolder(Action<string> setter)

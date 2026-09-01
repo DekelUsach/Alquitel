@@ -197,7 +197,8 @@ namespace Alquitel.UI.ViewModels
             if (SelectedClient == null) return;
             if (!_aiAssistant.IsConfigured)
             {
-                _toastService.ShowInfo("La IA no está configurada (falta la API key de Pollinations).");
+                _toastService.ShowInfo(
+                    "La IA externa está desactivada o falta la API key. Habilitala en Configuración para enviar texto redactado.");
                 return;
             }
 
@@ -240,7 +241,7 @@ namespace Alquitel.UI.ViewModels
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "SummarizeClientHistoryAsync failed");
+                AppLog.Warning("SummarizeClientHistoryAsync failed ({ErrorType})", ex.GetType().Name);
                 ClientAiSummary = "No se pudo generar el resumen.";
             }
             finally

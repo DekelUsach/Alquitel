@@ -210,6 +210,33 @@
 
                 <Rectangle Style="{StaticResource PrefDivider}"/>
 
+                <!-- Consentimiento explícito: esta es la única preferencia que habilita
+                     el envío de texto redactado a Pollinations. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="IA externa" Style="{StaticResource PrefTitle}"/>
+                        <TextBlock Style="{StaticResource PrefHint}"
+                                   Text="Controla el procesamiento opcional mediante Pollinations. Sin consentimiento, el pedido automático usa solo el motor local."/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" Style="{StaticResource ModernCheckBox}"
+                              VerticalAlignment="Top"
+                              IsChecked="{Binding ExternalAiProcessingEnabled}">
+                        <StackPanel>
+                            <TextBlock Text="Permitir procesamiento con IA externa"
+                                       FontSize="13" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock Text="Antes de enviar, Alquitel redacta CUIT, DNI, email, teléfono, domicilio y datos bancarios. Los textos se procesan fuera del equipo."
+                                       FontSize="11" Foreground="{DynamicResource MutedTextBrush}"
+                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </CheckBox>
+                </Grid>
+
+                <Rectangle Style="{StaticResource PrefDivider}"/>
+
                 <!-- ═══════════ SECCIÓN: SERVIDOR COMPARTIDO ═══════════ -->
                 <Grid>
                     <Grid.ColumnDefinitions>

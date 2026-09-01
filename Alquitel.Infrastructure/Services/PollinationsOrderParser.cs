@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Alquitel.Core.Helpers;
 using Alquitel.Core.Interfaces;
+using Alquitel.Core.Privacy;
 
 namespace Alquitel.Infrastructure.Services
 {
@@ -31,22 +32,35 @@ namespace Alquitel.Infrastructure.Services
         // el socket exhaustion de crear clientes por request. PooledConnectionLifetime
         // acota cuánto vive cada conexión para que un cambio de DNS del proveedor no
         // deje la app pegada a una IP muerta hasta que se reinicie.
-        private static readonly HttpClient Http = new(new SocketsHttpHandler
+        private static readonly HttpClient SharedHttp = new(new SocketsHttpHandler
         {
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         })
-        { Timeout = TimeSpan.FromSeconds(45) };
+        { Timeout = Timeout.InfiniteTimeSpan };
 
         private readonly string? _apiKey;
         private readonly string _model;
+        private readonly Func<bool> _externalProcessingEnabled;
+        private readonly HttpClient _http;
 
         public PollinationsOrderParser(string? apiKey, string? model = null)
+            : this(apiKey, model, () => false, SharedHttp)
+        {
+        }
+
+        public PollinationsOrderParser(
+            string? apiKey,
+            string? model,
+            Func<bool> externalProcessingEnabled,
+            HttpClient? httpClient = null)
         {
             _apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
             _model = string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim();
+            _externalProcessingEnabled = externalProcessingEnabled ?? throw new ArgumentNullException(nameof(externalProcessingEnabled));
+            _http = httpClient ?? SharedHttp;
         }
 
-        public bool IsConfigured => _apiKey != null;
+        public bool IsConfigured => _apiKey != null && _externalProcessingEnabled();
 
         public async Task<AiOrderParseResult?> ParseOrderAsync(
             string customerText,
@@ -56,13 +70,18 @@ namespace Alquitel.Infrastructure.Services
             if (!IsConfigured || string.IsNullOrWhiteSpace(customerText) || catalog.Count == 0)
                 return null;
 
-            var result = await TryModelWithRetriesAsync(_model, customerText, catalog, cancellationToken);
+            var redactedText = AiPrivacyRedactor.Redact(
+                customerText, AiHttpSafety.MaxCustomerTextLength).Text;
+            var untrustedText = BuildUserPayload(redactedText, catalog);
+
+            var result = await TryModelWithRetriesAsync(_model, untrustedText, catalog, cancellationToken);
             if (result != null) return result;
 
-            if (!string.Equals(_model, RetryModel, StringComparison.OrdinalIgnoreCase))
+            if (IsConfigured &&
+                !string.Equals(_model, RetryModel, StringComparison.OrdinalIgnoreCase))
             {
                 AppLog.Warning("Pollinations: {Model} no devolvió JSON usable — reintento con {Retry}", _model, RetryModel);
-                result = await TryModelWithRetriesAsync(RetryModel, customerText, catalog, cancellationToken);
+                result = await TryModelWithRetriesAsync(RetryModel, untrustedText, catalog, cancellationToken);
             }
             return result;
         }
@@ -78,11 +97,13 @@ namespace Alquitel.Infrastructure.Services
         {
             for (int attempt = 1; attempt <= HttpRetryPolicy.MaxAttempts; attempt++)
             {
+                if (!IsConfigured) return null;
                 var (result, transient, retryAfter) =
                     await TryParseWithModelAsync(model, customerText, catalog, ct);
 
                 if (result != null) return result;
                 if (!transient || attempt == HttpRetryPolicy.MaxAttempts) return null;
+                if (!IsConfigured) return null;
 
                 var delay = HttpRetryPolicy.DelayFor(attempt, retryAfter);
                 AppLog.Information("Pollinations {Model}: fallo transitorio, reintento {Attempt}/{Max} en {Delay}ms",
@@ -102,12 +123,13 @@ namespace Alquitel.Infrastructure.Services
         {
             try
             {
+                if (!IsConfigured) return (null, false, null);
                 var body = new
                 {
                     model,
                     messages = new object[]
                     {
-                        new { role = "system", content = BuildSystemPrompt(catalog) },
+                        new { role = "system", content = BuildSystemPrompt() },
                         new { role = "user", content = customerText },
                     },
                     response_format = new { type = "json_object" },
@@ -122,53 +144,59 @@ namespace Alquitel.Infrastructure.Services
                     Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
                 };
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                if (!IsConfigured) return (null, false, null);
 
-                using var response = await Http.SendAsync(request, ct);
-                var responseText = await response.Content.ReadAsStringAsync(ct);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(AiHttpSafety.RequestTimeout);
+                using var response = await _http.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                var responseText = await AiHttpSafety.ReadLimitedTextAsync(
+                    response.Content, timeout.Token);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     int status = (int)response.StatusCode;
-                    AppLog.Warning("Pollinations {Model} HTTP {Status}: {Body}",
-                        model, status, Truncate(responseText, 400));
+                    AppLog.Warning("Pollinations {Model} HTTP {Status}", model, status);
                     return (null, HttpRetryPolicy.IsTransient(status), response.Headers.RetryAfter?.Delta);
                 }
 
-                using var doc = JsonDocument.Parse(responseText);
-                string? content = doc.RootElement
-                    .GetProperty("choices")[0]
-                    .GetProperty("message")
-                    .GetProperty("content")
-                    .GetString();
+                using var doc = JsonDocument.Parse(responseText, new JsonDocumentOptions { MaxDepth = 16 });
+                if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                    choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() != 1 ||
+                    !choices[0].TryGetProperty("message", out var message) ||
+                    !message.TryGetProperty("content", out var contentElement) ||
+                    contentElement.ValueKind != JsonValueKind.String)
+                    return (null, false, null);
+                var content = contentElement.GetString();
 
                 // Una respuesta 200 con JSON ilegible no mejora reintentando el mismo
                 // modelo: lo que corresponde es cambiar de modelo (lo hace el llamador).
-                return (ParseModelJson(content, catalog.Count), false, null);
+                return (ParseModelJson(content, catalog), false, null);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
-            catch (TaskCanceledException ex)
+            catch (OperationCanceledException)
             {
-                // Sin cancelación pedida, un TaskCanceledException es el timeout del
-                // HttpClient: transitorio, vale la pena reintentar.
-                AppLog.Warning(ex, "Pollinations timeout for model {Model}", model);
+                AppLog.Warning("Pollinations timeout for model {Model}", model);
                 return (null, true, null);
             }
             catch (HttpRequestException ex)
             {
-                AppLog.Warning(ex, "Pollinations network error for model {Model}", model);
+                AppLog.Warning("Pollinations network error for model {Model} ({ErrorType})",
+                    model, ex.GetType().Name);
                 return (null, true, null);
             }
             catch (Exception ex)
             {
-                AppLog.Warning(ex, "Pollinations request failed for model {Model}", model);
+                AppLog.Warning("Pollinations request failed for model {Model} ({ErrorType})",
+                    model, ex.GetType().Name);
                 return (null, false, null);
             }
         }
 
-        private static string BuildSystemPrompt(IReadOnlyList<AiCatalogProduct> catalog)
+        private static string BuildSystemPrompt()
         {
             var sb = new StringBuilder();
             sb.AppendLine("Sos el asistente de carga de pedidos de una empresa argentina de alquiler de equipamiento audiovisual.");
@@ -183,11 +211,25 @@ namespace Alquitel.Infrastructure.Services
             sb.AppendLine("- \"dias\": entero solo si el texto menciona la duración en días del alquiler; si no, null.");
             sb.AppendLine("- Si piden algo que no matchea ningún producto del catálogo, agregá una descripción corta en \"no_encontrados\".");
             sb.AppendLine("- El CATÁLOGO puede ser una preselección parcial del inventario: si algo pedido no figura, va a \"no_encontrados\"; nunca lo fuerces a un ref que no corresponde.");
-            sb.AppendLine();
-            sb.AppendLine("CATÁLOGO (ref | descripción | categoría):");
-            foreach (var p in catalog)
-                sb.AppendLine($"{p.Ref} | {p.Description} | {p.Category}");
-            return sb.ToString();
+            return AiHttpSafety.HardenSystemPrompt(sb.ToString());
+        }
+
+        private static string BuildUserPayload(
+            string redactedCustomerText,
+            IReadOnlyList<AiCatalogProduct> catalog)
+        {
+            var safeCatalog = catalog.Take(80).Select(p => new
+            {
+                reference = p.Ref,
+                description = AiPrivacyRedactor.Redact(p.Description, 240).Text,
+                category = AiPrivacyRedactor.Redact(p.Category, 120).Text,
+            });
+            return JsonSerializer.Serialize(new
+            {
+                type = "untrusted_order_data",
+                customer_request = redactedCustomerText,
+                catalog = safeCatalog,
+            });
         }
 
         // ── Interpretación de la respuesta del modelo ────────────────────
@@ -206,7 +248,9 @@ namespace Alquitel.Infrastructure.Services
             [JsonPropertyName("medida")] public string? Medida { get; set; }
         }
 
-        private static AiOrderParseResult? ParseModelJson(string? content, int catalogCount)
+        private static AiOrderParseResult? ParseModelJson(
+            string? content,
+            IReadOnlyList<AiCatalogProduct> catalog)
         {
             var json = ExtractJsonObject(content);
             if (json == null) return null;
@@ -222,29 +266,41 @@ namespace Alquitel.Infrastructure.Services
             }
             catch (JsonException ex)
             {
-                AppLog.Warning(ex, "Pollinations: JSON de respuesta inválido: {Json}", Truncate(json, 400));
+                AppLog.Warning("Pollinations: JSON de respuesta inválido ({ErrorType})",
+                    ex.GetType().Name);
                 return null;
             }
-            if (parsed == null) return null;
+            if (parsed?.Items == null || parsed.NoEncontrados == null ||
+                parsed.Items.Count > Math.Min(catalog.Count, 80) ||
+                parsed.NoEncontrados.Count > 50)
+                return null;
 
-            var items = (parsed.Items ?? new List<ModelItem>())
-                .Where(i => i.Ref >= 0 && i.Ref < catalogCount)
-                .Select(i => new AiParsedItem(
-                    i.Ref,
-                    Math.Clamp(i.Cantidad, 1, 999),
-                    string.IsNullOrWhiteSpace(i.Medida) ? null : i.Medida.Trim()))
-                .ToList();
+            var allowedRefs = catalog.Take(80).Select(p => p.Ref).ToHashSet();
+            if (parsed.Items.Any(i =>
+                    !allowedRefs.Contains(i.Ref) ||
+                    i.Cantidad is < 1 or > 999 ||
+                    (i.Medida?.Length ?? 0) > 100 ||
+                    ContainsUnsafeControlCharacters(i.Medida)) ||
+                parsed.Items.Select(i => i.Ref).Distinct().Count() != parsed.Items.Count ||
+                parsed.NoEncontrados.Any(s =>
+                    string.IsNullOrWhiteSpace(s) || s.Length > 200 ||
+                    ContainsUnsafeControlCharacters(s)) ||
+                parsed.Dias is < 1 or > 365)
+                return null;
 
-            var unmatched = (parsed.NoEncontrados ?? new List<string>())
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s.Trim())
-                .ToList();
+            var items = parsed.Items.Select(i => new AiParsedItem(
+                i.Ref, i.Cantidad,
+                string.IsNullOrWhiteSpace(i.Medida) ? null : i.Medida.Trim())).ToList();
+
+            var unmatched = parsed.NoEncontrados.Select(s => s.Trim()).ToList();
 
             if (items.Count == 0 && unmatched.Count == 0) return null;
 
-            int? days = parsed.Dias is >= 1 and <= 365 ? parsed.Dias : null;
-            return new AiOrderParseResult(items, days, unmatched);
+            return new AiOrderParseResult(items, parsed.Dias, unmatched);
         }
+
+        private static bool ContainsUnsafeControlCharacters(string? value) =>
+            value?.Any(c => char.IsControl(c) && c is not '\r' and not '\n' and not '\t') == true;
 
         /// <summary>
         /// Aísla el primer objeto JSON balanceado del texto: los modelos a veces envuelven
@@ -276,7 +332,5 @@ namespace Alquitel.Infrastructure.Services
             return null;
         }
 
-        private static string Truncate(string s, int max) =>
-            s.Length <= max ? s : s[..max] + "…";
     }
 }

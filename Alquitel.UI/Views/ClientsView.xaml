@@ -422,7 +422,7 @@
                             <Button Height="36" Margin="0,16,0,0" HorizontalAlignment="Left"
                                     Command="{Binding SummarizeClientHistoryCommand}"
                                     AutomationProperties.Name="Resumir historial del cliente con inteligencia artificial"
-                                    ToolTip="IA: resume qué alquila este cliente, con qué frecuencia y por qué montos.">
+                                    ToolTip="IA externa: envía un historial redactado para resumir alquileres, frecuencia y montos.">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
                                         <Style.Triggers>
@@ -435,7 +435,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="12"
                                                VerticalAlignment="Center" Margin="0,0,7,0"/>
-                                    <TextBlock Text="Resumen IA del historial" FontSize="12" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Resumen con IA externa" FontSize="12" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                             <Border Padding="14,10" Margin="0,10,0,0">
