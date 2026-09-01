@@ -40,9 +40,13 @@ REVOKE UPDATE, DELETE, TRUNCATE ON public."OrderAuditEvents" FROM authenticated,
 -- Para una purga legítima por retención hay que deshabilitar el
 -- trigger a mano y queda registrado en los logs del proyecto.
 
+-- search_path fijo aunque la función no referencie ningún objeto: es la regla
+-- para todo lo que corre dentro de un trigger. Si mañana alguien le agrega una
+-- consulta, el agujero ya estaría abierto. El linter de Supabase lo marca.
 CREATE OR REPLACE FUNCTION app.deny_audit_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = pg_catalog
 AS $$
 BEGIN
     RAISE EXCEPTION
