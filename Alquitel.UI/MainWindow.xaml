@@ -367,16 +367,11 @@
         </Border>
 
         <!-- ═══════════════ CONTENT AREA ═══════════════ -->
-        <!-- NotifyOnTargetUpdated + code-behind: fade/slide de 200 ms al navegar
+        <!-- NotifyOnTargetUpdated + code-behind: fundido corto al navegar
              (respeta SystemParameters.ClientAreaAnimation para accesibilidad). -->
         <ContentControl x:Name="MainContent" Grid.Row="0" Grid.Column="1"
                         Content="{Binding CurrentViewModel, NotifyOnTargetUpdated=True}"
-                        TargetUpdated="MainContent_TargetUpdated"
-                        RenderTransformOrigin="0.5,0.5">
-            <ContentControl.RenderTransform>
-                <TranslateTransform/>
-            </ContentControl.RenderTransform>
-        </ContentControl>
+                        TargetUpdated="MainContent_TargetUpdated"/>
 
         <!-- ═══════════════ TOASTS (overlay, no bloqueante) ═══════════════ -->
         <ItemsControl Grid.Row="0" Grid.Column="1" ItemsSource="{Binding Toasts.Items}"
@@ -392,20 +387,18 @@
                             <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.25"/>
                         </Border.Effect>
                         <Border.Triggers>
-                            <!-- Entrada 200 ms (fade + slide): respeta reduced-motion vía
-                                 ClientAreaAnimation en el code-behind del Loaded si hiciera falta;
-                                 opacity/transform no causan layout shift. -->
+                            <!-- Entra desde el borde al que está anclado (derecha): la opacidad
+                                 llega antes que la posición, así se lee el texto mientras asienta.
+                                 Solo opacity/transform: sin layout shift. -->
                             <EventTrigger RoutedEvent="Loaded">
                                 <BeginStoryboard>
                                     <Storyboard>
                                         <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                         From="0" To="1" Duration="0:0:0.2"/>
-                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                                         From="12" To="0" Duration="0:0:0.2">
-                                            <DoubleAnimation.EasingFunction>
-                                                <CubicEase EasingMode="EaseOut"/>
-                                            </DoubleAnimation.EasingFunction>
-                                        </DoubleAnimation>
+                                                         From="0" To="1" Duration="0:0:0.16"
+                                                         EasingFunction="{StaticResource EaseOutQuart}"/>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                         From="24" To="0" Duration="0:0:0.38"
+                                                         EasingFunction="{StaticResource EaseOutExpo}"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>

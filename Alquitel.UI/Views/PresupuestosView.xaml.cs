@@ -45,12 +45,16 @@ namespace Alquitel.UI.Views
         {
             var transform = (TranslateTransform)DetailPanel.RenderTransform;
             var width = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
+            // Abrir: desacelera largo y asienta. Cerrar: acelera corto y se va (la salida no se contempla).
             var animation = new DoubleAnimation
             {
                 To = open ? 0 : width,
-                Duration = TimeSpan.FromMilliseconds(open ? 260 : 200),
+                Duration = !SystemParameters.ClientAreaAnimation ? TimeSpan.Zero
+                    : TimeSpan.FromMilliseconds(open ? 340 : 180),
+                EasingFunction = open
+                    ? new ExponentialEase { EasingMode = EasingMode.EaseOut, Exponent = 5 }
+                    : new QuadraticEase { EasingMode = EasingMode.EaseIn },
             };
-            if (open) animation.EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut };
             transform.BeginAnimation(TranslateTransform.XProperty, animation);
         }
 

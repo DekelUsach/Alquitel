@@ -25,41 +25,14 @@
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="card" Width="292" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="12" Padding="18,16"
-                                RenderTransformOrigin="0.5,0.5">
-                            <Border.RenderTransform>
-                                <TranslateTransform/>
-                            </Border.RenderTransform>
+                                CornerRadius="12" Padding="18,16">
                             <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!-- Hover = la tarjeta se define (borde más presente), no "levita". -->
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="card" Property="BorderBrush"
                                         Value="{DynamicResource MutedTextBrush}"/>
-                                <Setter TargetName="card" Property="Effect"
-                                        Value="{StaticResource CardShadow}"/>
-                                <Trigger.EnterActions>
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="card"
-                                                             Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.Y)"
-                                                             To="-2" Duration="0:0:0.12">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <CubicEase EasingMode="EaseOut"/>
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </Trigger.EnterActions>
-                                <Trigger.ExitActions>
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="card"
-                                                             Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.Y)"
-                                                             To="0" Duration="0:0:0.15"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="card" Property="BorderBrush"
@@ -280,13 +253,11 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.X)"
-                                                             From="70" To="0" Duration="0:0:0.22">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <QuarticEase EasingMode="EaseOut"/>
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
+                                                             From="32" To="0" Duration="0:0:0.36"
+                                                             EasingFunction="{StaticResource EaseOutExpo}"/>
                                             <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                             From="0" To="1" Duration="0:0:0.18"/>
+                                                             From="0" To="1" Duration="0:0:0.18"
+                                                             EasingFunction="{StaticResource EaseOutQuart}"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </DataTrigger.EnterActions>

@@ -26,6 +26,14 @@
             <DropShadowEffect x:Key="CardShadow" Color="#000000" Direction="270"
                               ShadowDepth="1" BlurRadius="14" Opacity="0.08"/>
 
+            <!-- ════════════════ MOVIMIENTO ════════════════ -->
+            <!-- Registro: precisión instrumental. Solo Opacity/RenderTransform,
+                 desaceleración exponencial al entrar, aceleración corta al salir.
+                 Sin rebotes, sin lift-on-hover, sin fade-in-up, sin loops decorativos. -->
+            <ExponentialEase x:Key="EaseOutExpo" EasingMode="EaseOut" Exponent="5"/>
+            <QuarticEase x:Key="EaseOutQuart" EasingMode="EaseOut"/>
+            <SineEase x:Key="EaseInOutSine" EasingMode="EaseInOut"/>
+
             <!-- ════════════════ STEPPER Y MINI-LABEL (compartidos) ════════════════ -->
             <!-- Botón de stepper (+ / −) compacto: 36px de lado para target de click cómodo -->
             <Style x:Key="StepperButton" TargetType="Button">
@@ -86,21 +94,28 @@
             </Style>
 
             <!-- ════════════════ SKELETON (estado de carga) ════════════════ -->
-            <!-- Fila fantasma con pulso de opacidad para listas que cargan de la red
-                 (crítico en modo Supabase). Usar dentro de un panel visible solo
-                 mientras IsLoading del VM sea true. -->
+            <!-- Fila fantasma para listas que cargan de la red (crítico en modo Supabase).
+                 Usar dentro de un panel visible solo mientras IsLoading del VM sea true.
+                 Invisible los primeros 240 ms (cargas rápidas no parpadean); luego
+                 aparece y respira lento y de baja amplitud en vez de un pulso ansioso. -->
             <Style x:Key="SkeletonRow" TargetType="Border">
                 <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
                 <Setter Property="CornerRadius" Value="8"/>
                 <Setter Property="Height" Value="44"/>
                 <Setter Property="Margin" Value="0,0,0,8"/>
-                <Setter Property="Opacity" Value="0.55"/>
+                <Setter Property="Opacity" Value="0"/>
                 <Style.Triggers>
                     <EventTrigger RoutedEvent="Loaded">
                         <BeginStoryboard>
-                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                            <Storyboard>
                                 <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                 From="0.35" To="0.8" Duration="0:0:0.9"/>
+                                                 BeginTime="0:0:0.24" From="0" To="0.6" Duration="0:0:0.3"
+                                                 EasingFunction="{StaticResource EaseOutQuart}"/>
+                                <!-- Arranca donde termina la entrada; hasta su BeginTime no aporta valor. -->
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 BeginTime="0:0:0.54" From="0.6" To="0.4" Duration="0:0:1.4"
+                                                 AutoReverse="True" RepeatBehavior="Forever"
+                                                 EasingFunction="{StaticResource EaseInOutSine}"/>
                             </Storyboard>
                         </BeginStoryboard>
                     </EventTrigger>
@@ -125,11 +140,8 @@
                             <BeginStoryboard>
                                 <Storyboard>
                                     <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                     From="0" To="1" Duration="0:0:0.25">
-                                        <DoubleAnimation.EasingFunction>
-                                            <CubicEase EasingMode="EaseOut"/>
-                                        </DoubleAnimation.EasingFunction>
-                                    </DoubleAnimation>
+                                                     From="0" To="1" Duration="0:0:0.22"
+                                                     EasingFunction="{StaticResource EaseOutQuart}"/>
                                 </Storyboard>
                             </BeginStoryboard>
                         </DataTrigger.EnterActions>
@@ -219,32 +231,42 @@
                                     BorderBrush="{TemplateBinding BorderBrush}"
                                     BorderThickness="{TemplateBinding BorderThickness}"
                                     CornerRadius="10"
-                                    Padding="{TemplateBinding Padding}"
                                     RenderTransformOrigin="0.5,0.5">
                                 <Border.RenderTransform>
                                     <ScaleTransform/>
                                 </Border.RenderTransform>
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Grid>
+                                    <!-- State layer teñido con el propio Foreground: aclara botones
+                                         sólidos (texto blanco) y oscurece los neutros, sin "lavar"
+                                         el botón entero bajando su opacidad. -->
+                                    <Border x:Name="stateLayer" Background="{TemplateBinding Foreground}"
+                                            CornerRadius="9" Opacity="0" IsHitTestVisible="False"/>
+                                    <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
                             </Border>
                             <ControlTemplate.Triggers>
-                                <!-- Hover/press animados: solo Opacity y RenderTransform,
-                                     sin layout shift ni repintado de brushes de tema. -->
+                                <!-- Solo Opacity/RenderTransform: sin layout shift.
+                                     Press: respuesta inmediata (70 ms) y liberación que asienta
+                                     despacio (280 ms expo), como una tecla física. -->
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Trigger.EnterActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="border"
+                                                <DoubleAnimation Storyboard.TargetName="stateLayer"
                                                                  Storyboard.TargetProperty="Opacity"
-                                                                 To="0.88" Duration="0:0:0.1"/>
+                                                                 To="0.08" Duration="0:0:0.15"
+                                                                 EasingFunction="{StaticResource EaseOutQuart}"/>
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </Trigger.EnterActions>
                                     <Trigger.ExitActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="border"
+                                                <DoubleAnimation Storyboard.TargetName="stateLayer"
                                                                  Storyboard.TargetProperty="Opacity"
-                                                                 To="1" Duration="0:0:0.15"/>
+                                                                 To="0" Duration="0:0:0.24"
+                                                                 EasingFunction="{StaticResource EaseOutQuart}"/>
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </Trigger.ExitActions>
@@ -253,30 +275,35 @@
                                     <Trigger.EnterActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="border"
+                                                <DoubleAnimation Storyboard.TargetName="stateLayer"
                                                                  Storyboard.TargetProperty="Opacity"
-                                                                 To="0.72" Duration="0:0:0.05"/>
+                                                                 To="0.16" Duration="0:0:0.07"/>
                                                 <DoubleAnimation Storyboard.TargetName="border"
                                                                  Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleX)"
-                                                                 To="0.97" Duration="0:0:0.06"/>
+                                                                 To="0.985" Duration="0:0:0.07"
+                                                                 EasingFunction="{StaticResource EaseOutQuart}"/>
                                                 <DoubleAnimation Storyboard.TargetName="border"
                                                                  Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
-                                                                 To="0.97" Duration="0:0:0.06"/>
+                                                                 To="0.985" Duration="0:0:0.07"
+                                                                 EasingFunction="{StaticResource EaseOutQuart}"/>
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </Trigger.EnterActions>
                                     <Trigger.ExitActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="border"
+                                                <DoubleAnimation Storyboard.TargetName="stateLayer"
                                                                  Storyboard.TargetProperty="Opacity"
-                                                                 To="0.88" Duration="0:0:0.12"/>
+                                                                 To="0.08" Duration="0:0:0.28"
+                                                                 EasingFunction="{StaticResource EaseOutExpo}"/>
                                                 <DoubleAnimation Storyboard.TargetName="border"
                                                                  Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleX)"
-                                                                 To="1" Duration="0:0:0.12"/>
+                                                                 To="1" Duration="0:0:0.28"
+                                                                 EasingFunction="{StaticResource EaseOutExpo}"/>
                                                 <DoubleAnimation Storyboard.TargetName="border"
                                                                  Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
-                                                                 To="1" Duration="0:0:0.12"/>
+                                                                 To="1" Duration="0:0:0.28"
+                                                                 EasingFunction="{StaticResource EaseOutExpo}"/>
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </Trigger.ExitActions>
@@ -765,7 +792,7 @@
                                        IsOpen="{TemplateBinding IsDropDownOpen}"
                                        AllowsTransparency="True"
                                        Placement="Bottom"
-                                       PopupAnimation="Slide">
+                                       PopupAnimation="Fade">
                                     <Border Background="{DynamicResource SurfaceBrush}"
                                             BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1"
